@@ -31,8 +31,12 @@ flowchart TD
     main --> health
     main --> httpserver
     main --> buildinfo
+    main --> clientip
+    main --> proxy
     logging --> config
     httpserver --> health
+    proxy --> health
+    proxy --> clientip
 ```
 
 | Package | Its one job |
@@ -43,6 +47,8 @@ flowchart TD
 | `internal/lifecycle` | Start and stop components in order and attribute failures to them |
 | `internal/health` | Collect each component's state and report it |
 | `internal/httpserver` | Run one HTTP listener with timeouts, limits and panic recovery |
+| `internal/clientip` | Work out the real address of the client behind a request |
+| `internal/proxy` | Forward an allowed request to the website and answer when it cannot be reached |
 | `internal/buildinfo` | Say which build is running |
 
 ## Components and the supervisor
@@ -70,14 +76,21 @@ cannot recover from.
 | A component cannot start (port taken, file missing) | Components already started are stopped again in reverse order. The error names the component. | Log line `start-up failed`, exit code 1 |
 | A component panics during start or stop | The panic becomes an error for that component; the sequence continues as above. | Same |
 | A handler panics while serving a request | That request gets a plain 500. The stack is logged. Other requests are unaffected. | Log line `panic while serving request` with `component` |
+| The website is unreachable or too slow | The visitor gets a neutral 502 or 504 page. `upstream` turns `degraded`; `/healthz` stays 200 because Xibalba itself works. It returns to `ok` with the next answered request. | Log line `request to the website failed` with `component=upstream`, `/healthz` |
+| A visitor closes the connection mid-request | Nothing is recorded as a failure. | Debug log only |
+| A client sends forged forwarding headers | They are discarded unless the connection comes from a trusted proxy. | Not logged: this is normal traffic |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
 
-## Request pipeline (planned)
+## Request pipeline
 
-The public side will be a pipeline of stages. Each stage is a small interface,
-so a stage can be tested alone, swapped, or switched off in configuration.
+The public side is a pipeline of stages. Each stage is a small interface, so a
+stage can be tested alone, swapped, or switched off in configuration.
+
+Built today: the listener, client identity, and the upstream proxy. A request
+currently goes straight from client identity to the proxy. The stages in
+between are **planned**.
 
 ```mermaid
 flowchart LR
@@ -92,12 +105,15 @@ flowchart LR
     RU -.-> ST[Statistics]
 ```
 
+Stages hand information forward through the request context. Client identity
+stores a `clientip.Info` (client address, peer address, whether the peer is a
+trusted proxy); every later stage reads it from there and never looks at
+forwarding headers itself.
+
 Planned packages and their seams:
 
 | Package | Its one job | Interface it exposes |
 |---|---|---|
-| `internal/proxy` | Forward an allowed request to the upstream | `http.Handler` |
-| `internal/clientip` | Work out the real client address | `Resolver` |
 | `internal/identity` | Decide whether a claimed crawler is genuine | `Verifier` |
 | `internal/rules` | Evaluate a request against the rule set | `Engine` returning a `Decision` |
 | `internal/challenge` | Issue and verify challenges and pass tokens | `Challenger` per challenge type |

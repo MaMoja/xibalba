@@ -9,6 +9,9 @@ import (
 	"testing"
 )
 
+// upstream is the one required setting; nothing in these tests connects to it.
+const upstream = "upstream:\n  url: http://127.0.0.1:1\n"
+
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "xibalba.yaml")
@@ -19,8 +22,8 @@ func writeConfig(t *testing.T, content string) string {
 }
 
 func TestRunFlags(t *testing.T) {
-	valid := writeConfig(t, "log:\n  level: info\n")
-	invalid := writeConfig(t, "log:\n  level: loud\n")
+	valid := writeConfig(t, "log:\n  level: info\n"+upstream)
+	invalid := writeConfig(t, "log:\n  level: loud\n"+upstream)
 
 	tests := []struct {
 		name       string
@@ -53,7 +56,7 @@ func TestRunFlags(t *testing.T) {
 }
 
 func TestRunStopsCleanlyWhenContextEnds(t *testing.T) {
-	cfg := writeConfig(t, "ops:\n  listen: 127.0.0.1:0\n")
+	cfg := writeConfig(t, "ops:\n  listen: 127.0.0.1:0\nserver:\n  listen: 127.0.0.1:0\n"+upstream)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // shutdown is requested before start-up finishes: must still exit cleanly
 

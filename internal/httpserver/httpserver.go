@@ -33,6 +33,36 @@ type Options struct {
 	Log *slog.Logger
 	// OnFailure is called if the server stops serving without being asked to.
 	OnFailure func(error)
+
+	// The timeouts below default to values suited to small internal
+	// endpoints when left at zero. Set one to NoTimeout to switch it off.
+
+	// ReadHeaderTimeout bounds how long a client may take to send its headers.
+	// Default 5s. It is the main defence against slow-header attacks and
+	// cannot be switched off.
+	ReadHeaderTimeout time.Duration
+	// ReadTimeout bounds reading the whole request including the body. Default 30s.
+	ReadTimeout time.Duration
+	// WriteTimeout bounds writing the whole response. Default 30s. A listener
+	// that serves downloads, streams or long-lived responses needs NoTimeout.
+	WriteTimeout time.Duration
+	// IdleTimeout bounds how long a keep-alive connection may sit unused. Default 90s.
+	IdleTimeout time.Duration
+}
+
+// NoTimeout switches a timeout off.
+const NoTimeout time.Duration = -1
+
+// timeout returns the effective value of a timeout option.
+func timeout(value, fallback time.Duration) time.Duration {
+	switch {
+	case value == 0:
+		return fallback
+	case value < 0:
+		return 0 // net/http: zero means no timeout
+	default:
+		return value
+	}
 }
 
 // Server is one HTTP listener.
@@ -48,14 +78,18 @@ type Server struct {
 // New returns a Server that is not yet listening.
 func New(opts Options) *Server {
 	log := opts.Log.With("component", opts.Name)
+	readHeader := opts.ReadHeaderTimeout
+	if readHeader <= 0 {
+		readHeader = 5 * time.Second
+	}
 	return &Server{
 		opts: opts,
 		srv: &http.Server{
 			Handler:           Recover(log, opts.Handler),
-			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      30 * time.Second,
-			IdleTimeout:       90 * time.Second,
+			ReadHeaderTimeout: readHeader,
+			ReadTimeout:       timeout(opts.ReadTimeout, 30*time.Second),
+			WriteTimeout:      timeout(opts.WriteTimeout, 30*time.Second),
+			IdleTimeout:       timeout(opts.IdleTimeout, 90*time.Second),
 			MaxHeaderBytes:    64 << 10,
 			ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 		},

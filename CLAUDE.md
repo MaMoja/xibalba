@@ -137,6 +137,8 @@ internal/logging/     build the logger
 internal/lifecycle/   start, stop and supervise components
 internal/health/      per-component health report
 internal/httpserver/  HTTP listener with safe defaults
+internal/clientip/    real client address behind trusted proxies
+internal/proxy/       forward to the website, answer when it is unreachable
 internal/buildinfo/   version of the running build
 test/integration/     tests that run the real binary
 docs/                 spec, roadmap, decisions, architecture, configuration, development

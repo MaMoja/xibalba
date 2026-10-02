@@ -10,13 +10,14 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [x] Component supervisor with failure attribution and rollback
 - [x] Repository documentation: README, architecture, configuration, development
 
-## M1: Reverse proxy
-- [ ] Proxy to one upstream, correct handling of headers, websockets, streaming, timeouts
-- [ ] Trusted-proxy handling for the client IP
-- [ ] Integration test harness with a fake upstream
-- [ ] Dry-run mode flag (everything passes, decisions are only counted)
+## M1: Reverse proxy (done)
+- [x] Proxy to one upstream, correct handling of headers, websockets, streaming, timeouts
+- [x] Trusted-proxy handling for the client IP
+- [x] Integration test harness with a fake upstream
+- [x] Neutral error page when the website is unreachable; upstream health
 
 ## M2: Rule engine
+- [ ] Dry-run mode (everything passes, decisions are only counted). Moved from M1: there are no decisions to count before the rule engine exists.
 - [ ] Rule model: matchers (user agent, path, header, IP range), actions (allow, deny, challenge, weigh)
 - [ ] Weight thresholds
 - [ ] Expression matcher for combined conditions
@@ -66,6 +67,11 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [ ] Privacy documentation (what is stored, for how long)
 
 ## Later
+- TLS termination on the public listener
+- Limits on request body size and on slow request bodies
+- Several upstreams, selected by host name
+- `Forwarded` (RFC 7239) as an alternative to `X-Forwarded-For`
+- Customer branding and translations for the "website unavailable" page (with the challenge page in M3)
 - Hosted variant
 - CMS plugins
 - ASN-based lists and reputation feeds

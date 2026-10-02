@@ -17,11 +17,13 @@ import (
 	"syscall"
 
 	"github.com/MaMoja/xibalba/internal/buildinfo"
+	"github.com/MaMoja/xibalba/internal/clientip"
 	"github.com/MaMoja/xibalba/internal/config"
 	"github.com/MaMoja/xibalba/internal/health"
 	"github.com/MaMoja/xibalba/internal/httpserver"
 	"github.com/MaMoja/xibalba/internal/lifecycle"
 	"github.com/MaMoja/xibalba/internal/logging"
+	"github.com/MaMoja/xibalba/internal/proxy"
 )
 
 // Exit codes.
@@ -85,11 +87,46 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	registry.Register(ops.Name(), ops.Health)
 	supervisor.Add(ops)
 
+	// Public side. A request passes the stages in this order:
+	//   client identity -> (rules and challenge: later milestones) -> website
+	upstream := proxy.New(proxy.Options{
+		Upstream:              cfg.Upstream.Target(),
+		PreserveHost:          cfg.Upstream.PreserveHost,
+		DialTimeout:           cfg.Upstream.DialTimeout,
+		ResponseHeaderTimeout: cfg.Upstream.ResponseHeaderTimeout,
+		Log:                   log,
+	})
+	defer upstream.Close()
+	registry.Register("upstream", upstream.Health)
+
+	resolver := clientip.New(cfg.Server.TrustedPrefixes())
+	public := httpserver.New(httpserver.Options{
+		Name:              "public",
+		Addr:              cfg.Server.Listen,
+		Handler:           clientip.Middleware(resolver, upstream),
+		Log:               log,
+		OnFailure:         supervisor.Reporter("public"),
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+		// Downloads, uploads, streams and websockets have no natural upper
+		// bound, so the whole-request timeouts are off for this listener.
+		ReadTimeout:  httpserver.NoTimeout,
+		WriteTimeout: httpserver.NoTimeout,
+	})
+	registry.Register(public.Name(), public.Health)
+	supervisor.Add(public)
+
 	if err := supervisor.Start(ctx); err != nil {
 		log.Error("start-up failed", "error", err.Error())
 		return exitFailed
 	}
-	log.Info("xibalba started", "version", buildinfo.Get().Version, "ops", ops.Addr())
+	log.Info("xibalba started",
+		"version", buildinfo.Get().Version,
+		"public", public.Addr(),
+		"ops", ops.Addr(),
+		"upstream", cfg.Upstream.Target().Redacted(),
+		"trusted_proxies", len(cfg.Server.TrustedProxies),
+	)
 
 	code := exitOK
 	select {

@@ -2,21 +2,43 @@ package config
 
 import (
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestParseDefaults(t *testing.T) {
-	for _, input := range []string{"", "   \n", "# only a comment\n"} {
+// minimal is the smallest valid configuration: only the required setting.
+// Tests append it after their own lines so the line numbers they check stay put.
+const minimal = "upstream:\n  url: http://127.0.0.1:3000\n"
+
+// withUpstream returns the defaults plus the upstream from minimal.
+func withUpstream() Config {
+	cfg := Default()
+	cfg.Upstream.URL = "http://127.0.0.1:3000"
+	return cfg
+}
+
+func TestParseMinimalUsesDefaults(t *testing.T) {
+	for _, input := range []string{minimal, "# a comment\n" + minimal, "log:\nops:\nserver:\n" + minimal} {
 		cfg, err := Parse("test.yaml", []byte(input))
 		if err != nil {
 			t.Fatalf("Parse(%q) returned error: %v", input, err)
 		}
-		if cfg != Default() {
-			t.Errorf("Parse(%q) = %+v, want defaults %+v", input, cfg, Default())
+		if !reflect.DeepEqual(cfg, withUpstream()) {
+			t.Errorf("Parse(%q) =\n%+v\nwant\n%+v", input, cfg, withUpstream())
+		}
+	}
+}
+
+func TestParseWithoutUpstreamIsAnError(t *testing.T) {
+	for _, input := range []string{"", "   \n", "# only a comment\n", "log:\n  level: info\n"} {
+		_, err := Parse("test.yaml", []byte(input))
+		if err == nil || !strings.Contains(err.Error(), "upstream.url") {
+			t.Errorf("Parse(%q) = %v, want an error about upstream.url", input, err)
 		}
 	}
 }
@@ -26,6 +48,18 @@ func TestParseValid(t *testing.T) {
 log:
   level: debug
   format: text
+server:
+  listen: "0.0.0.0:8443"
+  trusted_proxies:
+    - 10.0.0.0/8
+    - "::1"
+  read_header_timeout: 3s
+  idle_timeout: 2m
+upstream:
+  url: https://intern.example.org/app
+  preserve_host: false
+  dial_timeout: 2s
+  response_header_timeout: 15s
 ops:
   listen: "[::1]:9191"
 shutdown_timeout: 30s
@@ -35,44 +69,52 @@ shutdown_timeout: 30s
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := Config{
-		Log:             Log{Level: "debug", Format: "text"},
+		Log: Log{Level: "debug", Format: "text"},
+		Server: Server{
+			Listen:            "0.0.0.0:8443",
+			TrustedProxies:    []string{"10.0.0.0/8", "::1"},
+			ReadHeaderTimeout: 3 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+		},
+		Upstream: Upstream{
+			URL:                   "https://intern.example.org/app",
+			PreserveHost:          false,
+			DialTimeout:           2 * time.Second,
+			ResponseHeaderTimeout: 15 * time.Second,
+		},
 		Ops:             Ops{Listen: "[::1]:9191"},
 		ShutdownTimeout: 30 * time.Second,
 	}
-	if cfg != want {
-		t.Errorf("got %+v, want %+v", cfg, want)
+	if !reflect.DeepEqual(cfg, want) {
+		t.Errorf("got\n%+v\nwant\n%+v", cfg, want)
+	}
+
+	target := cfg.Upstream.Target()
+	if target == nil || target.Host != "intern.example.org" || target.Path != "/app" {
+		t.Errorf("Target() = %v", target)
+	}
+	wantPrefixes := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("::1/128")}
+	if got := cfg.Server.TrustedPrefixes(); !reflect.DeepEqual(got, wantPrefixes) {
+		t.Errorf("TrustedPrefixes() = %v, want %v", got, wantPrefixes)
 	}
 }
 
 func TestParsePartialKeepsDefaults(t *testing.T) {
-	cfg, err := Parse("test.yaml", []byte("log:\n  level: warn\n"))
+	cfg, err := Parse("test.yaml", []byte("log:\n  level: warn\n"+minimal))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Log.Level != "warn" {
-		t.Errorf("level = %q, want warn", cfg.Log.Level)
-	}
-	if cfg.Log.Format != "json" || cfg.Ops.Listen != "127.0.0.1:9090" {
-		t.Errorf("settings left out lost their defaults: %+v", cfg)
-	}
-}
-
-// A section that is present but empty ("log:" with nothing under it) keeps the
-// defaults of everything inside it.
-func TestParseEmptySectionKeepsDefaults(t *testing.T) {
-	cfg, err := Parse("test.yaml", []byte("log:\nops:\n"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg != Default() {
-		t.Errorf("got %+v, want defaults %+v", cfg, Default())
+	want := withUpstream()
+	want.Log.Level = "warn"
+	if !reflect.DeepEqual(cfg, want) {
+		t.Errorf("got\n%+v\nwant\n%+v", cfg, want)
 	}
 }
 
 func TestParseProblems(t *testing.T) {
 	tests := []struct {
 		name  string
-		input string
+		input string   // minimal is appended unless the input sets upstream itself
 		want  []string // substrings that must appear in the error
 	}{
 		{
@@ -86,17 +128,67 @@ func TestParseProblems(t *testing.T) {
 			want:  []string{"line 2, log.format", "json, text"},
 		},
 		{
-			name:  "listen without port",
+			name:  "ops listen without port",
 			input: "ops:\n  listen: localhost\n",
 			want:  []string{"line 2, ops.listen", "host:port"},
 		},
 		{
-			name:  "listen with bad port",
+			name:  "ops listen with bad port",
 			input: "ops:\n  listen: localhost:99999\n",
 			want:  []string{"ops.listen", "0 to 65535"},
 		},
 		{
-			name:  "zero timeout",
+			name:  "server listen without port",
+			input: "server:\n  listen: example.org\n",
+			want:  []string{"line 2, server.listen", "host:port"},
+		},
+		{
+			name:  "both listeners on one address",
+			input: "server:\n  listen: 127.0.0.1:9000\nops:\n  listen: 127.0.0.1:9000\n",
+			want:  []string{"line 4, ops.listen", "already used by server.listen"},
+		},
+		{
+			name:  "bad trusted proxy points at the entry",
+			input: "server:\n  trusted_proxies:\n    - 10.0.0.0/8\n    - not-an-ip\n",
+			want:  []string{"line 4, server.trusted_proxies[1]", `"not-an-ip"`, "10.0.0.0/8"},
+		},
+		{
+			name:  "zero server timeouts",
+			input: "server:\n  read_header_timeout: 0s\n  idle_timeout: -1s\n",
+			want:  []string{"server.read_header_timeout", "server.idle_timeout", "greater than zero"},
+		},
+		{
+			name:  "upstream without scheme",
+			input: "upstream:\n  url: localhost:3000\n",
+			want:  []string{"line 2, upstream.url", "http://"},
+		},
+		{
+			name:  "upstream with unsupported scheme",
+			input: "upstream:\n  url: ftp://example.org\n",
+			want:  []string{"upstream.url", `"http://" or "https://"`},
+		},
+		{
+			name:  "upstream without host",
+			input: "upstream:\n  url: \"http://\"\n",
+			want:  []string{"upstream.url", "no host"},
+		},
+		{
+			name:  "upstream with query",
+			input: "upstream:\n  url: http://example.org/?a=1\n",
+			want:  []string{"upstream.url", "query or fragment"},
+		},
+		{
+			name:  "upstream with password",
+			input: "upstream:\n  url: http://user:secret@example.org\n",
+			want:  []string{"upstream.url", "user name or password"},
+		},
+		{
+			name:  "zero upstream timeouts",
+			input: "upstream:\n  url: http://example.org\n  dial_timeout: 0s\n  response_header_timeout: 0s\n",
+			want:  []string{"upstream.dial_timeout", "upstream.response_header_timeout"},
+		},
+		{
+			name:  "zero shutdown timeout",
 			input: "shutdown_timeout: 0s\n",
 			want:  []string{"line 1, shutdown_timeout", "greater than zero"},
 		},
@@ -123,7 +215,11 @@ func TestParseProblems(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse("test.yaml", []byte(tt.input))
+			input := tt.input
+			if !strings.Contains(input, "upstream:") {
+				input += minimal
+			}
+			_, err := Parse("test.yaml", []byte(input))
 			if err == nil {
 				t.Fatal("expected an error, got none")
 			}
@@ -144,6 +240,33 @@ func TestParseProblems(t *testing.T) {
 	}
 }
 
+// A password in the upstream URL must never be echoed into an error message
+// or a log line.
+func TestUpstreamPasswordIsNotEchoed(t *testing.T) {
+	_, err := Parse("test.yaml", []byte("upstream:\n  url: http://user:hunter2@example.org\n"))
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("the password leaked into the error:\n%v", err)
+	}
+}
+
+func TestSingleAddressBecomesHostPrefix(t *testing.T) {
+	tests := map[string]string{
+		"192.0.2.7":        "192.0.2.7/32",
+		"2001:db8::1":      "2001:db8::1/128",
+		"::ffff:192.0.2.7": "192.0.2.7/32", // IPv4-mapped is treated as IPv4
+		"10.1.2.3/8":       "10.0.0.0/8",   // host bits are cleared
+	}
+	for entry, want := range tests {
+		got, err := parsePrefix(entry)
+		if err != nil || got.String() != want {
+			t.Errorf("parsePrefix(%q) = %v, %v; want %s", entry, got, err, want)
+		}
+	}
+}
+
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 
@@ -159,7 +282,7 @@ func TestLoad(t *testing.T) {
 
 	t.Run("existing file", func(t *testing.T) {
 		path := filepath.Join(dir, "ok.yaml")
-		if err := os.WriteFile(path, []byte("log:\n  level: error\n"), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte("log:\n  level: error\n"+minimal), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		cfg, err := Load(path)
@@ -173,13 +296,14 @@ func TestLoad(t *testing.T) {
 }
 
 // The example file shipped in the repository must always be valid and must
-// spell out the defaults, so it never drifts from the code.
+// spell out the defaults, so it never drifts from the code. upstream.url is
+// the one setting without a default; the example uses a typical local address.
 func TestExampleFileMatchesDefaults(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "xibalba.example.yaml"))
 	if err != nil {
 		t.Fatalf("xibalba.example.yaml is not valid: %v", err)
 	}
-	if cfg != Default() {
-		t.Errorf("xibalba.example.yaml = %+v, want the defaults %+v", cfg, Default())
+	if !reflect.DeepEqual(cfg, withUpstream()) {
+		t.Errorf("xibalba.example.yaml =\n%+v\nwant the defaults\n%+v", cfg, withUpstream())
 	}
 }

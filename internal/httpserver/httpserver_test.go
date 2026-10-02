@@ -98,3 +98,29 @@ func TestRecoverContainsPanicToOneRequest(t *testing.T) {
 		t.Errorf("request after a panic got %d, want 200", rec.Code)
 	}
 }
+
+func TestTimeoutOptions(t *testing.T) {
+	defaults := New(Options{Name: "d", Addr: "127.0.0.1:0", Handler: hello(), Log: quiet()}).srv
+	if defaults.ReadHeaderTimeout != 5*time.Second || defaults.ReadTimeout != 30*time.Second ||
+		defaults.WriteTimeout != 30*time.Second || defaults.IdleTimeout != 90*time.Second {
+		t.Errorf("defaults = %v %v %v %v", defaults.ReadHeaderTimeout, defaults.ReadTimeout, defaults.WriteTimeout, defaults.IdleTimeout)
+	}
+
+	custom := New(Options{
+		Name: "c", Addr: "127.0.0.1:0", Handler: hello(), Log: quiet(),
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       NoTimeout,
+		WriteTimeout:      NoTimeout,
+		IdleTimeout:       time.Minute,
+	}).srv
+	if custom.ReadHeaderTimeout != 2*time.Second || custom.ReadTimeout != 0 ||
+		custom.WriteTimeout != 0 || custom.IdleTimeout != time.Minute {
+		t.Errorf("custom = %v %v %v %v", custom.ReadHeaderTimeout, custom.ReadTimeout, custom.WriteTimeout, custom.IdleTimeout)
+	}
+
+	// The header timeout is the slow-header defence and must survive NoTimeout.
+	guarded := New(Options{Name: "g", Addr: "127.0.0.1:0", Handler: hello(), Log: quiet(), ReadHeaderTimeout: NoTimeout}).srv
+	if guarded.ReadHeaderTimeout != 5*time.Second {
+		t.Errorf("ReadHeaderTimeout with NoTimeout = %v, want the 5s default", guarded.ReadHeaderTimeout)
+	}
+}

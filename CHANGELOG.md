@@ -8,6 +8,17 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Reverse proxy to one upstream website, including websockets and streamed
+  responses. New required setting `upstream.url`; new settings
+  `upstream.preserve_host`, `upstream.dial_timeout`, `upstream.response_header_timeout`.
+- Public listener with `server.listen`, `server.read_header_timeout`, `server.idle_timeout`.
+- Real client address resolution with `server.trusted_proxies`. Forwarding
+  headers from untrusted clients are discarded; `X-Forwarded-For`,
+  `X-Forwarded-Proto`, `X-Forwarded-Host` and `X-Real-IP` are rebuilt for the website.
+- Neutral, accessible, bilingual page with status 502 or 504 when the website
+  cannot be reached. It reveals no internal address.
+- Health components `public` and `upstream`. An unreachable website is
+  reported as `degraded` without failing the health check.
 - Configuration file with full validation. Errors name the file, line and
   setting and say how to fix it; all problems are reported together.
 - `-check` flag to validate a configuration file without starting.

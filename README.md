@@ -18,8 +18,9 @@ challenge page, no tracking, no third-party requests, and one program you run
 on your own server.
 
 > [!IMPORTANT]
-> Xibalba is in early development. The foundation runs today; the proxy and
-> the bot handling are being built. The table below says exactly what exists.
+> Xibalba is in early development. Today it runs in front of a website and
+> passes every request through; the bot handling is being built. The table
+> below says exactly what exists.
 
 ## What it will do
 
@@ -55,8 +56,9 @@ flowchart LR
 | Configuration with line-accurate error messages | Built |
 | Health reporting per component | Built |
 | Start-up, shutdown and failure isolation | Built |
-| Reverse proxy | Next |
-| Rule engine | Planned |
+| Reverse proxy with websocket and streaming support | Built |
+| Real client address behind trusted proxies, spoofed headers ignored | Built |
+| Rule engine | Next |
 | Challenge page | Planned |
 | Crawler classes and identity checks | Planned |
 | Statistics and web interface | Planned |
@@ -65,7 +67,9 @@ The order and the details are in the [roadmap](docs/ROADMAP.md).
 
 ## Try it
 
-You need Go 1.24 or newer.
+You need Go 1.24 or newer and a website to put Xibalba in front of. The
+example configuration expects one at `http://127.0.0.1:3000`; change
+`upstream.url` if yours is elsewhere.
 
 ```sh
 git clone https://github.com/MaMoja/xibalba.git
@@ -75,7 +79,13 @@ cp xibalba.example.yaml xibalba.yaml
 ./bin/xibalba -config xibalba.yaml
 ```
 
-In a second terminal:
+Your website now answers through Xibalba on port 8080:
+
+```sh
+curl http://127.0.0.1:8080/
+```
+
+The health report lists every part separately:
 
 ```sh
 curl http://127.0.0.1:9090/healthz
@@ -87,6 +97,33 @@ curl http://127.0.0.1:9090/healthz
   "components": {
     "ops": {
       "state": "ok"
+    },
+    "public": {
+      "state": "ok"
+    },
+    "upstream": {
+      "state": "ok"
+    }
+  }
+}
+```
+
+If the website goes away, visitors get a plain "unavailable" page and the
+report says which part has the problem, while Xibalba itself keeps running:
+
+```json
+{
+  "state": "degraded",
+  "components": {
+    "ops": {
+      "state": "ok"
+    },
+    "public": {
+      "state": "ok"
+    },
+    "upstream": {
+      "state": "degraded",
+      "detail": "the last request to 127.0.0.1:3000 failed: dial tcp 127.0.0.1:3000: connect: connection refused"
     }
   }
 }

@@ -29,6 +29,24 @@ Newest first. One entry per decision: what, why, who decided.
   reachable when the public side is under load, and are never exposed publicly by default.
 - **Unknown settings are errors.** Agent's choice. A typo must never be ignored silently.
 
+- **`upstream.url` is required and has no default.** Agent's choice. Guessing
+  where someone's website runs would silently proxy to the wrong place.
+- **Forwarding headers are believed only from `server.trusted_proxies`.**
+  Agent's choice. The default is to trust nothing. The client address is
+  resolved once, in `internal/clientip`, and passed on in the request context;
+  no other package reads forwarding headers.
+- **Unreachable website is `degraded`, not `down`.** Agent's choice. `/healthz`
+  must not make a service manager restart Xibalba for a fault in the website.
+- **No whole-request timeouts on the public listener.** Agent's choice.
+  Downloads, uploads, streams and websockets have no natural upper bound. Only
+  the header timeout applies. Limits on slow bodies are on the "Later" list.
+- **Environment proxy settings are ignored for the upstream.** Agent's choice.
+  `HTTP_PROXY` on the host must never reroute traffic meant for the website.
+- **Dry-run mode moved from M1 to M2.** Agent's choice. A setting that does
+  nothing yet would be misleading.
+- **No TLS termination yet.** Agent's choice. Xibalba runs behind the web
+  server that holds the certificate; own TLS is on the "Later" list.
+
 ## Open (owner to decide)
 
 - Copyright holder named in `LICENSE` (currently "The Xibalba Authors").

@@ -1,10 +1,36 @@
 # Xibalba configuration.
 #
-# Copy this file to xibalba.yaml and change what you need. Every setting is
-# optional; the values below are the defaults. The full reference is in
+# Copy this file to xibalba.yaml and change what you need. Only upstream.url is
+# required; every other value below is the default. The full reference is in
 # docs/CONFIGURATION.md. Check a file without starting the server:
 #
 #   xibalba -check -config xibalba.yaml
+
+# The website Xibalba protects.
+upstream:
+  # Where the website is reached from this machine. Required.
+  url: "http://127.0.0.1:3000"
+  # Send the visitor's Host header to the website (true) or the host from
+  # url (false). Most websites need true to build correct links.
+  preserve_host: true
+  # How long connecting to the website may take.
+  dial_timeout: 5s
+  # How long the website may take to start answering a request.
+  response_header_timeout: 60s
+
+# The public side: where visitors, or the web server in front, connect.
+server:
+  # host:port to listen on. The default is reachable from this machine only;
+  # put your web server or load balancer in front, or use "0.0.0.0:8080".
+  listen: "127.0.0.1:8080"
+  # Addresses and networks of reverse proxies in front of Xibalba, for example
+  # ["127.0.0.1", "10.0.0.0/8"]. Only their X-Forwarded-For header is believed.
+  # Leave empty if visitors reach Xibalba directly.
+  trusted_proxies: []
+  # How long a client may take to send its request headers.
+  read_header_timeout: 10s
+  # How long an unused keep-alive connection stays open.
+  idle_timeout: 90s
 
 # What Xibalba writes to its log (standard error).
 log:
