@@ -1,0 +1,23 @@
+# Xibalba configuration.
+#
+# Copy this file to xibalba.yaml and change what you need. Every setting is
+# optional; the values below are the defaults. The full reference is in
+# docs/CONFIGURATION.md. Check a file without starting the server:
+#
+#   xibalba -check -config xibalba.yaml
+
+# What Xibalba writes to its log (standard error).
+log:
+  # Lowest severity that is written: debug, info, warn, error.
+  level: info
+  # json: one JSON object per line, for log collectors.
+  # text: key=value lines, easier to read by eye.
+  format: json
+
+# Internal listener for health checks. Keep it off the public internet.
+ops:
+  # host:port to listen on. The default is reachable from this machine only.
+  listen: "127.0.0.1:9090"
+
+# How long running requests get to finish when Xibalba is asked to stop.
+shutdown_timeout: 10s

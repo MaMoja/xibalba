@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 240" role="img" aria-labelledby="t d">
+  <title id="t">Xibalba</title>
+  <desc id="d">A stepped stone gateway next to the name Xibalba and the line: The gate in front of your website.</desc>
+  <rect width="960" height="240" rx="16" fill="#12201c"/>
+  <g transform="translate(88 48)" fill="none" stroke="#7fd1b0" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0 144 V96 H24 V56 H48 V24 H96 V56 H120 V96 H144 V144"/>
+    <path d="M52 144 V92 H92 V144"/>
+    <path d="M-14 144 H158"/>
+  </g>
+  <g font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="296" y="122" font-size="76" font-weight="700" letter-spacing="2" fill="#f1f5f2">Xibalba</text>
+    <text x="300" y="168" font-size="25" fill="#a9c4b9">The gate in front of your website.</text>
+  </g>
+</svg>

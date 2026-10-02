@@ -1,0 +1,16 @@
+# Build output
+/bin/
+/dist/
+
+# Local configuration (may contain secrets later); the example file is tracked
+/xibalba.yaml
+
+# Test and tooling output
+*.test
+*.out
+coverage.*
+
+# Editors and systems
+.idea/
+.vscode/
+.DS_Store
