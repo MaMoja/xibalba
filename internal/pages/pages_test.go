@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func renderer(t *testing.T) *Renderer {
@@ -103,6 +104,7 @@ func TestPagesAreSelfContainedAndAccessible(t *testing.T) {
 	render := map[string]func(*httptest.ResponseRecorder, *http.Request){
 		"unavailable": func(rec *httptest.ResponseRecorder, req *http.Request) { r.Unavailable(rec, req, 502) },
 		"blocked":     func(rec *httptest.ResponseRecorder, req *http.Request) { r.Blocked(rec, req, "a1b2c3d4") },
+		"limited":     func(rec *httptest.ResponseRecorder, req *http.Request) { r.Limited(rec, req, 90*time.Second) },
 	}
 	for name, fn := range render {
 		for _, lang := range languages {
@@ -584,5 +586,17 @@ func TestAttributionTextsCannotBeReplaced(t *testing.T) {
 		if has(fixedKeys, key) {
 			t.Errorf("%s is listed as replaceable", key)
 		}
+	}
+}
+
+func TestLimitedPage(t *testing.T) {
+	r := renderer(t)
+	rec := httptest.NewRecorder()
+	r.Limited(rec, get("en"), 1500*time.Millisecond)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "2" {
+		t.Errorf("status %d, Retry-After %q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if !strings.Contains(rec.Body.String(), "<h1>Too many requests</h1>") {
+		t.Errorf("body:\n%s", rec.Body)
 	}
 }

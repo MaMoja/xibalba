@@ -61,6 +61,13 @@ type Options struct {
 	// Identify says which crawler a request claims to be. If nil, crawler
 	// conditions never match.
 	Identify func(userAgent string, client netip.Addr) rules.Crawler
+	// Limit counts a request from a client and reports whether the client
+	// is over a request limit and, if so, whether further requests are
+	// refused (deny) or have to pass the check. If nil, nothing is limited.
+	// Requests that a rule explicitly allows are neither counted nor limited.
+	Limit func(client netip.Addr) (over, deny bool, retryAfter time.Duration)
+	// Limited writes the page for a request refused by a limit.
+	Limited func(w http.ResponseWriter, r *http.Request, retryAfter time.Duration)
 	// Challenge handles requests whose decision is "challenge". If nil,
 	// such requests are passed on.
 	Challenge Challenger
@@ -84,6 +91,7 @@ type Gate struct {
 	log     *slog.Logger
 	sources []rules.Source
 	counts  []atomic.Uint64 // one per source, same order
+	trusted []bool          // per source: a rule that allows
 	since   time.Time
 
 	challengesServed atomic.Uint64 // challenge pages shown
@@ -101,7 +109,12 @@ func New(opts Options) *Gate {
 		opts.Now = time.Now
 	}
 	sources := opts.Engine.Sources()
+	trusted := make([]bool, len(sources))
+	for i, s := range sources {
+		trusted[i] = s.Action == rules.Allow && strings.HasPrefix(s.ID, "rule:")
+	}
 	return &Gate{
+		trusted: trusted,
 		opts:    opts,
 		log:     opts.Log.With("component", "rules"),
 		sources: sources,
@@ -112,7 +125,7 @@ func New(opts Options) *Gate {
 
 // ServeHTTP decides what happens to the request and carries it out.
 func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	decision, ok := g.decide(r)
+	decision, client, ok := g.decide(r)
 	if !ok {
 		if g.opts.FailOpen {
 			g.opts.Next.ServeHTTP(w, r)
@@ -132,11 +145,28 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
+	// Request limits. A request that a rule of the site owner explicitly
+	// allows is trusted and not counted; so is nothing else. A limit can
+	// only make the outcome stricter.
+	var over, refuse bool
+	var retryAfter time.Duration
+	if g.opts.Limit != nil && !g.trusted[decision.Source] {
+		over, refuse, retryAfter = g.opts.Limit(client)
+	}
+
 	if g.opts.DryRun {
 		g.opts.Next.ServeHTTP(w, r)
 		return
 	}
-	switch decision.Action {
+	action := decision.Action
+	if over && action != rules.Deny {
+		if refuse {
+			g.opts.Limited(w, r, retryAfter)
+			return
+		}
+		action = rules.Challenge
+	}
+	switch action {
 	case rules.Deny:
 		g.opts.Blocked(w, r, g.sources[decision.Source].Reference)
 	case rules.Challenge:
@@ -158,7 +188,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // decide evaluates the request. The engine is built so that it cannot fail,
 // but this stage stands in front of someone's website: if it fails anyway,
 // the failure is contained here and the configured answer applies.
-func (g *Gate) decide(r *http.Request) (decision rules.Decision, ok bool) {
+func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Addr, ok bool) {
 	defer func() {
 		if p := recover(); p != nil {
 			g.recordFailure(fmt.Sprint(p))
@@ -178,7 +208,7 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, ok bool) {
 	if g.opts.Identify != nil {
 		req.Crawler = g.opts.Identify(req.UserAgent, req.Client)
 	}
-	return g.opts.Engine.Evaluate(&req), true
+	return g.opts.Engine.Evaluate(&req), req.Client, true
 }
 
 func (g *Gate) recordFailure(msg string) {

@@ -303,4 +303,4 @@ addresses count as a genuine crawler. Keep both writable for Xibalba's user only
 - Under a flood of requests that all claim a reverse-DNS-verified crawler from
   many networks, lookups queue up (16 at a time, 3 seconds each at most) and a
   genuine crawler can stay "unknown" longer.
-- Counters per crawler are not kept across restarts (statistics: milestone M5).
+- Counters per crawler are not kept across restarts (statistics: milestone M6).

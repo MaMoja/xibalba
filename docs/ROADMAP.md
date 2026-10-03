@@ -50,30 +50,40 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [ ] Amazon and Meta crawlers: find a verification method Xibalba can use
 - [ ] Per-network limit on queued reverse DNS lookups
 
-## M5: Statistics
+## M5: Limits and detection
+Bots that pretend to be browsers cannot be told by their name. Owner's
+decision (2026-10-03): all of this comes before statistics.
+- [x] Request limits per client and period, switchable, with a list of exempt addresses
+- [ ] Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds; ready-made exceptions for git clients, container registry clients and feed readers
+- [ ] Plausibility of browser headers (a "Chrome" that sends no Chrome headers), as weights
+- [ ] Trap link that only a faulty crawler follows; clients that follow it gain weight
+- [ ] Maze of worthless pages behind the trap link, as an option, off by default
+- [ ] Patterns: one client fetching very many different pages, or the same page again and again
+- [ ] Country condition in rules, with a country database the operator supplies; licence of the database to be checked
+- [ ] Security review of the milestone by a second agent
+
+## M6: Statistics
 - [ ] Aggregated counters per hour: by action, rule, crawler, network
 - [ ] Embedded storage with retention
 - [ ] Prometheus metrics endpoint
 
-## M6: Web interface, read side
+## M7: Web interface, read side
 - [ ] Login, sessions, localhost by default
 - [ ] Dashboard: allowed, challenged, denied over time; top crawlers; top rules
 - [ ] Accessible and usable on a phone
 
-## M7: Web interface, write side
+## M8: Web interface, write side
 - [ ] Preset switches
 - [ ] IP block and allow lists with expiry and notes
 - [ ] Rule editor with validation and request test box
 - [ ] Versioned config with rollback
 
-## M8: Deployment
+## M9: Deployment
 - [ ] Verdict mode for nginx, Caddy, Traefik
-- [ ] Rate limiting: limits per address or network and time window, switchable, with a list of exempt addresses (owner's request, 2026-10-03)
-- [ ] Country condition in rules (block or allow by country), with a country database the operator supplies and updates; licence of the database to be checked (owner's request, 2026-10-03)
 - [ ] Docker image, systemd unit, .deb package
 - [ ] Shared storage backend for multiple instances
 
-## M9: Ready for customers
+## M10: Ready for customers
 - [ ] Admin documentation in German and English, as a documentation site with the breadth of the Anubis documentation and better (owner's request, 2026-10-03):
   - [ ] Design: how the check works, with diagrams
   - [ ] Guides per environment: nginx and Caddy (exist), Apache, HAProxy, Traefik, Docker Compose, Kubernetes, behind Cloudflare, Windows
@@ -104,13 +114,7 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - Hosted variant
 - CMS plugins
 - ASN-based lists and reputation feeds
-- Detecting patterns: one client fetching very many different pages, or the same page again and again
-- Trap links that only a crawler follows (hidden from people, forbidden in robots.txt)
-- Plausibility checks on browser headers (a "Chrome" that sends no Chrome headers), as weights
 - Serving a robots.txt generated from the crawler classes
-- Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds (Anubis' default behaviour, per its documentation as supplied by the owner on 2026-10-03)
-- Ready-made exceptions for programs that are not browsers: git clients, container registry clients, feed readers
 - Tool that turns a robots.txt into rules; tool that turns an IP block list into a rule file
 - Optional file of addresses that hit a trap link, for fail2ban; off by default, with a size limit (stores addresses: needs the privacy treatment of CLAUDE.md section 4)
-- Maze of worthless pages for crawlers that follow trap links ("dataset poisoning" in Anubis): owner to decide whether this fits a product for public authorities
 - Recognising headless browsers by their behaviour

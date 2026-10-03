@@ -29,6 +29,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/httpserver"
 	"github.com/MaMoja/xibalba/internal/license"
 	"github.com/MaMoja/xibalba/internal/lifecycle"
+	"github.com/MaMoja/xibalba/internal/limit"
 	"github.com/MaMoja/xibalba/internal/logging"
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/proxy"
@@ -249,9 +250,23 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	// Request limits, if switched on.
+	var limitFn func(netip.Addr) (bool, bool, time.Duration)
+	if cfg.Limits.Enabled {
+		limiter := limit.New(cfg.Limits.Options())
+		supervisor.Add(limiter)
+		opsMux.Handle("GET /limits", limiter.Handler())
+		limitFn = func(client netip.Addr) (bool, bool, time.Duration) {
+			v := limiter.Count(client)
+			return v.Over, v.Action == "deny", v.RetryAfter
+		}
+	}
+
 	decisions := gate.New(gate.Options{
 		Engine:      engine,
 		Identify:    identify,
+		Limit:       limitFn,
+		Limited:     page.Limited,
 		DryRun:      cfg.Rules.DryRun,
 		FailOpen:    cfg.Rules.OnError == "allow",
 		Challenge:   check,
@@ -293,6 +308,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		"rules", engine.Len(),
 		"dry_run", cfg.Rules.DryRun,
 		"crawlers", len(cfg.Crawlers.Definitions),
+		"limits", cfg.Limits.Enabled,
 	)
 	if found := cfg.License.Info; found != nil {
 		switch cfg.License.State {

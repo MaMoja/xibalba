@@ -287,7 +287,7 @@ curl http://127.0.0.1:9090/decisions
 
 The counters say which rule decided how often. They hold nothing about who
 was decided upon: no address, no path, no user agent. They start at zero each
-time Xibalba starts; lasting statistics are **planned** (milestone M5).
+time Xibalba starts; lasting statistics are **planned** (milestone M6).
 
 ## Mistakes are found at start-up
 
@@ -336,4 +336,4 @@ hardware with `make bench`.
   encoded path (`%252e%252e`) that Xibalba, decoding once, does not recognise.
   Such a website has a flaw of its own; rules cannot fully cover for it.
 - `ip` lists are checked one entry after the other. Very long address lists
-  will get a faster structure with the managed block lists (milestone M7).
+  will get a faster structure with the managed block lists (milestone M8).

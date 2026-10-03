@@ -436,3 +436,77 @@ func TestCrawlerIdentityReachesTheRules(t *testing.T) {
 		t.Errorf("without identification the crawler got %d", rec.Code)
 	}
 }
+
+// limitHarness is a gate whose limiter says what the test tells it to.
+func limitHarness(t *testing.T, over, deny *bool, counted *[]string, change func(*Options)) *harness {
+	return newHarness(t, func(o *Options) {
+		o.Limit = func(client netip.Addr) (bool, bool, time.Duration) {
+			*counted = append(*counted, client.String())
+			return *over, *deny, 42 * time.Second
+		}
+		o.Limited = func(w http.ResponseWriter, _ *http.Request, retryAfter time.Duration) {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, "limited "+retryAfter.String())
+		}
+		o.Challenge = &fakeChallenger{}
+		if change != nil {
+			change(o)
+		}
+	})
+}
+
+func TestRequestLimits(t *testing.T) {
+	var over, deny bool
+	var counted []string
+	h := limitHarness(t, &over, &deny, &counted, nil)
+
+	// Under the limit nothing changes.
+	if rec := h.do(call{target: "/"}); rec.Code != 200 {
+		t.Fatalf("under the limit: %d", rec.Code)
+	}
+	if len(counted) != 1 || counted[0] != "203.0.113.5" {
+		t.Fatalf("counted = %v", counted)
+	}
+
+	// Over a "challenge" limit the client must pass the check; with a pass it carries on.
+	over = true
+	if rec := h.do(call{target: "/"}); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "challenge") {
+		t.Errorf("over a challenge limit: %d %q", rec.Code, rec.Body)
+	}
+	if rec := h.do(call{target: "/", headers: map[string]string{"X-Pass": "valid"}}); rec.Code != 200 {
+		t.Errorf("over a challenge limit, with a pass: %d", rec.Code)
+	}
+
+	// Over a "deny" limit the client is refused, pass or not.
+	deny = true
+	rec := h.do(call{target: "/", headers: map[string]string{"X-Pass": "valid"}})
+	if rec.Code != http.StatusTooManyRequests || rec.Body.String() != "limited 42s" {
+		t.Errorf("over a deny limit: %d %q", rec.Code, rec.Body)
+	}
+
+	// A request a rule denies stays denied with the rule's page.
+	if rec := h.do(call{target: "/admin"}); rec.Code != http.StatusForbidden || !strings.HasPrefix(rec.Body.String(), "blocked") {
+		t.Errorf("denied by a rule and over the limit: %d %q", rec.Code, rec.Body)
+	}
+
+	// A request a rule explicitly allows is neither counted nor limited.
+	before := len(counted)
+	if rec := h.do(call{target: "/", remote: "192.0.2.10:1"}); rec.Code != 200 {
+		t.Errorf("allowed by a rule: %d", rec.Code)
+	}
+	if len(counted) != before {
+		t.Error("a request allowed by a rule was counted")
+	}
+}
+
+func TestRequestLimitsInDryRun(t *testing.T) {
+	over, deny := true, true
+	var counted []string
+	h := limitHarness(t, &over, &deny, &counted, func(o *Options) { o.DryRun = true })
+	if rec := h.do(call{target: "/"}); rec.Code != 200 {
+		t.Errorf("dry run: %d", rec.Code)
+	}
+	if len(counted) != 1 {
+		t.Error("dry run did not count")
+	}
+}

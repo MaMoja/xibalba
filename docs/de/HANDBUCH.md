@@ -333,6 +333,8 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | alles prüfen, was keine Regel ausdrücklich erlaubt | `rules.default_action: challenge` | Abschnitt 6 |
 | Regeln ausprobieren, ohne jemanden auszusperren | `rules.dry_run: true` | Schritt 7 |
 | Regeln in eigene Dateien auslagern | `rules.files` | Abschnitt 6 |
+| Anfragen je Anschluss begrenzen | `limits.enabled: true`, `limits.windows` | Abschnitt 6, „Anfragen begrenzen“ |
+| Adressen von der Begrenzung ausnehmen | `limits.exempt` | Abschnitt 6, „Anfragen begrenzen“ |
 | KI-Trainings-Crawler sperren | `rules.presets: [block-ai-training]` | Abschnitt 6, „Crawler erkennen und prüfen“ |
 | Suchmaschinen und KI-Suche durchlassen, aber nur die echten | `rules.presets` mit `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Abschnitt 6 |
 | Nachahmer sperren, die sich als Googlebot ausgeben | `rules.presets: [block-fake-crawlers]` | Abschnitt 6 |
@@ -627,6 +629,65 @@ oder veraltet ist.
 mitgelieferten Angaben tragen Sie in eigenen Dateien ein (`crawlers.files`);
 das Format beschreibt [CRAWLERS.md](../CRAWLERS.md#your-own-crawlers).
 
+### Anfragen begrenzen
+
+Ein Crawler, der sich als Browser ausgibt, ist am Namen nicht zu erkennen,
+wohl aber an der Menge seiner Anfragen. Die Begrenzung zählt die Anfragen je
+Anschluss und greift ein, wenn es zu viele werden. Sie ist in der
+Voreinstellung ausgeschaltet.
+
+```yaml
+limits:
+  enabled: true
+  windows:
+    - {requests: 300, per: 1m, action: challenge}
+    - {requests: 20000, per: 24h, action: deny}
+  exempt: ["192.0.2.0/24"]
+```
+
+Das bedeutet: Wer mehr als 300 Anfragen in einer Minute sendet, muss die
+Sicherheitsprüfung bestehen. Wer mehr als 20 000 an einem Tag sendet, wird
+abgewiesen, bis die Zahl wieder gesunken ist. Das Netz 192.0.2.0/24 (etwa Ihr
+Büro) wird nie gezählt.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `limits.enabled` | `true` schaltet die Begrenzung ein |
+| `limits.windows` | ein bis vier Grenzen, jeweils `requests` (Anzahl), `per` (Zeitraum, `1s` bis `24h`) und `action` |
+| `action: challenge` | über der Grenze: Sicherheitsprüfung. Ein Browser löst sie einmal und arbeitet ungestört weiter; ein Programm, das sie nicht lösen kann, ist gestoppt |
+| `action: deny` | über der Grenze: Seite „Zu viele Anfragen“ (Status 429), auch mit bestandener Prüfung |
+| `limits.exempt` | **Ausnahmeliste:** Adressen und Netze, die nie gezählt werden. Erweitern oder kürzen Sie die Liste in der Datei und starten Sie neu |
+| `limits.count_by` | `address`: jede Adresse für sich (bei IPv6 der Anschluss, /64). `network`: benachbarte Adressen gemeinsam (IPv4 /24, IPv6 /48) |
+| `limits.max_clients` | wie viele Anschlüsse höchstens gleichzeitig gezählt werden |
+
+**Wer nie begrenzt wird:** die Ausnahmeliste und alles, was eine Ihrer Regeln
+ausdrücklich erlaubt (`action: allow`). Dazu gehören die echten Suchmaschinen
+und KI-Crawler, die Sie über die `allow-`Regelgruppen durchlassen.
+
+**Die Zahlen wählen**
+
+- Alles zählt, was eine Seite über Xibalba lädt: die Seite selbst, Bilder,
+  Stildateien, Skripte. Ein Seitenaufruf kann 50 Anfragen und mehr sein.
+- Beginnen Sie mit `action: challenge` und einer großzügigen Zahl.
+- Mehrere Personen hinter einer Adresse (Büro, Schule, Mobilfunk) teilen sich
+  einen Zähler. Bei `challenge` kostet das jede Person eine Prüfung, bei
+  `deny` sperrt es alle aus. Setzen Sie `deny` deshalb nur als hohe Obergrenze.
+- Probieren Sie es zuerst mit `rules.dry_run: true`: Dann wird gezählt, aber
+  niemand aufgehalten.
+
+**Nachsehen**
+
+```sh
+curl http://127.0.0.1:9090/limits
+```
+
+`clients` ist die Zahl der gerade gezählten Anschlüsse,
+`requests_over_limit` die Zahl der Anfragen über der jeweiligen Grenze seit
+dem Start. Adressen stehen dort nicht.
+
+Zum Datenschutz siehe [Abschnitt 10](#10-datenschutz). Alle Einzelheiten:
+[LIMITS.md](../LIMITS.md) (englisch).
+
 ### Pfade lassen sich nicht umgehen
 
 Eine Regel auf `/admin` greift auch bei `//admin`, `/x/../admin`, `/%61dmin`
@@ -859,6 +920,8 @@ angezeigt; HTML wird nicht ausgeführt.
 | `challenge_retry` | Hinweis, wenn die Prüfung neu gestartet wurde | Die Prüfung konnte nicht abgeschlossen werden und wurde neu gestartet. |
 | `blocked_title` | Überschrift der Blockseite | Diese Anfrage wurde blockiert |
 | `blocked_text` | Absatz der Blockseite | {operator} lässt Anfragen dieser Art nicht zu. Wenn Sie das für einen Fehler halten, nehmen Sie bitte Kontakt auf und nennen Sie die folgende Referenz. |
+| `limited_title` | Überschrift der Seite bei zu vielen Anfragen | Zu viele Anfragen |
+| `limited_text` | Absatz dazu | Von Ihrem Anschluss kamen in kurzer Zeit sehr viele Anfragen. {operator} begrenzt den Zugriff deshalb vorübergehend. Bitte versuchen Sie es etwas später erneut. |
 | `reference_label` | vor der Referenz | Referenz: |
 | `contact_label` | vor der Kontaktangabe | Kontakt: |
 | `unavailable_title` | Überschrift, wenn die Website nicht antwortet | Die Website ist gerade nicht erreichbar |
@@ -1009,8 +1072,9 @@ Rechtsberatung.
 
 | Frage | Antwort |
 |---|---|
-| Speichert Xibalba IP-Adressen? | Nicht auf Datenträger. Die Adresse wird während der Bearbeitung einer Anfrage verwendet und in keine Datei geschrieben. Einzige Ausnahme im Arbeitsspeicher: Gibt sich eine Anfrage als Crawler aus, der per DNS geprüft wird (Bingbot, Applebot), merkt sich Xibalba das Ergebnis zu dieser Adresse bis zu 24 Stunden, um nicht jedes Mal neu zu fragen. Das betrifft keine gewöhnlichen Besucher und endet mit dem Neustart. |
+| Speichert Xibalba IP-Adressen? | Nicht auf Datenträger. Die Adresse wird während der Bearbeitung einer Anfrage verwendet und in keine Datei geschrieben. Im Arbeitsspeicher gibt es zwei Ausnahmen: die Begrenzung der Anfragen, falls eingeschaltet (nächste Zeile), und die Crawler-Prüfung: Gibt sich eine Anfrage als Crawler aus, der per DNS geprüft wird (Bingbot, Applebot), merkt sich Xibalba das Ergebnis zu dieser Adresse bis zu 24 Stunden, um nicht jedes Mal neu zu fragen. Das betrifft keine gewöhnlichen Besucher und endet mit dem Neustart. |
 | Protokolliert Xibalba, wer was aufruft? | Nein. Es gibt kein Zugriffsprotokoll. Auch die ausführlichste Protokollstufe (`debug`) nennt bei einer Entscheidung nur die Regel, nicht Adresse, Pfad oder Kennung. Eine Ausnahme: Tritt bei der Bearbeitung einer Anfrage ein Programmfehler auf, wird zur Fehlersuche der Pfad dieser einen Anfrage protokolliert, nicht aber die Adresse. |
+| Und bei eingeschalteter Begrenzung der Anfragen? | Dann merkt sich Xibalba die Adressen der Anfragenden im Arbeitsspeicher, um zählen zu können. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. Ein Anschluss, der nichts mehr sendet, wird nach dem Doppelten des längsten eingestellten Zeitraums vergessen: bei einer Grenze je Minute nach zwei Minuten, bei einer Grenze je Tag nach spätestens zwei Tagen. Ein Neustart vergisst alles. Adressen der Ausnahmeliste werden gar nicht gespeichert. |
 | Was wird gezählt? | Wie oft jede Regel entschieden hat. Ohne Bezug zu Personen, nur im Arbeitsspeicher, bis zum nächsten Neustart. |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |
 | Was steht in dem Cookie? | Ein Ablaufzeitpunkt und ein Prüfwert, der es an Netz und Browserkennung bindet. Der Prüfwert ist ein Hash mit geheimem Schlüssel; Adresse und Kennung lassen sich daraus nicht zurückgewinnen. Keine Kennung der Person, nichts über aufgerufene Seiten. |
@@ -1043,6 +1107,7 @@ Die Prüfseite weist den Besucher selbst auf das Cookie hin (Text
 | Eine Schnittstelle oder Überwachung erhält plötzlich 403 | Sie fällt unter eine `challenge`- oder `deny`-Regel | In `/decisions` nachsehen, welche Regel zählt. `allow`-Regel darüber setzen. |
 | `crawlers` zeigt `degraded`, `list_error` in `/crawlers` | Der Server erreicht die Adresslisten der Betreiber nicht (Firewall, Proxy, kein Internetzugang) | Ausgehendes HTTPS zu den in `detail` genannten Adressen freigeben. Bis dahin gelten die betroffenen Crawler nicht als echt. |
 | Eine echte Suchmaschine wird geprüft oder gesperrt | Ihre Adressliste fehlt, oder die DNS-Rückfrage ist noch nicht beantwortet | `/crawlers` ansehen: `addresses` und `requests.pending`. Erste Anfrage von einer neuen Adresse ist bei DNS-Prüfung immer „ungeklärt“. |
+| Besucher sehen „Zu viele Anfragen“ | Eine `deny`-Grenze ist zu niedrig, oder viele Personen teilen sich eine Adresse | Grenze erhöhen, auf `challenge` umstellen oder die Adresse in `limits.exempt` aufnehmen. `/limits` zeigt, welche Grenze greift. |
 | Eine Regel greift nicht | Eine Regel weiter oben entscheidet zuerst, oder die Bedingung trifft nicht zu | In `/decisions` sehen Sie, welche Regel stattdessen zählt. Mit `curl -A "…"` gezielt nachstellen. |
 | Eine Regel blockiert zu viel | `prefix` oder `contains` trifft mehr als gedacht | Genauer fassen (siehe „Pfade lassen sich nicht umgehen“ in Abschnitt 6). Erst im Probelauf testen. |
 | Unsicher, was eine Änderung bewirkt | | `rules.dry_run: true`, Zähler beobachten, dann scharf schalten. |
@@ -1071,7 +1136,10 @@ Damit Sie wissen, woran Sie sind:
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
 - **Keine fertigen Pakete.** Xibalba wird aus dem Quelltext gebaut.
 - **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).
-- **Keine Begrenzung der Anfragerate.**
+- **Keine Ländersperren** (geplant, als Nächstes in Arbeit mit weiteren
+  Erkennungsverfahren für getarnte Bots).
+- **Die Ausnahmeliste der Begrenzung** wird nur in der Datei gepflegt, noch
+  nicht in einer Oberfläche.
 - **Meldungen des Programms sind englisch.**
 - **Die Besucherseiten sind mit einem automatischen Prüfwerkzeug und per
   Tastatur geprüft, aber noch nicht mit einem echten Screenreader.**
@@ -1085,6 +1153,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | [CONFIGURATION.md](../CONFIGURATION.md) | jede Einstellung mit Voreinstellung und erlaubten Werten | Englisch |
 | [RULES.md](../RULES.md) | alles, was Regeln können | Englisch |
 | [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
+| [LIMITS.md](../LIMITS.md) | Begrenzung der Anfragen im Detail | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |
 | [SPONSORS.md](../SPONSORS.md) | was frei ist, was die Sponsor-Lizenz freischaltet, wie sie geprüft wird | Englisch |
 | [`xibalba.example.yaml`](../../xibalba.example.yaml) | Vorlage der Konfigurationsdatei mit allen Einstellungen | Englisch |

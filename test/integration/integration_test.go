@@ -1185,3 +1185,105 @@ func TestCrawlersAreIdleWithoutCrawlerRules(t *testing.T) {
 		}
 	}
 }
+
+// --- request limits ---------------------------------------------------------
+
+const limitConfig = `server:
+  listen: PUBLIC
+  trusted_proxies: ["127.0.0.1"]
+limits:
+  enabled: true
+  windows:
+    - {requests: 5, per: 1h, action: challenge}
+    - {requests: 8, per: 2h, action: deny}
+  exempt: ["198.51.100.0/24"]
+rules:
+  list:
+    - name: allow-office
+      match:
+        ip: ["192.0.2.0/24"]
+      action: allow
+`
+
+func TestRequestLimits(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, limitConfig)
+	browser := "Mozilla/5.0 Firefox/130.0"
+
+	statuses := func(addr string, n int) []int {
+		var got []int
+		for i := 0; i < n; i++ {
+			resp, _ := get(t, inst.public+"/", from(addr, browser))
+			got = append(got, resp.StatusCode)
+		}
+		return got
+	}
+
+	// Five requests pass, the next three must pass the check, then the client is refused.
+	got := statuses("203.0.113.9", 10)
+	want := []int{200, 200, 200, 200, 200, 403, 403, 403, 429, 429}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("statuses = %v, want %v", got, want)
+	}
+	resp, body := get(t, inst.public+"/", from("203.0.113.9", browser))
+	retry, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
+	if resp.StatusCode != 429 || !strings.Contains(body, "Too many requests") || retry < 1 || retry > 7200 {
+		t.Errorf("refused request: %d, Retry-After %q, body:\n%.300s", resp.StatusCode, resp.Header.Get("Retry-After"), body)
+	}
+
+	// Other clients are not affected; exempt addresses and requests allowed by a rule are never limited.
+	for name, addr := range map[string]string{"another client": "203.0.113.10", "exempt address": "198.51.100.7", "allowed by a rule": "192.0.2.7"} {
+		n := 4
+		if name != "another client" {
+			n = 12
+		}
+		for _, status := range statuses(addr, n) {
+			if status != 200 {
+				t.Errorf("%s: status %d", name, status)
+				break
+			}
+		}
+	}
+
+	_, body = get(t, inst.ops+"/limits", nil)
+	var report struct {
+		Clients int    `json:"clients"`
+		Exempt  uint64 `json:"exempt_requests"`
+		Limits  []struct {
+			Over uint64 `json:"requests_over_limit"`
+		} `json:"limits"`
+	}
+	if err := json.Unmarshal([]byte(body), &report); err != nil {
+		t.Fatalf("/limits: %v\n%s", err, body)
+	}
+	if report.Clients != 2 || report.Exempt != 12 || len(report.Limits) != 2 || report.Limits[0].Over != 3 || report.Limits[1].Over != 3 {
+		t.Errorf("/limits = %s", body)
+	}
+	if strings.Contains(body, "203.0.113") || strings.Contains(inst.logs.String(), "203.0.113") {
+		t.Error("a client address appears in the report or the log")
+	}
+	if _, report := health(t, inst); report.State != "ok" {
+		t.Errorf("health = %+v", report)
+	}
+}
+
+// A client that is over a "challenge" limit solves the check once and carries on.
+func TestBrowserGetsPastAChallengeLimit(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "limits:\n  enabled: true\n  windows:\n    - {requests: 2, per: 1h, action: challenge}\nchallenge:\n  difficulty: 10\n")
+	v := newVisitor(t)
+	var page string
+	for i := 0; i < 3; i++ {
+		_, page = v.do("GET", inst.public+"/seite", nil)
+	}
+	k := parseTask(t, page)
+	resp, _ := v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow", k.solve()))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("answer: status %d", resp.StatusCode)
+	}
+	for i := 0; i < 5; i++ {
+		if resp, body := v.do("GET", inst.public+"/seite", nil); resp.StatusCode != 200 || !strings.Contains(body, "website says hello") {
+			t.Fatalf("request %d after passing the check: %d", i, resp.StatusCode)
+		}
+	}
+}

@@ -5,6 +5,8 @@
   "unavailable_text": "Please try again in a few minutes.",
   "blocked_title": "This request was blocked",
   "blocked_text": "{operator} does not allow requests of this kind. If you think this is a mistake, please get in touch and quote the following reference.",
+  "limited_title": "Too many requests",
+  "limited_text": "A large number of requests came from your connection in a short time. {operator} is therefore limiting access for a while. Please try again a little later.",
   "reference_label": "Reference:",
   "contact_label": "Contact:",
   "challenge_title": "A quick security check",

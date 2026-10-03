@@ -154,6 +154,7 @@ internal/clientip/    real client address behind trusted proxies
 internal/rules/       compile a rule set, decide about a request
 internal/crawlers/    know the crawlers, tell genuine from impostor
 data/                 built-in crawler definitions and presets (embedded)
+internal/limit/       count requests per client, say when one is over a limit
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
@@ -167,7 +168,7 @@ test/webserver/       checks behind real nginx and Caddy (not in CI)
 examples/rules/       example rule files, kept valid by a test
 examples/nginx/       tested nginx configuration; the handbook shows it
 examples/caddy/       tested Caddy configuration; the handbook shows it
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, challenge, development
 docs/de/              operator handbook in German
 ```
 

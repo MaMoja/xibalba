@@ -45,6 +45,8 @@ type Config struct {
 	Rules Rules `yaml:"rules"`
 	// Crawlers says how crawlers are recognised and verified.
 	Crawlers Crawlers `yaml:"crawlers"`
+	// Limits are the request limits per client.
+	Limits Limits `yaml:"limits"`
 	// Challenge is the check a client has to pass when a rule says "challenge".
 	Challenge Challenge `yaml:"challenge"`
 	// Pages adapts the pages Xibalba shows to visitors.
@@ -289,6 +291,7 @@ func Default() Config {
 		},
 		Rules:    defaultRules(),
 		Crawlers: defaultCrawlers(),
+		Limits:   defaultLimits(),
 		Challenge: Challenge{
 			Difficulty:        18,
 			NoJavaScript:      "button",
@@ -348,6 +351,9 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 	lines := lineIndex(data)
 	problems := cfg.validate(lines)
 	cfg.Challenge.check(filepath.Dir(name), func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
+	cfg.Limits.check(func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
 	cfg.checkLicense(filepath.Dir(name), env, func(path, message, hint string) {

@@ -136,6 +136,21 @@ Without one, Xibalba makes no outgoing connection.
 | `crawlers.cache_dir` | empty | Path of an existing directory, relative to the configuration file | Keeps the downloaded lists across restarts. Empty: memory only. Must be writable for Xibalba's user and for nobody else. |
 | `crawlers.files` | `[]` | List of paths, relative to the configuration file; at most 64 | Your own crawler definition files. A crawler defined there replaces the built-in one of the same name. |
 
+### `limits`
+
+Request limits per client; explained in [LIMITS.md](LIMITS.md).
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `limits.enabled` | `false` | `true`, `false` | Switches the limits on. |
+| `limits.count_by` | `address` | `address`, `network` | What one client is. `address`: an IPv4 address, an IPv6 /64. `network`: an IPv4 /24, an IPv6 /48. |
+| `limits.windows` | one limit: 300 requests per `1m`, `challenge` | One to four entries `{requests, per, action}`; requests 1 to 10000000; per `1s` to `24h`, each period once; action `challenge` or `deny` | The limits. Over a `challenge` limit a client has to pass the security check; over a `deny` limit it gets status `429`. |
+| `limits.exempt` | `[]` | List of IP addresses and networks | Clients that are never counted. |
+| `limits.max_clients` | `100000` | 1000 to 5000000 | How many clients are tracked at most. About 15 MB per 100000. |
+
+The settings are checked even while `limits.enabled` is `false`. Requests
+that a rule explicitly allows are never counted.
+
 ### `challenge`
 
 The security check a client has to pass when a rule or threshold decides
@@ -177,6 +192,8 @@ Text names for `pages.texts`:
 | `operator` | Inside other texts, where they say `{operator}` | The operator of this website |
 | `blocked_title` | Heading and window title of the block page | This request was blocked |
 | `blocked_text` | Paragraph of the block page | {operator} does not allow requests of this kind. If you think this is a mistake, please get in touch and quote the following reference. |
+| `limited_title` | Heading and window title of the page for a client over a `deny` limit | Too many requests |
+| `limited_text` | Paragraph of that page | A large number of requests came from your connection in a short time. {operator} is therefore limiting access for a while. Please try again a little later. |
 | `reference_label` | In front of the reference on the block page | Reference: |
 | `contact_label` | In front of `pages.contact` on the block page | Contact: |
 | `unavailable_title` | Heading and window title of the unavailable page | The website is currently unavailable |
@@ -259,6 +276,7 @@ Endpoints:
 |---|---|
 | `GET /healthz` | JSON health report. Status `200` while Xibalba can serve, `503` when a component of Xibalba is down. |
 | `GET /version` | JSON with the version, commit and Go version of the running build. |
+| `GET /limits` | Only while `limits.enabled` is `true`. JSON with the limits, how many clients are being counted and how many requests were over each limit. Holds no address. Example in [LIMITS.md](LIMITS.md#looking-at-what-happens). |
 | `GET /crawlers` | JSON with every known crawler: operator, class, source, how it is verified, the state of its address list, and how many requests claimed to be it. Holds no client address. Example in [CRAWLERS.md](CRAWLERS.md#looking-at-what-happens). |
 | `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 

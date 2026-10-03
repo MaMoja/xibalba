@@ -92,6 +92,7 @@ shutdown_timeout: 30s
 		},
 		Rules:           defaultRules(),
 		Crawlers:        defaultCrawlers(),
+		Limits:          defaultLimits(),
 		Challenge:       Default().Challenge,
 		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},

@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Request limits (`limits`). Up to four limits per client, each with a
+  number of requests, a period and an action: `challenge` (the client has to
+  pass the security check) or `deny` (status 429 with `Retry-After` and a
+  page of its own). Off by default. Addresses in `limits.exempt` and requests
+  that a rule explicitly allows are never counted. `GET /limits` shows the
+  state without any address.
 - Crawler identity. Xibalba knows 23 crawlers of OpenAI, Anthropic,
   Perplexity, Google, Microsoft, Apple, DuckDuckGo, Common Crawl, Meta and
   Amazon, each with its class (`training`, `ai-search`, `user-fetch`,

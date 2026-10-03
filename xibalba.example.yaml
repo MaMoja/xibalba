@@ -93,6 +93,37 @@ crawlers:
   # defined there replaces the built-in one of the same name.
   files: []
 
+# Request limits per client. Off by default. A client that sends more than a
+# limit allows has to pass the security check, or is refused for a while.
+# Requests that one of your rules explicitly allows (action: allow) are never
+# limited; that includes verified crawlers let through by a preset.
+# See docs/LIMITS.md.
+limits:
+  enabled: false
+  # What counts as one client:
+  #   address: each IPv4 address on its own; for IPv6 the /64, which is one
+  #            connection.
+  #   network: neighbouring addresses together (IPv4 /24, IPv6 /48). Catches
+  #            crawlers that spread over many addresses of one network, but
+  #            also counts unrelated people of one network together.
+  count_by: address
+  # One to four limits. "per" is from 1s to 24h. action: challenge or deny.
+  # With "challenge", a browser solves the check once and carries on; a
+  # program that cannot solve it is stopped. Example with a daily limit:
+  #
+  #   windows:
+  #     - {requests: 300, per: 1m, action: challenge}
+  #     - {requests: 20000, per: 24h, action: deny}
+  windows:
+    - requests: 300
+      per: 1m
+      action: challenge
+  # Addresses and networks that are never counted: your own office, your
+  # monitoring, a partner's server. Example: ["192.0.2.0/24", "2001:db8::/32"]
+  exempt: []
+  # How many clients are tracked at most (memory: about 15 MB per 100000).
+  max_clients: 100000
+
 # The security check a client has to pass when a rule or threshold says
 # "challenge". Explained in docs/CHALLENGE.md.
 challenge:

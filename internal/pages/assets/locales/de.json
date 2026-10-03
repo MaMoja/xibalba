@@ -5,6 +5,8 @@
   "unavailable_text": "Bitte versuchen Sie es in einigen Minuten erneut.",
   "blocked_title": "Diese Anfrage wurde blockiert",
   "blocked_text": "{operator} lässt Anfragen dieser Art nicht zu. Wenn Sie das für einen Fehler halten, nehmen Sie bitte Kontakt auf und nennen Sie die folgende Referenz.",
+  "limited_title": "Zu viele Anfragen",
+  "limited_text": "Von Ihrem Anschluss kamen in kurzer Zeit sehr viele Anfragen. {operator} begrenzt den Zugriff deshalb vorübergehend. Bitte versuchen Sie es etwas später erneut.",
   "reference_label": "Referenz:",
   "contact_label": "Kontakt:",
   "challenge_title": "Kurze Sicherheitsprüfung",

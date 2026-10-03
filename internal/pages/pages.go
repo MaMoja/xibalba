@@ -32,11 +32,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed assets/page.html assets/challenge.html assets/challenge.js assets/style.css assets/locales/*.json
@@ -52,6 +54,7 @@ var keys = []string{
 	"operator",
 	"unavailable_title", "unavailable_text",
 	"blocked_title", "blocked_text",
+	"limited_title", "limited_text",
 	"reference_label", "contact_label",
 	"challenge_title", "challenge_text", "challenge_cookie",
 	"challenge_working", "challenge_done",
@@ -310,6 +313,15 @@ func (r *Renderer) Blocked(w http.ResponseWriter, req *http.Request, reference s
 	r.write(w, req, http.StatusForbidden, "blocked", reference)
 }
 
+// Limited tells the visitor that too many requests came from their
+// connection. retryAfter is how long until it is worth trying again.
+func (r *Renderer) Limited(w http.ResponseWriter, req *http.Request, retryAfter time.Duration) {
+	if seconds := int(math.Ceil(retryAfter.Seconds())); seconds > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	}
+	r.write(w, req, http.StatusTooManyRequests, "limited", "")
+}
+
 // ChallengeView is one task to show on the challenge page.
 type ChallengeView struct {
 	// Action is where the form is sent.
@@ -411,7 +423,7 @@ type view struct {
 func (r *Renderer) write(w http.ResponseWriter, req *http.Request, status int, kind, reference string) {
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
 	v := view{CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
-	if kind == "blocked" {
+	if kind == "blocked" || kind == "limited" {
 		v.Contact = r.contact
 	}
 	for _, lang := range languages {

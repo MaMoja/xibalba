@@ -34,6 +34,8 @@ flowchart TD
     main --> clientip
     main --> rules
     main --> crawlers
+    main --> limit
+    config --> limit
     config --> crawlers
     config --> data
     crawlers --> health
@@ -79,6 +81,7 @@ the same code that later uses them.
 | `internal/rules` | Decide what happens to a request: compile a rule set, evaluate requests against it |
 | `internal/crawlers` | Know the crawlers of the web and tell a genuine one from an impostor |
 | `data` | Hold the crawler definitions and presets that are built into the binary |
+| `internal/limit` | Count requests per client and say when a client is over a limit |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
 | `internal/challenge` | Make a client pass a check, verify its answer, recognise its pass |
@@ -126,6 +129,7 @@ cannot recover from.
 | An address list cannot be downloaded, or its content is refused | The previous list stays in use; the download is retried after 1, 5 and 30 minutes. Without a previous list the crawlers concerned are "unknown": not let through as crawlers, not denied as impostors. Requests are served as usual. | One warning per outage with `component=crawlers`; `crawlers` is `degraded` in `/healthz`; `list_error` in `/crawlers` |
 | An address list has not been renewed for over a week | It is no longer used; as above. | Same |
 | DNS does not answer | The reverse DNS check decides nothing and is retried after a minute. Crawlers verified that way are "unknown" meanwhile. | `pending` in `/crawlers` |
+| More clients are active than the limit table holds | Older entries make way; their counts start again. Requests are served as usual. | `clients` in `/limits` stays at `limits.max_clients` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
@@ -136,7 +140,7 @@ The public side is a pipeline of stages. Each stage is a small interface, so a
 stage can be tested alone, swapped, or switched off in configuration.
 
 Built today: the listener, client identity, rules with the block page, the
-crawler identity, the challenge, and the upstream proxy. Lasting statistics
+crawler identity, request limits, the challenge, and the upstream proxy. Lasting statistics
 are **planned**.
 
 Requests under `/.xibalba/` are Xibalba's own (the challenge's answer
@@ -148,7 +152,8 @@ flowchart LR
     L[Listener] --> CI[Client identity<br>real IP, trusted proxies]
     CI --> ID[Crawler identity<br>verified or unidentified]
     ID --> RU[Rules<br>match and weigh]
-    RU --> AC{Action}
+    RU --> LI[Limits<br>requests per client]
+    LI --> AC{Action}
     AC -->|allow| UP[Upstream proxy]
     AC -->|challenge| CH[Challenge]
     AC -->|deny| BL[Block page]

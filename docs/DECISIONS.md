@@ -4,6 +4,24 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-03
 
+- **Limits and detection (new milestone M5) come before statistics.** Owner.
+- **The maze of worthless pages for crawlers will be an option, off by
+  default.** Owner.
+- **Request limits: sliding estimate from two fixed periods per client.**
+  Agent. Two counters per limit, no list of timestamps; a client cannot
+  double its allowance at a period boundary. Sharded table with a fixed upper
+  size; when full, entries make way instead of new clients going uncounted.
+- **A request that a rule explicitly allows is not counted or limited.**
+  Agent. The site owner already said it is trusted; verified crawlers let
+  through by a preset are covered without a setting of their own.
+- **A limit can only make an outcome stricter**, and `deny` by a limit has
+  its own page with status 429. Agent.
+- **IPv6 clients are counted per /64.** Agent. One connection owns a /64.
+- **Default limit when switched on: 300 requests per minute, action
+  `challenge`.** Agent, for the owner to confirm. With `challenge` a browser
+  loses nothing but one check.
+- **Wording of the "Too many requests" page.** Agent's draft, for the owner
+  to confirm.
 - **Crawler identity is its own package (`internal/crawlers`); rules test a
   plain `Crawler` value.** Agent. The two packages do not import each other;
   `cmd/xibalba` translates. A fault in list downloads or DNS therefore cannot
