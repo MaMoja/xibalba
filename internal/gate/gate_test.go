@@ -135,7 +135,7 @@ func TestEnforcement(t *testing.T) {
 		{"allow rule comes first", call{target: "/admin", remote: "192.0.2.10:1"}, 200, "rule:office"},
 		{"forged forwarding header does not make an office client", call{target: "/admin", headers: map[string]string{"X-Forwarded-For": "192.0.2.10"}}, 403, "rule:block-admin"},
 		{"trusted proxy's header does", call{target: "/admin", remote: "10.0.0.1:1", headers: map[string]string{"X-Forwarded-For": "192.0.2.10"}}, 200, "rule:office"},
-		{"score reaches the challenge threshold: passed on until the challenge exists", call{target: "/", headers: map[string]string{"Accept-Language": ""}}, 200, "threshold:10"},
+		{"score reaches the challenge threshold, no challenger configured: passed on", call{target: "/", headers: map[string]string{"Accept-Language": ""}}, 200, "threshold:10"},
 		{"lower-case method", call{method: "get", target: "/admin"}, 403, "rule:block-admin"},
 	}
 	for _, tt := range tests {
@@ -322,4 +322,72 @@ func TestConcurrentRequests(t *testing.T) {
 	if got := h.count("rule:block-admin"); got != 4000 {
 		t.Errorf("count = %d, want 4000", got)
 	}
+}
+
+// fakeChallenger passes requests that carry the header X-Pass.
+type fakeChallenger struct{ served int }
+
+func (f *fakeChallenger) Passed(r *http.Request) bool { return r.Header.Get("X-Pass") == "valid" }
+func (f *fakeChallenger) Serve(w http.ResponseWriter, _ *http.Request) {
+	f.served++
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = io.WriteString(w, "challenge page")
+}
+func (f *fakeChallenger) Counts() (uint64, uint64) { return 7, 3 }
+
+func TestChallengeEnforcement(t *testing.T) {
+	noLanguage := map[string]string{"Accept-Language": ""} // weight 10 reaches the challenge threshold
+
+	t.Run("without a pass the client gets the challenge page", func(t *testing.T) {
+		ch := &fakeChallenger{}
+		h := newHarness(t, func(o *Options) { o.Challenge = ch })
+		rec := h.do(call{target: "/", headers: noLanguage})
+		if rec.Code != http.StatusForbidden || rec.Body.String() != "challenge page" || h.reached != 0 || ch.served != 1 {
+			t.Errorf("status %d, body %q, website reached %d, pages served %d", rec.Code, rec.Body.String(), h.reached, ch.served)
+		}
+	})
+
+	t.Run("with a pass the request goes through", func(t *testing.T) {
+		ch := &fakeChallenger{}
+		h := newHarness(t, func(o *Options) { o.Challenge = ch })
+		rec := h.do(call{target: "/", headers: map[string]string{"Accept-Language": "", "X-Pass": "valid"}})
+		if rec.Code != 200 || h.reached != 1 || ch.served != 0 {
+			t.Errorf("status %d, website reached %d, pages served %d", rec.Code, h.reached, ch.served)
+		}
+	})
+
+	t.Run("a pass does not help against a deny rule", func(t *testing.T) {
+		h := newHarness(t, func(o *Options) { o.Challenge = &fakeChallenger{} })
+		if rec := h.do(call{target: "/admin", headers: map[string]string{"X-Pass": "valid"}}); rec.Code != http.StatusForbidden || h.reached != 0 {
+			t.Errorf("status %d, website reached %d; a denied request must stay denied", rec.Code, h.reached)
+		}
+	})
+
+	t.Run("allowed requests are never challenged", func(t *testing.T) {
+		ch := &fakeChallenger{}
+		h := newHarness(t, func(o *Options) { o.Challenge = ch })
+		if rec := h.do(call{target: "/"}); rec.Code != 200 || ch.served != 0 {
+			t.Errorf("status %d, pages served %d", rec.Code, ch.served)
+		}
+	})
+
+	t.Run("dry run shows no challenge", func(t *testing.T) {
+		ch := &fakeChallenger{}
+		h := newHarness(t, func(o *Options) { o.Challenge = ch; o.DryRun = true })
+		if rec := h.do(call{target: "/", headers: noLanguage}); rec.Code != 200 || ch.served != 0 {
+			t.Errorf("status %d, pages served %d; dry run must enforce nothing", rec.Code, ch.served)
+		}
+	})
+
+	t.Run("counters", func(t *testing.T) {
+		h := newHarness(t, func(o *Options) { o.Challenge = &fakeChallenger{} })
+		h.do(call{target: "/", headers: noLanguage})
+		h.do(call{target: "/", headers: noLanguage})
+		h.do(call{target: "/", headers: map[string]string{"Accept-Language": "", "X-Pass": "valid"}})
+		got := h.gate.Snapshot().Challenge
+		want := ChallengeCounts{Served: 2, Passed: 1, Solved: 7, Failed: 3}
+		if got != want {
+			t.Errorf("challenge counts = %+v, want %+v", got, want)
+		}
+	})
 }

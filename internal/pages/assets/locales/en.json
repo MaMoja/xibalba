@@ -6,5 +6,15 @@
   "blocked_title": "This request was blocked",
   "blocked_text": "{operator} does not allow requests of this kind. If you think this is a mistake, please get in touch and quote the following reference.",
   "reference_label": "Reference:",
-  "contact_label": "Contact:"
+  "contact_label": "Contact:",
+  "challenge_title": "A quick security check",
+  "challenge_text": "{operator} protects these pages against automated mass requests. Your browser is solving a short calculation for this. It usually takes only a few seconds; you do not need to do anything.",
+  "challenge_cookie": "Afterwards a cookie is stored that only records that the check was passed.",
+  "challenge_working": "The check is running …",
+  "challenge_done": "Check passed. You are being forwarded.",
+  "challenge_manual": "Your browser does not run JavaScript. Please wait a few seconds and then choose “Continue”.",
+  "challenge_button": "Continue",
+  "challenge_needs_script": "JavaScript must be switched on for this check. Please switch JavaScript on and reload the page.",
+  "challenge_too_early": "That was a little too fast. Please wait a few seconds and then choose “Continue” again.",
+  "challenge_retry": "The check could not be completed and has been started again."
 }

@@ -33,12 +33,19 @@ flowchart TD
     main --> buildinfo
     main --> clientip
     main --> rules
+    main --> token
+    main --> challenge
     main --> gate
     main --> pages
     main --> proxy
     logging --> config
     config --> rules
     httpserver --> health
+    config --> pages
+    config --> challenge
+    config --> token
+    challenge --> token
+    challenge --> clientip
     gate --> rules
     gate --> clientip
     gate --> health
@@ -46,8 +53,11 @@ flowchart TD
     proxy --> clientip
 ```
 
-`gate` and `proxy` do not import `pages`: they are handed the functions that
-write a page. `gate` uses the rule engine through a two-method interface.
+`gate`, `challenge` and `proxy` do not import `pages`: they are handed the
+functions that write a page. `gate` uses the rule engine and the challenge
+through small interfaces and imports neither implementation of the latter.
+`config` imports the feature packages only to validate their settings with
+the same code that later uses them.
 
 | Package | Its one job |
 |---|---|
@@ -60,6 +70,8 @@ write a page. `gate` uses the rule engine through a two-method interface.
 | `internal/clientip` | Work out the real address of the client behind a request |
 | `internal/rules` | Decide what happens to a request: compile a rule set, evaluate requests against it |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
+| `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
+| `internal/challenge` | Make a client pass a check, verify its answer, recognise its pass |
 | `internal/pages` | Render the pages Xibalba itself shows to visitors |
 | `internal/proxy` | Forward an allowed request to the website and answer when it cannot be reached |
 | `internal/buildinfo` | Say which build is running |
@@ -94,6 +106,9 @@ cannot recover from.
 | A client sends forged forwarding headers | They are discarded unless the connection comes from a trusted proxy. | Not logged: this is normal traffic |
 | A rule or rule file has a mistake | The program does not start. Every mistake is listed with file, line, setting and fix. | Standard error, exit code 1 |
 | Evaluating a request fails inside Xibalba | The configured answer applies (`rules.on_error`): the request is passed on, or refused with a 503 page. `rules` turns `degraded` for five minutes. One log line per burst, not per request. | Log line `a request could not be evaluated` with `component=rules`, `/healthz`, `failures` in `/decisions` |
+| The signing key file is damaged, unreadable or cannot be created | The program does not start and says which file and why. `-check` finds this beforehand without creating anything. | Log line `start-up failed` with `component=challenge`, exit code 1 |
+| A client sends a wrong, expired, forged or foreign answer to a challenge | It gets a new task and a short note. No pass. Counted as `failed`. | `challenge.failed` in `/decisions` |
+| The system's random source fails while issuing a task | That request gets a plain 503. | Log line `no random numbers available` with `component=challenge` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
@@ -103,10 +118,13 @@ cannot recover from.
 The public side is a pipeline of stages. Each stage is a small interface, so a
 stage can be tested alone, swapped, or switched off in configuration.
 
-Built today: the listener, client identity, rules with the block page, and
-the upstream proxy. Crawler identity, the challenge and lasting statistics are
-**planned**; until the challenge exists, a request that would be challenged is
-counted and passed on.
+Built today: the listener, client identity, rules with the block page, the
+challenge, and the upstream proxy. Crawler identity and lasting statistics are
+**planned**.
+
+Requests under `/.xibalba/` are Xibalba's own (the challenge's answer
+address). They are routed to the challenge right after client identity and
+never reach the rules or the website.
 
 ```mermaid
 flowchart LR
@@ -131,7 +149,6 @@ Planned packages and their seams:
 | Package | Its one job | Interface it exposes |
 |---|---|---|
 | `internal/identity` | Decide whether a claimed crawler is genuine | `Verifier` |
-| `internal/challenge` | Issue and verify challenges and pass tokens | `Challenger` per challenge type |
 | `internal/stats` | Count decisions | `Recorder` |
 | `internal/admin` | Serve the web interface | `http.Handler` |
 
@@ -152,7 +169,7 @@ Rules and translations work today; the rest is **planned**.
 - **Rules and rule sets**: data files, loaded and validated at start-up. See [RULES.md](RULES.md).
 - **Translations of visitor pages**: one JSON file per language in `internal/pages/assets/locales`, plus its code in the language list of that package. A test checks that every language has every text.
 - **Crawler definitions**: data files under `data/crawlers/`.
-- **Challenge types**: implement `Challenger`, register under a name, select it in a rule.
+- **Challenge methods**: a client names the method it answered with (`pow`, `button`); each is verified by its own branch in `internal/challenge`. Selecting a method or difficulty per rule is planned.
 - **Storage backends**: implement the storage interface for challenge state or statistics.
 - **Wording of visitor pages**: operator name, contact line and any text, from the `pages` section of the configuration (built).
 - **Branding**: customer logo and accent colour from configuration.

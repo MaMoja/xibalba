@@ -357,3 +357,142 @@ func TestCheck(t *testing.T) {
 		t.Errorf("empty options have problems: %+v", problems)
 	}
 }
+
+func challengePageFor(t *testing.T, opts Options, lang string, v ChallengeView) (*httptest.ResponseRecorder, string) {
+	t.Helper()
+	r, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	r.Challenge(rec, get(lang), v)
+	return rec, rec.Body.String()
+}
+
+var task = ChallengeView{
+	Action: "/.xibalba/verify", Token: "v1.payload.signature", Return: "/wiki/page?id=7",
+	Nonce: "00112233445566778899aabbccddeeff", Difficulty: 18, AllowButton: true,
+}
+
+func TestChallengePage(t *testing.T) {
+	rec, page := challengePageFor(t, Options{}, "de", task)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+	for _, want := range []string{
+		`<html lang="de">`,
+		"<h1>Kurze Sicherheitsprüfung</h1>",
+		"<title>Kurze Sicherheitsprüfung</title>",
+		"Der Betreiber dieser Website schützt diese Seiten vor automatisierten Massenabrufen.",
+		"ein Cookie gespeichert",
+		`<form id="xibalba-form" method="post" action="/.xibalba/verify"`,
+		`data-nonce="00112233445566778899aabbccddeeff"`,
+		`data-difficulty="18"`,
+		`data-working="Die Prüfung läuft …"`,
+		`<input type="hidden" name="token" value="v1.payload.signature">`,
+		`<input type="hidden" name="return" value="/wiki/page?id=7">`,
+		`<input type="hidden" name="method" value="button">`,
+		`<input type="hidden" name="solution" value="">`,
+		`<p id="xibalba-status" role="status" aria-live="polite" hidden></p>`,
+		`<button type="submit">Weiter</button>`,
+		`<details lang="en">`,
+		"<h2>A quick security check</h2>",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("challenge page is missing %s", want)
+		}
+	}
+	if n := strings.Count(page, "<h1"); n != 1 {
+		t.Errorf("%d h1 headings, want exactly one", n)
+	}
+	if strings.Contains(page, `role="alert"`) {
+		t.Error("a first challenge shows a notice")
+	}
+	if strings.Contains(page, "{operator}") {
+		t.Error("a placeholder was sent to the visitor")
+	}
+	for _, banned := range []string{"<img", "<link", "<iframe", "http://", "https://", "src=", "@import", "url(", "onclick", "javascript:", "eval(", "innerHTML", "XMLHttpRequest", "fetch("} {
+		if strings.Contains(page, banned) {
+			t.Errorf("challenge page contains %q", banned)
+		}
+	}
+	if n := strings.Count(page, "<script"); n != 1 {
+		t.Errorf("%d script blocks, want exactly one", n)
+	}
+}
+
+func TestChallengePageNotices(t *testing.T) {
+	for notice, want := range map[string]string{
+		"too_early": "That was a little too fast.",
+		"retry":     "The check could not be completed and has been started again.",
+	} {
+		v := task
+		v.Notice = notice
+		_, page := challengePageFor(t, Options{}, "en", v)
+		if !strings.Contains(page, `<p role="alert" class="notice">`+want) {
+			t.Errorf("notice %q is not shown as an alert:\n%s", notice, page)
+		}
+	}
+	v := task
+	v.Notice = "something-unknown"
+	if _, page := challengePageFor(t, Options{}, "en", v); strings.Contains(page, `role="alert"`) || strings.Contains(page, "something-unknown") {
+		t.Error("an unknown notice code reached the page")
+	}
+}
+
+func TestChallengePageWithoutButton(t *testing.T) {
+	v := task
+	v.AllowButton = false
+	_, page := challengePageFor(t, Options{}, "en", v)
+	if strings.Contains(page, "<button") {
+		t.Error("the page offers a button although the path without JavaScript is off")
+	}
+	if !strings.Contains(page, "JavaScript must be switched on for this check.") {
+		t.Errorf("the page does not say that JavaScript is needed:\n%s", page)
+	}
+}
+
+// The task values come back from the client on a retry. They must never
+// become markup or script.
+func TestChallengeValuesAreEscaped(t *testing.T) {
+	v := task
+	v.Token = `"><script>alert(1)</script>`
+	v.Return = `/x" onmouseover="alert(1)`
+	v.Nonce = `"><img src=x>`
+	_, page := challengePageFor(t, Options{}, "de", v)
+	if strings.Count(page, "<script") != 1 || strings.Contains(page, "<img") || strings.Contains(page, `" onmouseover="`) {
+		t.Errorf("a task value became markup:\n%s", page)
+	}
+}
+
+func TestChallengePolicyAllowsExactlyItsScriptAndStyle(t *testing.T) {
+	rec, page := challengePageFor(t, Options{}, "de", task)
+	csp := rec.Header().Get("Content-Security-Policy")
+
+	for tag, directive := range map[string]string{"style": "style-src", "script": "script-src"} {
+		start, end := strings.Index(page, "<"+tag+">"), strings.Index(page, "</"+tag+">")
+		if start < 0 || end < 0 {
+			t.Fatalf("no %s block", tag)
+		}
+		sum := sha256.Sum256([]byte(page[start+len(tag)+2 : end]))
+		want := directive + " 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+		if !strings.Contains(csp, want) {
+			t.Errorf("the policy does not allow the %s block actually sent.\npolicy: %s\nneeded: %s", tag, csp, want)
+		}
+	}
+	if !strings.HasPrefix(csp, "default-src 'none'; ") || strings.Contains(csp, "unsafe") || !strings.Contains(csp, "form-action 'self'") {
+		t.Errorf("weak or wrong policy: %s", csp)
+	}
+}
+
+func TestChallengePageUsesOperatorAndCustomTexts(t *testing.T) {
+	opts := Options{
+		Operator: "Stadt Musterhausen",
+		Texts:    map[string]map[string]string{"de": {"challenge_button": "Fortfahren"}},
+	}
+	_, page := challengePageFor(t, opts, "de", task)
+	if !strings.Contains(page, "Stadt Musterhausen schützt diese Seiten") || !strings.Contains(page, `<button type="submit">Fortfahren</button>`) {
+		t.Errorf("operator name or custom button text not used:\n%s", page)
+	}
+}

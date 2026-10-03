@@ -1,12 +1,15 @@
 // Package pages renders the small pages that Xibalba itself shows to a
-// website's visitors: "website unavailable" and "request blocked".
+// website's visitors: "website unavailable", "request blocked" and the
+// security check (challenge).
 //
 // These pages are seen by real people, on the websites of authorities and
 // firms, usually when something has gone wrong. They are therefore plain,
 // calm and usable by everyone:
 //
-//   - self-contained: no script, no image, no font, no request to any other
-//     host, enforced by a Content-Security-Policy that forbids all of it;
+//   - self-contained: no image, no font, no request to any other host,
+//     enforced by a Content-Security-Policy that forbids all of it. Only the
+//     challenge page runs a script, a single one built into Xibalba and
+//     named in the policy by its hash;
 //   - accessible: one heading, correct language marking, readable contrast in
 //     light and dark mode, fully usable with a keyboard and without JavaScript;
 //   - bilingual: the language is chosen from the visitor's Accept-Language
@@ -36,7 +39,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/page.html assets/style.css assets/locales/*.json
+//go:embed assets/page.html assets/challenge.html assets/challenge.js assets/style.css assets/locales/*.json
 var assets embed.FS
 
 // languages lists the supported languages.
@@ -50,6 +53,10 @@ var keys = []string{
 	"unavailable_title", "unavailable_text",
 	"blocked_title", "blocked_text",
 	"reference_label", "contact_label",
+	"challenge_title", "challenge_text", "challenge_cookie",
+	"challenge_working", "challenge_done",
+	"challenge_manual", "challenge_button", "challenge_needs_script",
+	"challenge_too_early", "challenge_retry",
 }
 
 // operatorPlaceholder is replaced, in every text, by the operator's name.
@@ -167,8 +174,11 @@ func has(list []string, v string) bool {
 // Renderer writes the pages. Build one with New; it is safe for concurrent use.
 type Renderer struct {
 	tmpl     *template.Template
+	chTmpl   *template.Template // the challenge page
 	css      template.CSS
+	script   template.JS
 	csp      string
+	chCSP    string // policy of the challenge page: also allows its script and form
 	fallback string // language used without a usable preference
 	contact  string
 	locales  map[string]map[string]string
@@ -189,6 +199,19 @@ func New(opts Options) (*Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("page template: %w", err)
 	}
+	chPage, err := assets.ReadFile("assets/challenge.html")
+	if err != nil {
+		return nil, err
+	}
+	chTmpl, err := template.New("challenge").Parse(string(chPage))
+	if err != nil {
+		return nil, fmt.Errorf("challenge template: %w", err)
+	}
+	js, err := assets.ReadFile("assets/challenge.js")
+	if err != nil {
+		return nil, err
+	}
+	script := strings.TrimSpace(string(js))
 	css, err := assets.ReadFile("assets/style.css")
 	if err != nil {
 		return nil, err
@@ -197,7 +220,9 @@ func New(opts Options) (*Renderer, error) {
 
 	r := &Renderer{
 		tmpl:     tmpl,
+		chTmpl:   chTmpl,
 		css:      template.CSS(style),
+		script:   template.JS(script),
 		fallback: languages[0],
 		contact:  strings.TrimSpace(opts.Contact),
 		locales:  map[string]map[string]string{},
@@ -242,8 +267,14 @@ func New(opts Options) (*Renderer, error) {
 	// The only thing the page may load or run is its own style block,
 	// identified by its hash.
 	sum := sha256.Sum256([]byte(style))
-	r.csp = "default-src 'none'; style-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) +
-		"'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	styleSrc := "style-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	r.csp = "default-src 'none'; " + styleSrc + "; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+	// The challenge page may additionally run its one script and send its
+	// form back to this website. Nothing else.
+	sum = sha256.Sum256([]byte(script))
+	r.chCSP = "default-src 'none'; " + styleSrc + "; script-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) +
+		"'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 	return r, nil
 }
 
@@ -258,6 +289,73 @@ func (r *Renderer) Unavailable(w http.ResponseWriter, req *http.Request, status 
 // the visitor.
 func (r *Renderer) Blocked(w http.ResponseWriter, req *http.Request, reference string) {
 	r.write(w, req, http.StatusForbidden, "blocked", reference)
+}
+
+// ChallengeView is one task to show on the challenge page.
+type ChallengeView struct {
+	// Action is where the form is sent.
+	Action string
+	// Token is the signed task; Return is where the visitor goes afterwards.
+	Token, Return string
+	// Nonce and Difficulty are the proof of work for the script.
+	Nonce      string
+	Difficulty int
+	// AllowButton offers the path without JavaScript.
+	AllowButton bool
+	// Notice selects a note about the previous attempt: "", "too_early" or "retry".
+	Notice string
+}
+
+type challengeVersion struct {
+	Lang, Name, Title, Text, Cookie string
+}
+
+type challengePage struct {
+	CSS     template.CSS
+	Script  template.JS
+	Primary challengeVersion
+	Others  []challengeVersion
+	ChallengeView
+	Notice                                     string
+	Working, Done, Manual, Button, NeedsScript string
+}
+
+// Challenge shows the security check. It is sent with status 403 so that
+// neither caches nor search engines take it for the page that was asked for.
+func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v ChallengeView) {
+	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
+	texts := r.locales[primary]
+	p := challengePage{
+		CSS: r.css, Script: r.script, ChallengeView: v,
+		Working: texts["challenge_working"], Done: texts["challenge_done"],
+		Manual: texts["challenge_manual"], Button: texts["challenge_button"],
+		NeedsScript: texts["challenge_needs_script"],
+	}
+	switch v.Notice {
+	case "too_early":
+		p.Notice = texts["challenge_too_early"]
+	case "retry":
+		p.Notice = texts["challenge_retry"]
+	}
+	for _, lang := range languages {
+		t := r.locales[lang]
+		ver := challengeVersion{
+			Lang: lang, Name: t["language_name"],
+			Title: t["challenge_title"], Text: t["challenge_text"], Cookie: t["challenge_cookie"],
+		}
+		if lang == primary {
+			p.Primary = ver
+		} else {
+			p.Others = append(p.Others, ver)
+		}
+	}
+
+	var body bytes.Buffer
+	if err := r.chTmpl.Execute(&body, p); err != nil {
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
+	r.send(w, req, http.StatusForbidden, primary, r.chCSP, &body)
 }
 
 type version struct {
@@ -302,11 +400,16 @@ func (r *Renderer) write(w http.ResponseWriter, req *http.Request, status int, k
 		return
 	}
 
+	r.send(w, req, status, primary, r.csp, &body)
+}
+
+// send writes a rendered page with the headers every visitor page carries.
+func (r *Renderer) send(w http.ResponseWriter, req *http.Request, status int, lang, csp string, body *bytes.Buffer) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Content-Language", primary)
+	h.Set("Content-Language", lang)
 	h.Set("Content-Length", strconv.Itoa(body.Len()))
-	h.Set("Content-Security-Policy", r.csp)
+	h.Set("Content-Security-Policy", csp)
 	h.Set("Cache-Control", "no-store")
 	h.Set("Vary", "Accept-Language")
 	h.Set("X-Content-Type-Options", "nosniff")

@@ -14,9 +14,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/MaMoja/xibalba/internal/buildinfo"
+	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/clientip"
 	"github.com/MaMoja/xibalba/internal/config"
 	"github.com/MaMoja/xibalba/internal/gate"
@@ -27,6 +29,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/proxy"
 	"github.com/MaMoja/xibalba/internal/rules"
+	"github.com/MaMoja/xibalba/internal/token"
 )
 
 // Exit codes.
@@ -41,6 +44,37 @@ func main() {
 	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
+}
+
+// route sends requests for Xibalba's own address space to own and everything
+// else to site.
+func route(own, site http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, challenge.Prefix) {
+			own.ServeHTTP(w, r)
+			return
+		}
+		site.ServeHTTP(w, r)
+	})
+}
+
+// signingKey returns the key that signs challenge tokens: the one stored in
+// path, created there if it does not exist yet, or a fresh one that lives
+// only as long as this process if no path is configured. note is something
+// worth telling the administrator, or empty.
+func signingKey(path string) (key []byte, note string, err error) {
+	if path == "" {
+		key, err = token.NewKey()
+		return key, "", err
+	}
+	key, created, err := token.LoadOrCreateKey(path)
+	if err != nil {
+		return nil, "", err
+	}
+	if created {
+		note = "created a new signing key"
+	}
+	return key, note, nil
 }
 
 // run is the whole program. It takes its inputs as arguments so tests can call it.
@@ -118,11 +152,43 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	defer upstream.Close()
 	registry.Register("upstream", upstream.Health)
 
+	// The security check. Its tokens are signed with a key that is kept in a
+	// file if one is configured, so passes survive a restart.
+	key, keyNote, err := signingKey(cfg.Challenge.KeyPath)
+	if err != nil {
+		log.Error("start-up failed", "error", err.Error(), "component", "challenge")
+		return exitFailed
+	}
+	signer, err := token.NewSigner(key)
+	if err != nil {
+		log.Error("start-up failed", "error", err.Error(), "component", "challenge")
+		return exitFailed
+	}
+	check := challenge.New(challenge.Options{
+		Signer:            signer,
+		Difficulty:        cfg.Challenge.Difficulty,
+		AllowButton:       cfg.Challenge.NoJavaScript == "button",
+		Wait:              cfg.Challenge.Wait,
+		ChallengeLifetime: cfg.Challenge.ChallengeLifetime,
+		PassLifetime:      cfg.Challenge.PassLifetime,
+		BindNetwork:       cfg.Challenge.BindNetwork,
+		CookieName:        cfg.Challenge.CookieName,
+		Page: func(w http.ResponseWriter, r *http.Request, v challenge.View) {
+			page.Challenge(w, r, pages.ChallengeView{
+				Action: v.Action, Token: v.Token, Return: v.Return,
+				Nonce: v.Nonce, Difficulty: v.Difficulty,
+				AllowButton: v.AllowButton, Notice: string(v.Message),
+			})
+		},
+		Log: log,
+	})
+
 	decisions := gate.New(gate.Options{
 		Engine:      engine,
 		DryRun:      cfg.Rules.DryRun,
 		FailOpen:    cfg.Rules.OnError == "allow",
-		Next:        upstream,
+		Challenge:   check,
+		Next:        check.StripPass(upstream), // the website never sees the pass cookie
 		Blocked:     page.Blocked,
 		Unavailable: page.Unavailable,
 		Log:         log,
@@ -134,7 +200,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	public := httpserver.New(httpserver.Options{
 		Name:              "public",
 		Addr:              cfg.Server.Listen,
-		Handler:           clientip.Middleware(resolver, decisions),
+		Handler:           clientip.Middleware(resolver, route(check.Handler(), decisions)),
 		Log:               log,
 		OnFailure:         supervisor.Reporter("public"),
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
@@ -163,9 +229,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if cfg.Rules.DryRun {
 		log.Warn("dry run: decisions are counted but nothing is blocked", "component", "rules")
 	}
-	if engine.Uses(rules.Challenge) {
-		log.Warn("the challenge is not available in this version: requests that would be challenged are counted and let through",
-			"component", "rules")
+	switch {
+	case keyNote != "":
+		log.Info(keyNote, "component", "challenge", "key_file", cfg.Challenge.KeyPath)
+	case cfg.Challenge.KeyPath == "" && engine.Uses(rules.Challenge):
+		log.Warn("no challenge.key_file is set: the signing key is new at every start, so every visitor is checked again after a restart",
+			"component", "challenge")
 	}
 
 	code := exitOK

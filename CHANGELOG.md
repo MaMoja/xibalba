@@ -8,6 +8,24 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Security check (challenge). A client that a rule sends to the check gets a
+  page whose script solves a proof of work; visitors without JavaScript can
+  wait and press a button instead. A correct answer earns a signed pass
+  cookie. Tasks and passes are tied to the client's network and user agent,
+  nothing is stored on the server, and the website never sees the cookie.
+  See `docs/CHALLENGE.md`.
+- New `challenge` section: `difficulty`, `no_javascript`, `wait`,
+  `challenge_lifetime`, `pass_lifetime`, `bind_network`, `key_file`,
+  `cookie_name`.
+- Signing key in a file (`challenge.key_file`), created at the first start
+  with mode 600, so passes survive restarts and instances can share it.
+- Addresses under `/.xibalba/` are reserved for Xibalba.
+- `challenge` counters (`served`, `passed`, `solved`, `failed`) in `/decisions`.
+- Ten new page texts for the security check, all replaceable through `pages.texts`.
+- `test/browser/check.py`: checks the visitor pages in a real browser, with
+  and without JavaScript, by keyboard, and with an accessibility checker.
+- German operator handbook: `docs/de/HANDBUCH.md`.
+
 - Rule engine. Rules match on user agent, path, host, method, headers and
   client address, combined with `all`, `any` and `not`; actions are `allow`,
   `deny`, `challenge` and `weigh`. Weights add up to a score that thresholds
@@ -37,8 +55,8 @@ All notable changes are listed here. The format follows
 
 - A website outage is logged once when it starts and once when it ends,
   instead of once per failed request. The requested path is no longer logged.
-- The action `challenge` is accepted in rules, but until the challenge is
-  built such requests are counted and let through.
+- The action `challenge` is now enforced. (For one development step it was
+  accepted but only counted.)
 
 ### Added earlier
 

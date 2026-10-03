@@ -6,15 +6,22 @@ package integration
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
+	"math/bits"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -380,8 +387,14 @@ const testRules = `rules:
 `
 
 type decisions struct {
-	DryRun  bool              `json:"dry_run"`
-	Totals  map[string]uint64 `json:"totals"`
+	DryRun    bool              `json:"dry_run"`
+	Totals    map[string]uint64 `json:"totals"`
+	Challenge struct {
+		Served uint64 `json:"served"`
+		Passed uint64 `json:"passed"`
+		Solved uint64 `json:"solved"`
+		Failed uint64 `json:"failed"`
+	} `json:"challenge"`
 	Sources []struct {
 		Source    string `json:"source"`
 		Action    string `json:"action"`
@@ -522,20 +535,294 @@ func TestDryRunBlocksNothing(t *testing.T) {
 	}
 }
 
-func TestChallengeIsCountedAndPassedOnForNow(t *testing.T) {
-	site := newWebsite(t)
-	inst := start(t, site.URL, testRules)
+// challengeRules challenges everything under /wiki and lets the rest through.
+const challengeRules = `rules:
+  list:
+    - name: challenge-wiki
+      match:
+        path: {prefix: "/wiki"}
+      action: challenge
+`
 
-	// No Accept-Language: weight 10 reaches the challenge threshold.
-	if resp, _ := get(t, inst.public+"/", nil); resp.StatusCode != 200 {
-		t.Errorf("status = %d, want 200 until the challenge exists", resp.StatusCode)
+var (
+	tokenRE      = regexp.MustCompile(`name="token" value="([^"]+)"`)
+	returnRE     = regexp.MustCompile(`name="return" value="([^"]*)"`)
+	nonceRE      = regexp.MustCompile(`data-nonce="([0-9a-f]+)"`)
+	difficultyRE = regexp.MustCompile(`data-difficulty="([0-9]+)"`)
+)
+
+// visitor is a client with a cookie jar that does not follow redirects by
+// itself, so every step of the challenge can be inspected.
+type visitor struct {
+	t      *testing.T
+	client *http.Client
+	agent  string
+}
+
+func newVisitor(t *testing.T) *visitor {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := getDecisions(t, inst).count("threshold:10"); got != 1 {
-		t.Errorf("threshold:10 count = %d, want 1", got)
+	return &visitor{t: t, agent: "Mozilla/5.0 (integration test)", client: &http.Client{
+		Jar:           jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}}
+}
+
+func (v *visitor) do(method, target string, form url.Values) (*http.Response, string) {
+	v.t.Helper()
+	var body io.Reader
+	if form != nil {
+		body = strings.NewReader(form.Encode())
 	}
-	if !strings.Contains(inst.logs.String(), "challenge is not available") {
-		t.Errorf("the log does not warn that the challenge is missing:\n%s", inst.logs.String())
+	req, err := http.NewRequest(method, target, body)
+	if err != nil {
+		v.t.Fatal(err)
 	}
+	req.Header.Set("User-Agent", v.agent)
+	req.Header.Set("Accept-Language", "en")
+	if form != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	resp, err := v.client.Do(req)
+	if err != nil {
+		v.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, _ := io.ReadAll(resp.Body)
+	return resp, string(data)
+}
+
+// task extracts the challenge from a challenge page.
+type task struct {
+	token, ret, nonce string
+	difficulty        int
+}
+
+func parseTask(t *testing.T, page string) task {
+	t.Helper()
+	find := func(re *regexp.Regexp) string {
+		m := re.FindStringSubmatch(page)
+		if m == nil {
+			t.Fatalf("the page is not a challenge page (no match for %s):\n%s", re, page)
+		}
+		return html.UnescapeString(m[1])
+	}
+	difficulty, _ := strconv.Atoi(find(difficultyRE))
+	return task{token: find(tokenRE), ret: find(returnRE), nonce: find(nonceRE), difficulty: difficulty}
+}
+
+// solve does the proof of work the way the page's script does.
+func (k task) solve() string {
+	for n := 0; ; n++ {
+		s := strconv.Itoa(n)
+		sum := sha256.Sum256([]byte(k.nonce + s))
+		first := uint32(sum[0])<<24 | uint32(sum[1])<<16 | uint32(sum[2])<<8 | uint32(sum[3])
+		if bits.LeadingZeros32(first) >= k.difficulty {
+			return s
+		}
+	}
+}
+
+func (k task) answer(method, solution string) url.Values {
+	return url.Values{"token": {k.token}, "return": {k.ret}, "method": {method}, "solution": {solution}}
+}
+
+func TestChallengeWithProofOfWork(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "challenge:\n  difficulty: 10\n"+challengeRules)
+	v := newVisitor(t)
+
+	// Unchallenged paths are untouched.
+	if resp, _ := v.do("GET", inst.public+"/", nil); resp.StatusCode != 200 {
+		t.Fatalf("unchallenged path: status %d", resp.StatusCode)
+	}
+
+	// First visit: the challenge page, not the website.
+	before := site.hitCount()
+	resp, page := v.do("GET", inst.public+"/wiki/Start?x=1", nil)
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "A quick security check") {
+		t.Fatalf("first visit: status %d\n%s", resp.StatusCode, page)
+	}
+	if site.hitCount() != before {
+		t.Error("the website was contacted before the challenge was passed")
+	}
+	k := parseTask(t, page)
+	if k.difficulty != 10 || k.ret != "/wiki/Start?x=1" {
+		t.Errorf("task = %+v", k)
+	}
+
+	// A wrong answer gets a new task, no pass.
+	resp, page = v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow", "x"))
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "has been started again") || len(resp.Cookies()) != 0 {
+		t.Fatalf("wrong answer: status %d, %d cookies\n%s", resp.StatusCode, len(resp.Cookies()), page)
+	}
+	k = parseTask(t, page)
+
+	// The right answer gets the pass and a redirect back.
+	resp, _ = v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow", k.solve()))
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/wiki/Start?x=1" {
+		t.Fatalf("right answer: status %d, Location %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	cookies := resp.Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "xibalba-pass" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteLaxMode {
+		t.Fatalf("pass cookie: %+v", cookies)
+	}
+
+	// With the pass the website answers, and never sees the pass.
+	resp, body := v.do("GET", inst.public+"/wiki/Start?x=1", nil)
+	if resp.StatusCode != 200 || body != "website says hello to /wiki/Start" {
+		t.Fatalf("with the pass: status %d, body %q", resp.StatusCode, body)
+	}
+	if got := site.lastHeader("Cookie"); got != "" {
+		t.Errorf("the website received the cookie %q", got)
+	}
+
+	// Another client is not helped by this client's pass.
+	other := newVisitor(t)
+	other.agent = "curl/8.0"
+	other.client.Jar.SetCookies(mustParse(t, inst.public), cookies)
+	if resp, _ := other.do("GET", inst.public+"/wiki/Start", nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a copied pass worked for another client: status %d", resp.StatusCode)
+	}
+
+	d := getDecisions(t, inst)
+	if d.Challenge.Served != 2 || d.Challenge.Passed != 1 || d.Challenge.Solved != 1 || d.Challenge.Failed != 1 {
+		t.Errorf("challenge counters = %+v, want served 2, passed 1, solved 1, failed 1", d.Challenge)
+	}
+}
+
+func TestChallengeWithoutJavaScript(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "challenge:\n  wait: 1s\n"+challengeRules)
+	v := newVisitor(t)
+
+	_, page := v.do("GET", inst.public+"/wiki/Start", nil)
+	if !strings.Contains(page, `<button type="submit">Continue</button>`) {
+		t.Fatalf("the page offers no button:\n%s", page)
+	}
+	k := parseTask(t, page)
+
+	// Pressed at once: too early.
+	resp, page := v.do("POST", inst.public+"/.xibalba/verify", k.answer("button", ""))
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(page, "a little too fast") {
+		t.Fatalf("early press: status %d\n%s", resp.StatusCode, page)
+	}
+	k = parseTask(t, page)
+
+	time.Sleep(1200 * time.Millisecond)
+	resp, _ = v.do("POST", inst.public+"/.xibalba/verify", k.answer("button", ""))
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("after waiting: status %d", resp.StatusCode)
+	}
+	if resp, _ := v.do("GET", inst.public+"/wiki/Start", nil); resp.StatusCode != 200 {
+		t.Errorf("with the pass: status %d", resp.StatusCode)
+	}
+}
+
+func TestChallengeCanRequireJavaScript(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "challenge:\n  no_javascript: deny\n  wait: 1s\n"+challengeRules)
+	v := newVisitor(t)
+
+	_, page := v.do("GET", inst.public+"/wiki/Start", nil)
+	if strings.Contains(page, "<button") || !strings.Contains(page, "JavaScript must be switched on") {
+		t.Fatalf("the page should ask for JavaScript and offer no button:\n%s", page)
+	}
+	k := parseTask(t, page)
+	time.Sleep(1200 * time.Millisecond)
+	if resp, _ := v.do("POST", inst.public+"/.xibalba/verify", k.answer("button", "")); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a button answer was accepted although the button is off: status %d", resp.StatusCode)
+	}
+}
+
+func TestOpenRedirectIsRefused(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "challenge:\n  difficulty: 8\n"+challengeRules)
+	v := newVisitor(t)
+
+	_, page := v.do("GET", inst.public+"/wiki/Start", nil)
+	k := parseTask(t, page)
+	form := k.answer("pow", k.solve())
+	form.Set("return", "https://evil.example/phish")
+	resp, _ := v.do("POST", inst.public+"/.xibalba/verify", form)
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
+		t.Errorf("status %d, Location %q; the redirect must stay on this website", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+func TestPassSurvivesRestartOnlyWithKeyFile(t *testing.T) {
+	site := newWebsite(t)
+	keyFile := filepath.Join(t.TempDir(), "xibalba.key")
+
+	pass := func(inst *instance) []*http.Cookie {
+		v := newVisitor(t)
+		_, page := v.do("GET", inst.public+"/wiki/Start", nil)
+		k := parseTask(t, page)
+		resp, _ := v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow", k.solve()))
+		if len(resp.Cookies()) != 1 {
+			t.Fatalf("no pass: status %d", resp.StatusCode)
+		}
+		return resp.Cookies()
+	}
+	visitWith := func(inst *instance, cookies []*http.Cookie) int {
+		v := newVisitor(t)
+		v.client.Jar.SetCookies(mustParse(t, inst.public), cookies)
+		resp, _ := v.do("GET", inst.public+"/wiki/Start", nil)
+		return resp.StatusCode
+	}
+	stop := func(inst *instance) {
+		_ = inst.cmd.Process.Signal(syscall.SIGTERM)
+		_ = inst.cmd.Wait()
+	}
+
+	t.Run("with a key file", func(t *testing.T) {
+		config := fmt.Sprintf("challenge:\n  difficulty: 8\n  key_file: %q\n", keyFile) + challengeRules
+		first := start(t, site.URL, config)
+		cookies := pass(first)
+		if !strings.Contains(first.logs.String(), "created a new signing key") {
+			t.Errorf("the log does not say that a key was created:\n%s", first.logs.String())
+		}
+		info, err := os.Stat(keyFile)
+		if err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("key file: %v, mode %v; want it created with mode 600", err, info)
+		}
+		stop(first)
+
+		second := start(t, site.URL, config)
+		if got := visitWith(second, cookies); got != 200 {
+			t.Errorf("after a restart with the same key file: status %d, want 200", got)
+		}
+		if strings.Contains(second.logs.String(), "created a new signing key") {
+			t.Error("the second start created a new key instead of using the stored one")
+		}
+	})
+
+	t.Run("without a key file", func(t *testing.T) {
+		config := "challenge:\n  difficulty: 8\n" + challengeRules
+		first := start(t, site.URL, config)
+		cookies := pass(first)
+		if !strings.Contains(first.logs.String(), "no challenge.key_file is set") {
+			t.Errorf("the log does not warn about the missing key file:\n%s", first.logs.String())
+		}
+		stop(first)
+
+		second := start(t, site.URL, config)
+		if got := visitWith(second, cookies); got != http.StatusForbidden {
+			t.Errorf("after a restart without a key file: status %d, want a new challenge", got)
+		}
+	})
+}
+
+func mustParse(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }
 
 func TestImportedRuleFile(t *testing.T) {

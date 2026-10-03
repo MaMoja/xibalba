@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="{{.Primary.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.Primary.Title}}</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main>
+<h1>{{.Primary.Title}}</h1>
+{{- if .Notice}}
+<p role="alert" class="notice">{{.Notice}}</p>
+{{- end}}
+<p>{{.Primary.Text}}</p>
+<p>{{.Primary.Cookie}}</p>
+<form id="xibalba-form" method="post" action="{{.Action}}" data-nonce="{{.Nonce}}" data-difficulty="{{.Difficulty}}" data-working="{{.Working}}" data-done="{{.Done}}">
+<input type="hidden" name="token" value="{{.Token}}">
+<input type="hidden" name="return" value="{{.Return}}">
+<input type="hidden" name="method" value="button">
+<input type="hidden" name="solution" value="">
+<p id="xibalba-status" role="status" aria-live="polite" hidden></p>
+<div id="xibalba-manual">
+{{- if .AllowButton}}
+<p>{{.Manual}}</p>
+<p><button type="submit">{{.Button}}</button></p>
+{{- else}}
+<p>{{.NeedsScript}}</p>
+{{- end}}
+</div>
+</form>
+{{- range .Others}}
+<details lang="{{.Lang}}">
+<summary>{{.Name}}</summary>
+<h2>{{.Title}}</h2>
+<p>{{.Text}}</p>
+<p>{{.Cookie}}</p>
+</details>
+{{- end}}
+</main>
+<script>{{.Script}}</script>
+</body>
+</html>

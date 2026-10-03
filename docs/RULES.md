@@ -1,7 +1,7 @@
 # Rules
 
 Rules decide what happens to each request: it is let through to the website,
-refused, or (from the next milestone on) challenged. This document explains
+refused, or challenged. This document explains
 how rules are written and how they are evaluated.
 
 Rules live in the `rules` section of the configuration file and in rule files
@@ -50,7 +50,7 @@ therefore take precedence over imported ones.
 |---|---|
 | `allow` | The request goes to the website. |
 | `deny` | The visitor gets the "request blocked" page with status `403`. The website is not contacted. |
-| `challenge` | **Planned.** The client will have to pass a challenge first. Until the challenge is built, such requests are counted and let through, and Xibalba logs a warning at start-up. |
+| `challenge` | The client has to pass the security check first, unless it already holds a valid pass. See [CHALLENGE.md](CHALLENGE.md). |
 | `weigh` | Adds `weight` to the score. Requires `weight`, a number from -1000 to 1000 other than 0. |
 
 The block page shows a short reference such as `8fbf25e1`. It identifies the
@@ -240,6 +240,12 @@ curl http://127.0.0.1:9090/decisions
     "deny": 2
   },
   "failures": 0,
+  "challenge": {
+    "served": 1,
+    "passed": 0,
+    "solved": 0,
+    "failed": 0
+  },
   "sources": [
     {
       "source": "rule:block-example-bot",

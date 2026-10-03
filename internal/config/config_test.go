@@ -83,6 +83,7 @@ shutdown_timeout: 30s
 			ResponseHeaderTimeout: 15 * time.Second,
 		},
 		Rules:           defaultRules(),
+		Challenge:       Default().Challenge,
 		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},
 		ShutdownTimeout: 30 * time.Second,
@@ -345,6 +346,79 @@ func TestPagesProblemsPointAtTheLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Parse("test.yaml", []byte(minimal+tt.pages))
+			if err == nil {
+				t.Fatal("expected an error, got none")
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("error is missing %q:\n%v", w, err)
+				}
+			}
+		})
+	}
+}
+
+func TestChallengeSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "xibalba.yaml")
+	content := minimal + `
+challenge:
+  difficulty: 20
+  no_javascript: deny
+  wait: 5s
+  challenge_lifetime: 10m
+  pass_lifetime: 24h
+  bind_network: false
+  key_file: xibalba.key
+  cookie_name: site_pass
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := Challenge{
+		Difficulty: 20, NoJavaScript: "deny", Wait: 5 * time.Second,
+		ChallengeLifetime: 10 * time.Minute, PassLifetime: 24 * time.Hour,
+		BindNetwork: false, KeyFile: "xibalba.key", CookieName: "site_pass",
+		KeyPath: filepath.Join(dir, "xibalba.key"), // relative to the configuration file
+	}
+	if cfg.Challenge != want {
+		t.Errorf("got\n%+v\nwant\n%+v", cfg.Challenge, want)
+	}
+	if _, err := os.Stat(want.KeyPath); err == nil {
+		t.Error("loading the configuration created the key file; that is the job of start-up, not of -check")
+	}
+}
+
+func TestChallengeProblemsPointAtTheLine(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "short.key"), []byte("abc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name      string
+		challenge string // appended after minimal (2 lines), so "challenge:" is line 3
+		want      []string
+	}{
+		{"difficulty too low", "challenge:\n  difficulty: 2\n", []string{"line 4, challenge.difficulty", "8 to 24"}},
+		{"difficulty too high", "challenge:\n  difficulty: 40\n", []string{"line 4, challenge.difficulty", "8 to 24"}},
+		{"unknown mode", "challenge:\n  no_javascript: captcha\n", []string{"line 4, challenge.no_javascript", "button", "deny"}},
+		{"wait too short", "challenge:\n  wait: 0s\n", []string{"line 4, challenge.wait", `"1s" to "1m"`}},
+		{"lifetime not longer than wait", "challenge:\n  wait: 40s\n  challenge_lifetime: 30s\n", []string{"line 5, challenge.challenge_lifetime", "nobody could answer in time"}},
+		{"pass lifetime too long", "challenge:\n  pass_lifetime: 99999h\n", []string{"line 4, challenge.pass_lifetime", "one year"}},
+		{"days are not a unit", "challenge:\n  pass_lifetime: 7d\n", []string{"not valid"}},
+		{"cookie name with spaces", "challenge:\n  cookie_name: \"my pass\"\n", []string{"line 4, challenge.cookie_name", "xibalba-pass"}},
+		{"cookie name with separators", "challenge:\n  cookie_name: \"a;b=c\"\n", []string{"line 4, challenge.cookie_name"}},
+		{"key file in a missing directory", "challenge:\n  key_file: nowhere/xibalba.key\n", []string{"line 4, challenge.key_file", "does not exist", "created at the first start"}},
+		{"key file is a directory", "challenge:\n  key_file: .\n", []string{"line 4, challenge.key_file", "is a directory"}},
+		{"key file with a broken key", "challenge:\n  key_file: short.key\n", []string{"line 4, challenge.key_file", "does not hold a key", "delete the file"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse(filepath.Join(dir, "xibalba.yaml"), []byte(minimal+tt.challenge))
 			if err == nil {
 				t.Fatal("expected an error, got none")
 			}

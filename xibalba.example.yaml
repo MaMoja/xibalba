@@ -58,8 +58,36 @@ rules:
   #       action: deny
   list: []
 
-# The pages Xibalba itself shows to visitors: "request blocked" and "website
-# unavailable". They work as they are; adapt them here if you want.
+# The security check a client has to pass when a rule or threshold says
+# "challenge". Explained in docs/CHALLENGE.md.
+challenge:
+  # How much the visitor's browser has to calculate: 8 (almost nothing) to 24
+  # (very much). Each step up doubles the work. 18 takes a fraction of a second
+  # on a computer and about a second on a phone.
+  difficulty: 18
+  # What visitors without JavaScript get:
+  # button: they wait a few seconds and press a button.
+  # deny:   they are told that JavaScript is needed.
+  no_javascript: button
+  # How long a visitor without JavaScript has to wait before the button counts.
+  wait: 3s
+  # How long a visitor has to finish the check before a new one is issued.
+  challenge_lifetime: 5m
+  # How long a visitor is not asked again after passing. 168h is one week.
+  pass_lifetime: 168h
+  # Tie a pass to the visitor's network as well as their browser, so it cannot
+  # be copied to machines elsewhere.
+  bind_network: true
+  # File that holds the signing key, relative to this file. It is created at
+  # the first start. Empty: a new key at every start, so every visitor is
+  # checked again after a restart. Set this for real use, for example
+  # "/var/lib/xibalba/xibalba.key".
+  key_file: ""
+  # Name of the cookie that holds the pass.
+  cookie_name: "xibalba-pass"
+
+# The pages Xibalba itself shows to visitors: the security check, "request
+# blocked" and "website unavailable". They work as they are; adapt them here if you want.
 pages:
   # Who runs the website, as it should read in a sentence, for example
   # "Stadt Musterhausen". Empty keeps "The operator of this website".

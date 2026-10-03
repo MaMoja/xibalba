@@ -25,7 +25,9 @@ import (
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 
+	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/pages"
+	"github.com/MaMoja/xibalba/internal/token"
 )
 
 // Config is the complete, validated configuration.
@@ -41,6 +43,8 @@ type Config struct {
 	Upstream Upstream `yaml:"upstream"`
 	// Rules decide what happens to each request.
 	Rules Rules `yaml:"rules"`
+	// Challenge is the check a client has to pass when a rule says "challenge".
+	Challenge Challenge `yaml:"challenge"`
 	// Pages adapts the pages Xibalba shows to visitors.
 	Pages Pages `yaml:"pages"`
 	// Ops is the internal listener for health checks and, later, metrics.
@@ -106,6 +110,115 @@ func (u Upstream) Target() *url.URL {
 	return target
 }
 
+// NoJavaScriptModes are the allowed values of challenge.no_javascript.
+var NoJavaScriptModes = []string{"button", "deny"}
+
+// Challenge holds the settings of the security check.
+type Challenge struct {
+	// Difficulty is the proof of work in leading zero bits. Each extra bit
+	// doubles the work a client has to do.
+	Difficulty int `yaml:"difficulty"`
+	// NoJavaScript says what visitors without JavaScript get: "button" lets
+	// them wait and press a button, "deny" tells them JavaScript is needed.
+	NoJavaScript string `yaml:"no_javascript"`
+	// Wait is how long a visitor without JavaScript must wait before the
+	// button counts.
+	Wait time.Duration `yaml:"wait"`
+	// ChallengeLifetime is how long a client has to answer.
+	ChallengeLifetime time.Duration `yaml:"challenge_lifetime"`
+	// PassLifetime is how long a client is not asked again after passing.
+	PassLifetime time.Duration `yaml:"pass_lifetime"`
+	// BindNetwork ties a pass to the client's network as well as its browser.
+	BindNetwork bool `yaml:"bind_network"`
+	// KeyFile is where the signing key is kept. Empty means a new key at
+	// every start, which ends all passes on restart.
+	KeyFile string `yaml:"key_file"`
+	// CookieName is the name of the pass cookie.
+	CookieName string `yaml:"cookie_name"`
+
+	// KeyPath is KeyFile resolved against the directory of the configuration
+	// file. It is filled when the configuration is loaded and is not a setting.
+	KeyPath string `yaml:"-"`
+}
+
+// check validates the challenge settings and resolves the key file. dir is
+// the directory relative paths are resolved against.
+func (c *Challenge) check(dir string, add func(path, message, hint string)) {
+	if c.Difficulty < challenge.MinDifficulty || c.Difficulty > challenge.MaxDifficulty {
+		add("challenge.difficulty", fmt.Sprintf("%d is out of range", c.Difficulty),
+			fmt.Sprintf("use a value from %d to %d; 18 suits most sites", challenge.MinDifficulty, challenge.MaxDifficulty))
+	}
+	if !contains(NoJavaScriptModes, c.NoJavaScript) {
+		add("challenge.no_javascript", fmt.Sprintf("%q is not a mode", c.NoJavaScript),
+			"use button (visitors without JavaScript wait and press a button) or deny (they are told JavaScript is needed)")
+	}
+	if c.Wait < time.Second || c.Wait > time.Minute {
+		add("challenge.wait", fmt.Sprintf("%s is out of range", c.Wait), `use a duration from "1s" to "1m"`)
+	}
+	if c.ChallengeLifetime < 30*time.Second || c.ChallengeLifetime > time.Hour {
+		add("challenge.challenge_lifetime", fmt.Sprintf("%s is out of range", c.ChallengeLifetime), `use a duration from "30s" to "1h"`)
+	} else if c.ChallengeLifetime <= c.Wait {
+		add("challenge.challenge_lifetime", fmt.Sprintf("%s is not longer than challenge.wait (%s), so nobody could answer in time", c.ChallengeLifetime, c.Wait),
+			"make challenge_lifetime longer than wait")
+	}
+	if c.PassLifetime < time.Minute || c.PassLifetime > 8760*time.Hour {
+		add("challenge.pass_lifetime", fmt.Sprintf("%s is out of range", c.PassLifetime),
+			`use a duration from "1m" to "8760h" (one year); a week is "168h"`)
+	}
+	if !isCookieName(c.CookieName) {
+		add("challenge.cookie_name", fmt.Sprintf("%q is not usable as a cookie name", c.CookieName),
+			`use letters, digits, hyphen and underscore, at most 64 characters, for example "xibalba-pass"`)
+	}
+
+	c.KeyPath = ""
+	if strings.TrimSpace(c.KeyFile) == "" {
+		return
+	}
+	path := c.KeyFile
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	path = filepath.Clean(path)
+	c.KeyPath = path
+
+	info, err := os.Stat(path)
+	switch {
+	case err == nil && info.IsDir():
+		add("challenge.key_file", fmt.Sprintf("%q is a directory", c.KeyFile), "give the path of a file, for example /var/lib/xibalba/xibalba.key")
+	case err == nil:
+		data, err := os.ReadFile(path)
+		if err != nil {
+			add("challenge.key_file", fmt.Sprintf("%q cannot be read", c.KeyFile), "make the file readable for the user Xibalba runs as")
+		} else if _, err := token.ParseKey(string(data)); err != nil {
+			add("challenge.key_file", fmt.Sprintf("%q does not hold a key: %v", c.KeyFile, err), "delete the file; Xibalba creates a new key at the next start")
+		}
+	case errors.Is(err, os.ErrNotExist):
+		// The file is created at start-up. Its directory must be there.
+		if parent, perr := os.Stat(filepath.Dir(path)); perr != nil || !parent.IsDir() {
+			add("challenge.key_file", fmt.Sprintf("the directory %q does not exist", filepath.Dir(c.KeyFile)),
+				"create the directory and make it writable for the user Xibalba runs as; the key file itself is created at the first start")
+		}
+	default:
+		add("challenge.key_file", fmt.Sprintf("%q cannot be checked", c.KeyFile), "check the path and its permissions")
+	}
+}
+
+// isCookieName reports whether s is a conservative, portable cookie name.
+func isCookieName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z', ch >= '0' && ch <= '9', ch == '-', ch == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // Pages holds the settings of the pages Xibalba itself shows to visitors
 // ("request blocked", "website unavailable").
 type Pages struct {
@@ -162,7 +275,17 @@ func Default() Config {
 			DialTimeout:           5 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
 		},
-		Rules:           defaultRules(),
+		Rules: defaultRules(),
+		Challenge: Challenge{
+			Difficulty:        18,
+			NoJavaScript:      "button",
+			Wait:              3 * time.Second,
+			ChallengeLifetime: 5 * time.Minute,
+			PassLifetime:      168 * time.Hour,
+			BindNetwork:       true,
+			KeyFile:           "",
+			CookieName:        "xibalba-pass",
+		},
 		Pages:           Pages{DefaultLanguage: pages.Languages()[0], Texts: map[string]map[string]string{}},
 		Ops:             Ops{Listen: "127.0.0.1:9090"},
 		ShutdownTimeout: 10 * time.Second,
@@ -203,6 +326,9 @@ func Parse(name string, data []byte) (Config, error) {
 
 	lines := lineIndex(data)
 	problems := cfg.validate(lines)
+	cfg.Challenge.check(filepath.Dir(name), func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
 	problems = append(problems, cfg.Rules.load(filepath.Dir(name), lines)...)
 	if len(problems) > 0 {
 		return Config{}, &Error{File: name, Problems: problems}

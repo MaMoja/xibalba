@@ -116,14 +116,32 @@ What happens to each request. How rules are written is explained in
 | `rules.files` | `[]` | List of paths, relative to the configuration file | Rule files to import. Evaluated after `rules.list`, in the order given. |
 | `rules.list` | `[]` | List of rules | Rules written in the configuration file. Evaluated first, top to bottom. |
 
-With the defaults nothing is blocked. The action `challenge` is accepted but
-the challenge is **planned**: until it is built, requests that would be
-challenged are counted and let through, and Xibalba says so in the log at start-up.
+With the defaults nothing is blocked and nobody is challenged.
+
+### `challenge`
+
+The security check a client has to pass when a rule or threshold decides
+`challenge`. [CHALLENGE.md](CHALLENGE.md) explains how it works and what to
+consider; this table lists the settings.
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `challenge.difficulty` | `18` | `8` to `24` | How much the visitor's browser has to calculate. Each step up doubles the work. |
+| `challenge.no_javascript` | `button` | `button`, `deny` | What visitors without JavaScript get: wait and press a button, or a note that JavaScript is needed. |
+| `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor without JavaScript has to wait before the button counts. |
+| `challenge.challenge_lifetime` | `5m` | `30s` to `1h`, longer than `wait` | How long a client has to finish before it gets a new task. |
+| `challenge.pass_lifetime` | `168h` | `1m` to `8760h` | How long a client is not asked again after passing. Use hours: a week is `168h`. |
+| `challenge.bind_network` | `true` | `true`, `false` | Tie the pass to the visitor's network as well as their browser. |
+| `challenge.key_file` | empty | Path, relative to the configuration file | File holding the signing key; created at the first start. Empty means a new key at every start, so every visitor is checked again after a restart. **Set this for real use.** |
+| `challenge.cookie_name` | `xibalba-pass` | Letters, digits, `-`, `_`; up to 64 characters | Name of the cookie that holds the pass. |
+
+Addresses under `/.xibalba/` are answered by Xibalba itself and never reach
+your website.
 
 ### `pages`
 
-The pages Xibalba itself shows to visitors: "request blocked" and "website
-unavailable". They work without any setting. Use this section to put your
+The pages Xibalba itself shows to visitors: the security check, "request
+blocked" and "website unavailable". They work without any setting. Use this section to put your
 name on them or to change the wording.
 
 | Setting | Default | Allowed values | Meaning |
@@ -145,6 +163,16 @@ Text names for `pages.texts`:
 | `unavailable_title` | Heading and window title of the unavailable page | The website is currently unavailable |
 | `unavailable_text` | Paragraph of the unavailable page | Please try again in a few minutes. |
 | `language_name` | Label of the language switch | English |
+| `challenge_title` | Heading and window title of the security check | A quick security check |
+| `challenge_text` | First paragraph of the security check | {operator} protects these pages against automated mass requests. Your browser is solving a short calculation for this. It usually takes only a few seconds; you do not need to do anything. |
+| `challenge_cookie` | Second paragraph of the security check | Afterwards a cookie is stored that only records that the check was passed. |
+| `challenge_working` | Status while the browser calculates | The check is running … |
+| `challenge_done` | Status when the browser has finished | Check passed. You are being forwarded. |
+| `challenge_manual` | Shown to visitors without JavaScript | Your browser does not run JavaScript. Please wait a few seconds and then choose “Continue”. |
+| `challenge_button` | The button for visitors without JavaScript | Continue |
+| `challenge_needs_script` | Shown instead of the button when `challenge.no_javascript` is `deny` | JavaScript must be switched on for this check. Please switch JavaScript on and reload the page. |
+| `challenge_too_early` | Notice when the button was pressed before the waiting time was over | That was a little too fast. Please wait a few seconds and then choose “Continue” again. |
+| `challenge_retry` | Notice when an answer was not accepted and the check started again | The check could not be completed and has been started again. |
 
 `{operator}` inside a text is replaced by the operator: `pages.operator` if
 set, or the `operator` text of that language. It is the only placeholder.
@@ -194,7 +222,7 @@ Endpoints:
 |---|---|
 | `GET /healthz` | JSON health report. Status `200` while Xibalba can serve, `503` when a component of Xibalba is down. |
 | `GET /version` | JSON with the version, commit and Go version of the running build. |
-| `GET /decisions` | JSON with how often each rule, threshold and the default decided since start. Holds no address, path or user agent. Example in [RULES.md](RULES.md#trying-a-rule-set-safely). |
+| `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 
 Example health report:
 

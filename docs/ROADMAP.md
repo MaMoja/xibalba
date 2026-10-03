@@ -24,14 +24,17 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [x] Rule set import, validation with line-accurate errors
 - [x] Benchmark and hostile-input tests
 - [x] Enforcement in the request path, accessible block page, decision counters at `/decisions`
-- [ ] Enforcing `challenge`: comes with M3. Until then such requests are counted and let through.
+- [x] Enforcing `challenge` (done with M3)
 
-## M3: Challenge
-- [ ] Signed token and pass cookie with expiry
-- [ ] Proof-of-work challenge with adjustable difficulty
-- [ ] Challenge without JavaScript
-- [ ] Challenge page: neutral, accessible, German and English, customer branding
-- [ ] Accessibility check with automated tool plus keyboard and screen reader pass
+## M3: Challenge (done except branding and a screen reader pass)
+- [x] Signed token and pass cookie with expiry
+- [x] Proof-of-work challenge with adjustable difficulty
+- [x] Challenge without JavaScript
+- [x] Challenge page: neutral, accessible, German and English, operator name and all texts adjustable
+- [x] Accessibility check with an automated tool (axe: no findings) and by keyboard only, in a real browser
+- [x] German operator handbook
+- [ ] Customer branding: logo and accent colour on the visitor pages
+- [ ] A pass with a real screen reader (NVDA or VoiceOver). Not possible in the development environment; needs a person.
 
 ## M4: Crawler classes and identity
 - [ ] Crawler data format and loader
@@ -69,6 +72,9 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [ ] Privacy documentation (what is stored, for how long)
 
 ## Later
+- Challenge method and difficulty selectable per rule or threshold
+- English edition of the operator handbook
+- Packaged releases, so operators do not need Go to install (part of M8)
 - A path test that means "this directory and everything under it", so `/admin` does not also match `/administrator`
 - A text expression language for rules, if `all`/`any`/`not` turn out not to be enough
 - Configurable status code and text for the block page

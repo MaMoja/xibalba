@@ -6,5 +6,15 @@
   "blocked_title": "Diese Anfrage wurde blockiert",
   "blocked_text": "{operator} lässt Anfragen dieser Art nicht zu. Wenn Sie das für einen Fehler halten, nehmen Sie bitte Kontakt auf und nennen Sie die folgende Referenz.",
   "reference_label": "Referenz:",
-  "contact_label": "Kontakt:"
+  "contact_label": "Kontakt:",
+  "challenge_title": "Kurze Sicherheitsprüfung",
+  "challenge_text": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Ihr Browser löst dafür eine kurze Rechenaufgabe. Das dauert meist nur wenige Sekunden; Sie müssen nichts tun.",
+  "challenge_cookie": "Danach wird ein Cookie gespeichert, das nur festhält, dass die Prüfung bestanden wurde.",
+  "challenge_working": "Die Prüfung läuft …",
+  "challenge_done": "Prüfung bestanden. Sie werden weitergeleitet.",
+  "challenge_manual": "Ihr Browser führt kein JavaScript aus. Bitte warten Sie einige Sekunden und wählen Sie dann „Weiter“.",
+  "challenge_button": "Weiter",
+  "challenge_needs_script": "Für diese Prüfung muss JavaScript eingeschaltet sein. Bitte schalten Sie JavaScript ein und laden Sie die Seite neu.",
+  "challenge_too_early": "Das war etwas zu schnell. Bitte warten Sie einige Sekunden und wählen Sie dann erneut „Weiter“.",
+  "challenge_retry": "Die Prüfung konnte nicht abgeschlossen werden und wurde neu gestartet."
 }

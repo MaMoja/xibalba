@@ -58,7 +58,10 @@ without telling the owner why.
 - There must always be a path that works without JavaScript.
 - Neutral, calm design. No mascot. Text explains in one plain sentence what is
   happening and why. German and English from the start.
-- Use the `challenge-page` skill for any change to that page.
+- Use the `challenge-page` skill for any change to that page, and run
+  `make browser-check` afterwards.
+- The operator handbook (`docs/de/HANDBUCH.md`) is what customers read. A new
+  or changed setting is not done until the handbook says where to set it.
 
 ## 6. Crawler data is data, not code
 
@@ -140,12 +143,16 @@ internal/httpserver/  HTTP listener with safe defaults
 internal/clientip/    real client address behind trusted proxies
 internal/rules/       compile a rule set, decide about a request
 internal/gate/        enforce decisions on live requests, count them
+internal/token/       sign and verify tokens, keep the signing key
+internal/challenge/   the security check: tasks, answers, pass cookie
 internal/pages/       pages shown to visitors; texts in assets/locales
 internal/proxy/       forward to the website, answer when it is unreachable
 internal/buildinfo/   version of the running build
 test/integration/     tests that run the real binary
+test/browser/         checks of the visitor pages in a real browser (not in CI)
 examples/rules/       example rule files, kept valid by a test
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, challenge, development
+docs/de/              operator handbook in German
 ```
 
 Planned packages are listed in `docs/ARCHITECTURE.md`.

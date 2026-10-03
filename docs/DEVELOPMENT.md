@@ -16,6 +16,7 @@
 | `make lint` | Formatting check and `go vet`; `golangci-lint` too if installed |
 | `make cross` | Build for linux/amd64 and linux/arm64 into `dist/` |
 | `make bench` | Run the benchmarks (rule engine) |
+| `make browser-check` | Check the visitor pages in a real browser (needs Playwright; see below) |
 | `make check` | `lint`, `test` and `cross`: everything CI runs |
 | `make clean` | Remove build output |
 
@@ -40,13 +41,32 @@ docs/               documentation
   A feature is not done until an integration test shows it working from outside.
 - Tests must not depend on the network or on fixed ports. Use port `0`.
 
+## Browser check
+
+`test/browser/check.py` opens the visitor pages in a real Chromium: it passes
+the challenge with JavaScript, passes it without JavaScript using only the
+keyboard, confirms that nothing is loaded from another host and that the
+Content-Security-Policy is not violated, and runs the axe accessibility
+checker over every page in light and dark mode. It starts its own test
+website and its own Xibalba.
+
+It is not part of `make check` or CI because it needs a browser:
+
+```sh
+pip install playwright && playwright install chromium
+npm install axe-core            # optional: enables the accessibility check
+make browser-check AXE=node_modules/axe-core/axe.min.js
+```
+
+Run it after every change to `internal/pages` or `internal/challenge`.
+
 ## Documentation rules
 
 Documentation is part of the change, not a follow-up.
 
 | When you change | Also update |
 |---|---|
-| A setting | `internal/config`, `xibalba.example.yaml`, `docs/CONFIGURATION.md` |
+| A setting | `internal/config`, `xibalba.example.yaml`, `docs/CONFIGURATION.md`, `docs/de/HANDBUCH.md` |
 | What rules can do | `internal/rules`, `docs/RULES.md`, `examples/rules/basic.yaml` |
 | A text visitors see | Every file in `internal/pages/assets/locales`, and the text-name table in `docs/CONFIGURATION.md` |
 | A package or its job | Package comment, `docs/ARCHITECTURE.md` |

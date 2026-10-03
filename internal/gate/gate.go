@@ -37,6 +37,17 @@ type Evaluator interface {
 	Sources() []rules.Source
 }
 
+// Challenger makes a client pass a check before it is let through.
+// *challenge.Challenge is the implementation.
+type Challenger interface {
+	// Passed reports whether the request carries a valid pass.
+	Passed(r *http.Request) bool
+	// Serve answers the request with the challenge page.
+	Serve(w http.ResponseWriter, r *http.Request)
+	// Counts returns how many answers were accepted and rejected.
+	Counts() (solved, failed uint64)
+}
+
 // Options configures a Gate.
 type Options struct {
 	// Engine is the compiled rule set.
@@ -46,6 +57,9 @@ type Options struct {
 	// FailOpen says what happens if evaluating a request fails inside
 	// Xibalba: true passes the request on, false refuses it.
 	FailOpen bool
+	// Challenge handles requests whose decision is "challenge". If nil,
+	// such requests are passed on.
+	Challenge Challenger
 	// Next receives the requests that are passed on.
 	Next http.Handler
 	// Blocked writes the page for a denied request. reference identifies
@@ -67,6 +81,9 @@ type Gate struct {
 	sources []rules.Source
 	counts  []atomic.Uint64 // one per source, same order
 	since   time.Time
+
+	challengesServed atomic.Uint64 // challenge pages shown
+	challengesPassed atomic.Uint64 // requests let through on a valid pass
 
 	failures atomic.Uint64
 	mu       sync.Mutex
@@ -111,13 +128,27 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	// Until the challenge exists (milestone M3), a request that would be
-	// challenged is counted and passed on.
-	if g.opts.DryRun || decision.Action != rules.Deny {
+	if g.opts.DryRun {
 		g.opts.Next.ServeHTTP(w, r)
 		return
 	}
-	g.opts.Blocked(w, r, g.sources[decision.Source].Reference)
+	switch decision.Action {
+	case rules.Deny:
+		g.opts.Blocked(w, r, g.sources[decision.Source].Reference)
+	case rules.Challenge:
+		switch {
+		case g.opts.Challenge == nil:
+			g.opts.Next.ServeHTTP(w, r)
+		case g.opts.Challenge.Passed(r):
+			g.challengesPassed.Add(1)
+			g.opts.Next.ServeHTTP(w, r)
+		default:
+			g.challengesServed.Add(1)
+			g.opts.Challenge.Serve(w, r)
+		}
+	default:
+		g.opts.Next.ServeHTTP(w, r)
+	}
 }
 
 // decide evaluates the request. The engine is built so that it cannot fail,
@@ -188,8 +219,22 @@ type Snapshot struct {
 	Totals map[rules.Action]uint64 `json:"totals"`
 	// Failures is the number of requests that could not be evaluated.
 	Failures uint64 `json:"failures"`
+	// Challenge says what became of the requests decided as "challenge".
+	Challenge ChallengeCounts `json:"challenge"`
 	// Sources lists every rule, threshold and the default with its count.
 	Sources []SourceCount `json:"sources"`
+}
+
+// ChallengeCounts says what became of challenged requests.
+type ChallengeCounts struct {
+	// Served is how often the challenge page was shown.
+	Served uint64 `json:"served"`
+	// Passed is how many requests were let through on a valid pass.
+	Passed uint64 `json:"passed"`
+	// Solved is how many answers to a challenge were accepted.
+	Solved uint64 `json:"solved"`
+	// Failed is how many answers were rejected.
+	Failed uint64 `json:"failed"`
 }
 
 // SourceCount says how often one source decided.
@@ -208,6 +253,13 @@ func (g *Gate) Snapshot() Snapshot {
 		Totals:   map[rules.Action]uint64{rules.Allow: 0, rules.Challenge: 0, rules.Deny: 0},
 		Failures: g.failures.Load(),
 		Sources:  make([]SourceCount, len(g.sources)),
+		Challenge: ChallengeCounts{
+			Served: g.challengesServed.Load(),
+			Passed: g.challengesPassed.Load(),
+		},
+	}
+	if g.opts.Challenge != nil {
+		s.Challenge.Solved, s.Challenge.Failed = g.opts.Challenge.Counts()
 	}
 	for i, src := range g.sources {
 		n := g.counts[i].Load()

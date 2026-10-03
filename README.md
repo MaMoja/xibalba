@@ -19,7 +19,7 @@ on your own server.
 
 > [!IMPORTANT]
 > Xibalba is in early development. Today it runs in front of a website and
-> allows or blocks requests by rules you write. The challenge, the maintained
+> allows, blocks or challenges requests by rules you write. The maintained
 > crawler lists and the web interface are being built. The table below says
 > exactly what exists.
 
@@ -62,8 +62,10 @@ flowchart LR
 | Rule engine: user agent, path, host, method, header and address conditions, weights and thresholds | Built |
 | Importable rule files, dry-run mode, decision counters | Built |
 | Accessible block page in German and English | Built |
-| Challenge page | Next |
-| Crawler classes and identity checks | Planned |
+| Security check: proof of work, a path without JavaScript, signed pass cookie | Built |
+| Operator name, contact and wording of all visitor pages adjustable | Built |
+| Logo and accent colour on visitor pages | Planned |
+| Crawler classes and identity checks | Next |
 | Statistics and web interface | Planned |
 
 The order and the details are in the [roadmap](docs/ROADMAP.md).
@@ -181,7 +183,9 @@ configuration xibalba.yaml: 1 problem
 | Document | What it covers |
 |---|---|
 | [Configuration](docs/CONFIGURATION.md) | Every setting, its default and its allowed values |
+| [Handbuch (Deutsch)](docs/de/HANDBUCH.md) | Für Betreiber: installieren, einrichten, wo man was einstellt |
 | [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
+| [Challenge](docs/CHALLENGE.md) | The security check: how it works, its settings, what to consider |
 | [Architecture](docs/ARCHITECTURE.md) | How the program is divided and how failures are contained |
 | [Development](docs/DEVELOPMENT.md) | Building, testing and adding a component |
 | [Specification](docs/SPEC.md) | What Xibalba is meant to do |

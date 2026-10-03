@@ -4,6 +4,42 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-03
 
+- **Tokens are stateless and signed with HMAC-SHA-256.** Agent's choice. No
+  storage to run, back up or share; instances that share the key file accept
+  each other's tokens. Tasks and passes are signed with different derived
+  keys so one can never stand in for the other.
+- **Tasks and passes are tied to the client's network (/24, /64) and user
+  agent.** Agent's choice. A solved check cannot be handed to a fleet. The
+  network rather than the single address, so visitors whose address moves
+  within their provider are not asked again. `challenge.bind_network: false`
+  drops the network part. The tie is a keyed hash; the cookie reveals neither.
+- **The pass cookie is removed before a request reaches the website.**
+  Agent's choice. The website has no use for it and should not log it.
+- **Path without JavaScript: wait, then press a button.** Agent's choice. An
+  automatic timed redirect would be simpler for the visitor but is a
+  recognised accessibility failure (a time limit the visitor cannot control).
+  A crawler can take this path too; `no_javascript: deny` closes it.
+- **The challenge page answers with status 403.** Agent's choice. A 200 would
+  let caches and search engines take the check for the real page.
+- **Default difficulty 18 bits.** Agent's choice. About a tenth of a second
+  on a desktop; the cost to bulk fetchers comes mostly from having to run a
+  browser and from the binding, not from the arithmetic.
+- **The proof-of-work script is our own SHA-256, checked against a reference
+  implementation.** Agent's choice. No third-party script; one static script
+  named in the Content-Security-Policy by its hash.
+- **`/.xibalba/` is reserved and not configurable.** Agent's choice. One fixed
+  place is easier to document and to exempt in other tools.
+- **Signing key in a file, created on first start with mode 600; without a
+  file the key lives only as long as the process.** Agent's choice. Keeps
+  secrets out of the configuration file, which gets shared and versioned.
+- **Operator handbook in German first.** Agent's choice, following the
+  owner's request for documentation a customer can be given. The target
+  customers are in the German-speaking region; the reference documents stay
+  English.
+- **Parity with Anubis's challenge was not checked this time.** The
+  documentation site refused the request and the fallback was not approved in
+  time. The design is our own.
+
 - **Wording of the visitor pages approved; operator and texts must be
   adjustable at set-up.** Owner's decision. Implemented as the `pages`
   section: `operator`, `contact`, `default_language`, `texts`.
