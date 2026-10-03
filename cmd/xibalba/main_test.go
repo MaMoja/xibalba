@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/MaMoja/xibalba/internal/health"
+	"github.com/MaMoja/xibalba/internal/license"
 )
 
 // upstream is the one required setting; nothing in these tests connects to it.
@@ -68,5 +72,36 @@ func TestRunStopsCleanlyWhenContextEnds(t *testing.T) {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("log is missing %q:\n%s", want, stderr.String())
 		}
+	}
+}
+
+func TestLicenseHealth(t *testing.T) {
+	l := license.License{Licensee: "x", Issued: "2026-01-01", Expires: "2026-10-03"}
+	at := func(s string) time.Time {
+		d, err := time.Parse("2006-01-02", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	tests := []struct {
+		name          string
+		now           string
+		usableAtStart bool
+		wantState     health.State
+		wantDetail    string
+	}{
+		{"within its term", "2026-06-01", true, health.OK, ""},
+		{"in the grace period", "2026-10-10", true, health.Degraded, "keeps working until 2026-11-02"},
+		{"ran out while running", "2026-12-01", true, health.Degraded, "from the next restart"},
+		{"was already out at start", "2026-12-01", false, health.Degraded, "the pages use the standard wording"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := licenseHealth(l, tt.usableAtStart, at(tt.now))
+			if got.State != tt.wantState || !strings.Contains(got.Detail, tt.wantDetail) {
+				t.Errorf("got %+v, want %s containing %q", got, tt.wantState, tt.wantDetail)
+			}
+		})
 	}
 }

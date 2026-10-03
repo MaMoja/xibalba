@@ -41,6 +41,7 @@ flowchart TD
     logging --> config
     config --> rules
     httpserver --> health
+    config --> license
     config --> pages
     config --> challenge
     config --> token
@@ -72,6 +73,7 @@ the same code that later uses them.
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
 | `internal/challenge` | Make a client pass a check, verify its answer, recognise its pass |
+| `internal/license` | Verify sponsor licenses (signature and term), offline |
 | `internal/pages` | Render the pages Xibalba itself shows to visitors |
 | `internal/proxy` | Forward an allowed request to the website and answer when it cannot be reached |
 | `internal/buildinfo` | Say which build is running |
@@ -109,6 +111,8 @@ cannot recover from.
 | The signing key file is damaged, unreadable or cannot be created | The program does not start and says which file and why. `-check` finds this beforehand without creating anything. | Log line `start-up failed` with `component=challenge`, exit code 1 |
 | A client sends a wrong, expired, forged or foreign answer to a challenge | It gets a new task and a short note. No pass. Counted as `failed`. | `challenge.failed` in `/decisions` |
 | The system's random source fails while issuing a task | That request gets a plain 503. | Log line `no random numbers available` with `component=challenge` |
+| The sponsor license file is missing, damaged or not issued by the project | The program does not start and says so, like any wrong setting. | Standard error, exit code 1 |
+| The sponsor license has expired | The program starts and runs. For 30 days nothing changes; after that the visitor pages use the standard wording and show the Xibalba line. | Warning in the log with `component=license`; `license` is `degraded` in `/healthz` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |

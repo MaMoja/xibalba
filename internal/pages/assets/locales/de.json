@@ -16,5 +16,7 @@
   "challenge_button": "Weiter",
   "challenge_needs_script": "Für diese Prüfung muss JavaScript eingeschaltet sein. Bitte schalten Sie JavaScript ein und laden Sie die Seite neu.",
   "challenge_too_early": "Das war etwas zu schnell. Bitte warten Sie einige Sekunden und wählen Sie dann erneut „Weiter“.",
-  "challenge_retry": "Die Prüfung konnte nicht abgeschlossen werden und wurde neu gestartet."
+  "challenge_retry": "Die Prüfung konnte nicht abgeschlossen werden und wurde neu gestartet.",
+  "attribution_text": "Geschützt durch",
+  "attribution_sponsor": "Projekt unterstützen"
 }

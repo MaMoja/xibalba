@@ -77,6 +77,14 @@ server that is not installed is skipped. Run it after any change to
 `internal/clientip`, `internal/proxy` or the example files. The handbook
 shows these files; a test keeps its copies equal to them.
 
+## Sponsor licenses in tests
+
+`pages.operator`, `pages.texts` and `pages.attribution: false` need a sponsor
+license. Tests never use the project's real key: `newProject` in
+`internal/config` and `licenseFile` in `test/integration` issue licenses with
+key pairs made on the spot, and the integration tests build the binary to
+trust theirs. See [MAINTAINING.md](MAINTAINING.md) for the real key.
+
 ## Documentation rules
 
 Documentation is part of the change, not a follow-up.

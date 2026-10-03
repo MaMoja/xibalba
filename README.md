@@ -63,7 +63,9 @@ flowchart LR
 | Importable rule files, dry-run mode, decision counters | Built |
 | Accessible block page in German and English | Built |
 | Security check: proof of work, a path without JavaScript, signed pass cookie | Built |
-| Operator name, contact and wording of all visitor pages adjustable | Built |
+| Contact line and default language of the visitor pages adjustable | Built |
+| Own name and wording on the visitor pages, Xibalba line removable (sponsor license) | Built |
+| Tested configurations for nginx and Caddy | Built |
 | Logo and accent colour on visitor pages | Planned |
 | Crawler classes and identity checks | Next |
 | Statistics and web interface | Planned |
@@ -186,6 +188,7 @@ configuration xibalba.yaml: 1 problem
 | [Handbuch (Deutsch)](docs/de/HANDBUCH.md) | Für Betreiber: installieren, einrichten, wo man was einstellt |
 | [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
 | [Challenge](docs/CHALLENGE.md) | The security check: how it works, its settings, what to consider |
+| [Sponsors](docs/SPONSORS.md) | What is free, what the sponsor license adds, how it is checked |
 | [Architecture](docs/ARCHITECTURE.md) | How the program is divided and how failures are contained |
 | [Development](docs/DEVELOPMENT.md) | Building, testing and adding a component |
 | [Specification](docs/SPEC.md) | What Xibalba is meant to do |
@@ -202,6 +205,19 @@ configuration xibalba.yaml: 1 problem
   a header unless the configuration says so.
 - **Configurable, with explanations.** Every setting is documented and
   validated, and every error says how to fix it.
+
+## Sponsoring
+
+Xibalba is free and complete without paying anything. The pages it shows to
+visitors carry a small line, "Protected by Xibalba", with a link to this
+project and to its sponsor page.
+
+Sponsors at 50 € per month or more receive a license file that removes the
+line and lets them put their own name and wording on the pages. The check is
+done offline on your own machine; nothing is sent anywhere, and an expired
+license never takes a website down. Details: [docs/SPONSORS.md](docs/SPONSORS.md).
+
+[Sponsor Xibalba on GitHub](https://github.com/sponsors/MaMoja)
 
 ## Contributing and security
 

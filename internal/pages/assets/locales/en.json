@@ -16,5 +16,7 @@
   "challenge_button": "Continue",
   "challenge_needs_script": "JavaScript must be switched on for this check. Please switch JavaScript on and reload the page.",
   "challenge_too_early": "That was a little too fast. Please wait a few seconds and then choose “Continue” again.",
-  "challenge_retry": "The check could not be completed and has been started again."
+  "challenge_retry": "The check could not be completed and has been started again.",
+  "attribution_text": "Protected by",
+  "attribution_sponsor": "Support the project"
 }

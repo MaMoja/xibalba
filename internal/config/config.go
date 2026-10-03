@@ -47,6 +47,8 @@ type Config struct {
 	Challenge Challenge `yaml:"challenge"`
 	// Pages adapts the pages Xibalba shows to visitors.
 	Pages Pages `yaml:"pages"`
+	// License is the sponsor license, which unlocks some of the Pages settings.
+	License License `yaml:"license"`
 	// Ops is the internal listener for health checks and, later, metrics.
 	Ops Ops `yaml:"ops"`
 	// ShutdownTimeout is how long running requests get to finish on shutdown.
@@ -224,6 +226,7 @@ func isCookieName(s string) bool {
 type Pages struct {
 	// Operator is who runs the website, as it should appear in a sentence.
 	// Empty keeps the neutral phrase "The operator of this website".
+	// Needs a sponsor license.
 	Operator string `yaml:"operator"`
 	// Contact says how to reach the operator. Shown on the block page.
 	Contact string `yaml:"contact"`
@@ -231,16 +234,23 @@ type Pages struct {
 	// supported language.
 	DefaultLanguage string `yaml:"default_language"`
 	// Texts replaces individual texts: language, then text name, then text.
+	// Needs a sponsor license.
 	Texts map[string]map[string]string `yaml:"texts"`
+	// Attribution shows the line "Protected by Xibalba" at the bottom of
+	// every page. Switching it off needs a sponsor license.
+	Attribution bool `yaml:"attribution"`
 }
 
-// Options returns the settings in the form internal/pages takes them.
+// Options returns the settings exactly as written, in the form
+// internal/pages takes them. It is used to validate them. What takes effect
+// depends on the sponsor license; see Config.PageOptions.
 func (p Pages) Options() pages.Options {
 	return pages.Options{
 		Operator:        p.Operator,
 		Contact:         p.Contact,
 		DefaultLanguage: p.DefaultLanguage,
 		Texts:           p.Texts,
+		HideAttribution: !p.Attribution,
 	}
 }
 
@@ -286,14 +296,17 @@ func Default() Config {
 			KeyFile:           "",
 			CookieName:        "xibalba-pass",
 		},
-		Pages:           Pages{DefaultLanguage: pages.Languages()[0], Texts: map[string]map[string]string{}},
+		Pages:           Pages{DefaultLanguage: pages.Languages()[0], Texts: map[string]map[string]string{}, Attribution: true},
 		Ops:             Ops{Listen: "127.0.0.1:9090"},
 		ShutdownTimeout: 10 * time.Second,
 	}
 }
 
 // Load reads and validates the configuration file at path.
-func Load(path string) (Config, error) {
+func Load(path string) (Config, error) { return LoadWith(path, DefaultEnv()) }
+
+// LoadWith is Load with an explicit environment.
+func LoadWith(path string, env Env) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -306,13 +319,18 @@ func Load(path string) (Config, error) {
 			Message: "the configuration file cannot be read: " + err.Error(),
 		}}}
 	}
-	return Parse(path, data)
+	return ParseWith(path, data, env)
 }
 
 // Parse validates configuration data. name is used in error messages, and its
 // directory is where relative rule file names are looked up. Settings that
 // are left out keep their defaults.
 func Parse(name string, data []byte) (Config, error) {
+	return ParseWith(name, data, DefaultEnv())
+}
+
+// ParseWith is Parse with an explicit environment.
+func ParseWith(name string, data []byte, env Env) (Config, error) {
 	cfg := Default()
 
 	if hasContent(data) {
@@ -327,6 +345,9 @@ func Parse(name string, data []byte) (Config, error) {
 	lines := lineIndex(data)
 	problems := cfg.validate(lines)
 	cfg.Challenge.check(filepath.Dir(name), func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
+	cfg.checkLicense(filepath.Dir(name), env, func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
 	problems = append(problems, cfg.Rules.load(filepath.Dir(name), lines)...)

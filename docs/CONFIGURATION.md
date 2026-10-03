@@ -149,10 +149,11 @@ name on them or to change the wording.
 
 | Setting | Default | Allowed values | Meaning |
 |---|---|---|---|
-| `pages.operator` | empty | Text, up to 200 characters | Who runs the website, as it should read in a sentence, for example `"Stadt Musterhausen"`. Replaces the neutral phrase "The operator of this website" in every language. |
+| `pages.attribution` | `true` | `true`, `false` | Show the line "Protected by Xibalba" with links to the project at the bottom of every page. **`false` needs a sponsor license.** |
+| `pages.operator` | empty | Text, up to 200 characters | **Needs a sponsor license.** Who runs the website, as it should read in a sentence, for example `"Stadt Musterhausen"`. Replaces the neutral phrase "The operator of this website" in every language. |
 | `pages.contact` | empty | Text, up to 200 characters | How to reach you: an e-mail address, a telephone number, an office. Shown as a line on the block page. Empty shows no contact line. |
 | `pages.default_language` | `de` | `de`, `en` | Language for visitors whose browser states none of the supported languages. Every page offers the other language as well. |
-| `pages.texts` | `{}` | Language, then text name, then text (up to 1000 characters) | Replaces single texts. Texts you do not list keep their built-in wording. |
+| `pages.texts` | `{}` | Language, then text name, then text (up to 1000 characters) | **Needs a sponsor license.** Replaces single texts. Texts you do not list keep their built-in wording. |
 
 Text names for `pages.texts`:
 
@@ -180,6 +181,9 @@ Text names for `pages.texts`:
 `{operator}` inside a text is replaced by the operator: `pages.operator` if
 set, or the `operator` text of that language. It is the only placeholder.
 
+The two texts of the Xibalba line (`attribution_text`, `attribution_sponsor`)
+are fixed and cannot be replaced; the line can only be shown or hidden.
+
 Example: a name that needs a different form in each language, and a reworded
 German paragraph.
 
@@ -196,6 +200,21 @@ pages:
 
 Everything you write here is shown as plain text. HTML in a text is displayed
 literally and never interpreted, so a typo cannot break the page.
+
+### `license`
+
+Xibalba is free and complete without a license. Sponsors of the project
+receive a license file that unlocks `pages.operator`, `pages.texts` and
+`pages.attribution: false`. [SPONSORS.md](SPONSORS.md) explains what that
+means, how the check works, and what happens when a license runs out.
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `license.file` | empty | Path, relative to the configuration file | The sponsor license file. Empty means no license. |
+
+A license file that is missing, damaged or not issued by the project is an
+error at start-up. A license that has expired is not: Xibalba starts, the
+pages return to their standard form, and the log and `/healthz` say why.
 
 ### `log`
 
@@ -252,6 +271,7 @@ top-level state is the worst state of any component. A component that is not
 |---|---|---|
 | `ops` | The operations listener | It stopped listening (`down`). |
 | `public` | The public listener | It stopped listening (`down`). |
+| `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |
 

@@ -35,6 +35,7 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 		t.Fatalf("found only %d documents; the search is broken", len(docs))
 	}
 
+	sponsor := newProject(t)
 	checked := 0
 	for _, doc := range docs {
 		data, err := os.ReadFile(doc)
@@ -88,11 +89,22 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// Examples that use sponsor settings are shown to sponsors, who
+			// have a license. Give the example one.
+			if regexp.MustCompile(`(?m)^  (operator|texts|attribution):`).MatchString(config) && !strings.Contains(config, "license:") {
+				config += "license:\n  file: sponsor.license\n"
+			}
+			if strings.Contains(config, "sponsor.license") {
+				if err := os.WriteFile(filepath.Join(dir, "sponsor.license"), []byte(sponsor.issue(t, "2099-01-01")), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			config = strings.ReplaceAll(config, "/etc/xibalba/sponsor.license", "sponsor.license")
 			path := filepath.Join(dir, "xibalba.yaml")
 			if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Load(path); err != nil {
+			if _, err := LoadWith(path, sponsor.env); err != nil {
 				t.Errorf("%s, YAML example %d is not valid:\n%v\n--- example ---\n%s", name, i+1, err, m[1])
 			}
 		}

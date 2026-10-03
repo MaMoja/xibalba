@@ -4,6 +4,32 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-03
 
+- **Attribution line on all visitor pages; removing it and customising the
+  pages needs a sponsor license (50 € per month on GitHub Sponsors).** Owner's
+  decision. Locked: `pages.attribution: false`, `pages.operator`, `pages.texts`.
+- **`pages.contact` and `pages.default_language` stay free.** Agent's choice,
+  for the owner to confirm. A visitor who is blocked by mistake needs a way
+  to reach the site owner whether or not the site owner sponsors the project.
+- **The license is a signed file checked offline (Ed25519), with the public
+  key built into the program.** Agent's choice. No call home: it would
+  contradict the privacy promises, fail on servers without internet access,
+  and make every installation depend on a server of ours.
+- **The check is a courtesy lock and documented as such.** Agent's choice.
+  The source is MIT-licensed; anyone can build without it. Saying so plainly
+  is better than pretending otherwise.
+- **An expired license never stops Xibalba.** Agent's choice. Missing or
+  forged license file: error at start-up, like any wrong setting. Expired:
+  30 days of grace, then the pages fall back to the standard form, with
+  warnings in the log and the health report. A website must not go down
+  because a renewal is late.
+- **The license is read at start-up only.** Agent's choice. Pages do not
+  change their appearance in the middle of operation; the health report
+  announces what the next restart will bring.
+- **The wording of the attribution line cannot be replaced.** Agent's
+  choice. Otherwise `pages.texts` would be a way around it.
+- **Test binaries are built with their own public key.** Agent's choice. The
+  real private key is never needed for tests and never enters the repository.
+
 - **Tokens are stateless and signed with HMAC-SHA-256.** Agent's choice. No
   storage to run, back up or share; instances that share the key file accept
   each other's tokens. Tasks and passes are signed with different derived
@@ -132,6 +158,11 @@ Newest first. One entry per decision: what, why, who decided.
   server that holds the certificate; own TLS is on the "Later" list.
 
 ## Open (owner to decide)
+
+- Whether `pages.contact` should also need a sponsor license (currently free).
+- GitHub Sponsors bills in US dollars; the tier that corresponds to
+  "50 € per month" has to be created on the sponsor page.
+- How long licenses are issued for (the tool takes any expiry date).
 
 
 - Copyright holder named in `LICENSE` (currently "The Xibalba Authors").

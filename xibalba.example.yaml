@@ -91,13 +91,15 @@ challenge:
 pages:
   # Who runs the website, as it should read in a sentence, for example
   # "Stadt Musterhausen". Empty keeps "The operator of this website".
+  # Needs a sponsor license (see "license" below).
   operator: ""
   # How to reach you, shown on the block page, for example an e-mail address
   # or a telephone number. Empty shows no contact line.
   contact: ""
   # Language for visitors whose browser states none of the supported ones (de, en).
   default_language: de
-  # Replace any text, per language. {operator} stands for the operator. Example:
+  # Replace any text, per language. Needs a sponsor license.
+  # {operator} stands for the operator. Example:
   #
   #   texts:
   #     de:
@@ -108,6 +110,17 @@ pages:
   #
   # The text names are listed in docs/CONFIGURATION.md.
   texts: {}
+  # Show the line "Protected by Xibalba" with a link to the project at the
+  # bottom of every page. Setting this to false needs a sponsor license.
+  attribution: true
+
+# Sponsor license. Xibalba is free and complete without one. Sponsors of the
+# project receive a license file that lets them remove the "Protected by
+# Xibalba" line and put their own name and wording on the pages
+# (pages.operator, pages.texts, pages.attribution). See docs/SPONSORS.md.
+license:
+  # The license file, relative to this file. Empty: no license.
+  file: ""
 
 # What Xibalba writes to its log (standard error).
 log:

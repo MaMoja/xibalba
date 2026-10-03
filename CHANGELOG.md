@@ -8,6 +8,16 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Attribution line. Every page Xibalba shows to visitors ends with a small
+  "Protected by Xibalba" line linking to the project and its sponsor page.
+  New setting `pages.attribution` (default `true`).
+- Sponsor license (`license.file`). A signed license file, checked offline,
+  unlocks `pages.attribution: false`, `pages.operator` and `pages.texts`.
+  An expired license never stops Xibalba: after a 30-day grace period the
+  pages return to their standard form. See `docs/SPONSORS.md`.
+- Health component `license` (only when a license file is configured).
+- `cmd/xibalba-license`, the maintainer's tool for issuing and checking licenses.
+
 - Tested example configurations for nginx (`examples/nginx/xibalba.conf`)
   and Caddy (`examples/caddy/Caddyfile`), and `make webserver-check`, which
   runs Xibalba behind both.
@@ -56,6 +66,10 @@ All notable changes are listed here. The format follows
   replaces any text per language.
 
 ### Changed
+
+- **`pages.operator` and `pages.texts` now need a sponsor license.** Without
+  `license.file`, a configuration that uses them is refused at start-up with
+  a message that says so. `pages.contact` and `pages.default_language` stay free.
 
 - A website outage is logged once when it starts and once when it ends,
   instead of once per failed request. The requested path is no longer logged.

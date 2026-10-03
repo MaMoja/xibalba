@@ -312,7 +312,7 @@ func TestExampleFileMatchesDefaults(t *testing.T) {
 }
 
 func TestPagesSettings(t *testing.T) {
-	cfg, err := Parse("test.yaml", []byte(minimal+`
+	cfg, err := loadLicensed(t, minimal+`
 pages:
   operator: "Stadt Musterhausen"
   contact: "webmaster@musterhausen.example"
@@ -321,13 +321,13 @@ pages:
     de:
       operator: "Die Stadt Musterhausen"
       blocked_title: "Zugriff nicht möglich"
-`))
+`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	opts := cfg.Pages.Options()
 	if opts.Operator != "Stadt Musterhausen" || opts.Contact != "webmaster@musterhausen.example" ||
-		opts.DefaultLanguage != "en" || opts.Texts["de"]["blocked_title"] != "Zugriff nicht möglich" {
+		opts.DefaultLanguage != "en" || opts.Texts["de"]["blocked_title"] != "Zugriff nicht möglich" || opts.HideAttribution {
 		t.Errorf("pages settings not read: %+v", opts)
 	}
 }
@@ -345,7 +345,7 @@ func TestPagesProblemsPointAtTheLine(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Parse("test.yaml", []byte(minimal+tt.pages))
+			_, err := loadLicensed(t, minimal+tt.pages)
 			if err == nil {
 				t.Fatal("expected an error, got none")
 			}

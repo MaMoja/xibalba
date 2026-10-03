@@ -33,7 +33,9 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [x] Challenge page: neutral, accessible, German and English, operator name and all texts adjustable
 - [x] Accessibility check with an automated tool (axe: no findings) and by keyboard only, in a real browser
 - [x] German operator handbook
-- [ ] Customer branding: logo and accent colour on the visitor pages
+- [x] Attribution line and sponsor license (owner's request, added after M3)
+- [x] Tested nginx and Caddy configurations (owner's request, added after M3)
+- [ ] Customer branding: logo and accent colour on the visitor pages (sponsor feature)
 - [ ] A pass with a real screen reader (NVDA or VoiceOver). Not possible in the development environment; needs a person.
 
 ## M4: Crawler classes and identity

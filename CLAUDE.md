@@ -43,6 +43,9 @@ without telling the owner why.
 - Run the `security-review` skill before closing any milestone that touches the
   request path, tokens, or the admin interface.
 
+- The private key that signs sponsor licenses is never in the repository,
+  never in a log, and never needed by a test. Tests use key pairs of their own.
+
 ## 4. Privacy
 
 - IP addresses are personal data under GDPR. Default: store aggregated counters
@@ -124,6 +127,12 @@ without telling the owner why.
 
 ## 12. Customisation
 
+- Appearance settings (`pages.operator`, `pages.texts`, `pages.attribution`,
+  and later logo and accent colour) need a sponsor license. Everything that
+  protects a website, and everything a visitor needs, stays free. Do not put
+  a protective or accessibility feature behind the license.
+- A license problem never takes a website down: an expired license falls
+  back to the standard pages.
 - Behaviour that a site owner may reasonably want to change is a setting with a
   safe default, a validator, and a documented meaning. No magic constants in
   the request path.
@@ -135,6 +144,7 @@ without telling the owner why.
 
 ```
 cmd/xibalba/          main program: wiring only
+cmd/xibalba-license/  maintainer's tool: issue and check sponsor licenses
 internal/config/      load and validate the configuration
 internal/logging/     build the logger
 internal/lifecycle/   start, stop and supervise components
@@ -145,6 +155,7 @@ internal/rules/       compile a rule set, decide about a request
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
+internal/license/     verify sponsor licenses, offline
 internal/pages/       pages shown to visitors; texts in assets/locales
 internal/proxy/       forward to the website, answer when it is unreachable
 internal/buildinfo/   version of the running build

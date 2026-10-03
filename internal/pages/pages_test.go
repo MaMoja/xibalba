@@ -123,7 +123,7 @@ func TestPagesAreSelfContainedAndAccessible(t *testing.T) {
 				t.Errorf("%s: empty title", id)
 			}
 			for _, banned := range []string{"<script", "<img", "<link", "<iframe", "http://", "https://", "src=", "@import", "url(", "onclick", "javascript:"} {
-				if strings.Contains(page, banned) {
+				if strings.Contains(withoutFooter(t, page), banned) {
 					t.Errorf("%s: contains %q; the page must load nothing and run nothing", id, banned)
 				}
 			}
@@ -180,8 +180,8 @@ func TestEveryLanguageHasEveryText(t *testing.T) {
 				t.Errorf("language %q is missing text %q", lang, key)
 			}
 		}
-		if len(r.locales[lang]) != len(keys) {
-			t.Errorf("language %q has %d texts, the program uses %d: remove unused ones or register new ones in keys", lang, len(r.locales[lang]), len(keys))
+		if want := len(keys) + len(fixedKeys); len(r.locales[lang]) != want {
+			t.Errorf("language %q has %d texts, the program uses %d: remove unused ones or register new ones in keys", lang, len(r.locales[lang]), want)
 		}
 		if strings.Contains(r.locales[lang]["blocked_text"], "{") {
 			t.Errorf("language %q: a placeholder was left in the block text", lang)
@@ -301,7 +301,7 @@ func TestCustomTextIsEscaped(t *testing.T) {
 	}
 	page := blockedPage(t, opts, "de")
 	for _, banned := range []string{"<b>", "<script>", "<a href"} {
-		if strings.Contains(page, banned) {
+		if strings.Contains(withoutFooter(t, page), banned) {
 			t.Errorf("custom text became markup (%s):\n%s", banned, page)
 		}
 	}
@@ -413,7 +413,7 @@ func TestChallengePage(t *testing.T) {
 		t.Error("a placeholder was sent to the visitor")
 	}
 	for _, banned := range []string{"<img", "<link", "<iframe", "http://", "https://", "src=", "@import", "url(", "onclick", "javascript:", "eval(", "innerHTML", "XMLHttpRequest", "fetch("} {
-		if strings.Contains(page, banned) {
+		if strings.Contains(withoutFooter(t, page), banned) {
 			t.Errorf("challenge page contains %q", banned)
 		}
 	}
@@ -494,5 +494,95 @@ func TestChallengePageUsesOperatorAndCustomTexts(t *testing.T) {
 	_, page := challengePageFor(t, opts, "de", task)
 	if !strings.Contains(page, "Stadt Musterhausen schützt diese Seiten") || !strings.Contains(page, `<button type="submit">Fortfahren</button>`) {
 		t.Errorf("operator name or custom button text not used:\n%s", page)
+	}
+}
+
+var footerRE = regexp.MustCompile(`(?s)<footer>.*?</footer>\n?`)
+
+// withoutFooter returns the page without Xibalba's attribution line, after
+// checking that the line is exactly what it should be: two plain links and
+// nothing that loads or runs.
+func withoutFooter(t *testing.T, page string) string {
+	t.Helper()
+	footer := footerRE.FindString(page)
+	if footer == "" {
+		return page
+	}
+	if strings.Count(footer, "<a ") != 2 ||
+		!strings.Contains(footer, `<a href="`+RepoURL+`" rel="noopener noreferrer">Xibalba</a>`) ||
+		!strings.Contains(footer, `<a href="`+SponsorURL+`" rel="noopener noreferrer">`) {
+		t.Errorf("the attribution line is not the two expected links:\n%s", footer)
+	}
+	for _, banned := range []string{"<script", "<img", "<link", "<iframe", "src=", "onclick", "javascript:", "target="} {
+		if strings.Contains(footer, banned) {
+			t.Errorf("the attribution line contains %q", banned)
+		}
+	}
+	return footerRE.ReplaceAllString(page, "")
+}
+
+func TestAttributionIsShownByDefault(t *testing.T) {
+	r := renderer(t)
+	shows := map[string]func(*httptest.ResponseRecorder, *http.Request){
+		"unavailable": func(rec *httptest.ResponseRecorder, req *http.Request) { r.Unavailable(rec, req, 502) },
+		"blocked":     func(rec *httptest.ResponseRecorder, req *http.Request) { r.Blocked(rec, req, "a1b2c3d4") },
+		"challenge":   func(rec *httptest.ResponseRecorder, req *http.Request) { r.Challenge(rec, req, task) },
+	}
+	wording := map[string][2]string{"de": {"Geschützt durch", "Projekt unterstützen"}, "en": {"Protected by", "Support the project"}}
+	for name, show := range shows {
+		for lang, words := range wording {
+			rec := httptest.NewRecorder()
+			show(rec, get(lang))
+			page := rec.Body.String()
+			footer := footerRE.FindString(page)
+			if footer == "" {
+				t.Errorf("%s/%s: no attribution line", name, lang)
+				continue
+			}
+			if !strings.Contains(footer, words[0]+" <a ") || !strings.Contains(footer, ">"+words[1]+"</a>") {
+				t.Errorf("%s/%s: attribution line is not in the page's language:\n%s", name, lang, footer)
+			}
+			if strings.Index(page, "<footer>") < strings.Index(page, "</main>") {
+				t.Errorf("%s/%s: the attribution line must come after the page's content", name, lang)
+			}
+			withoutFooter(t, page)
+		}
+	}
+}
+
+func TestAttributionCanBeHidden(t *testing.T) {
+	r, err := New(Options{HideAttribution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, show := range map[string]func(*httptest.ResponseRecorder, *http.Request){
+		"unavailable": func(rec *httptest.ResponseRecorder, req *http.Request) { r.Unavailable(rec, req, 502) },
+		"blocked":     func(rec *httptest.ResponseRecorder, req *http.Request) { r.Blocked(rec, req, "a1b2c3d4") },
+		"challenge":   func(rec *httptest.ResponseRecorder, req *http.Request) { r.Challenge(rec, req, task) },
+	} {
+		rec := httptest.NewRecorder()
+		show(rec, get("de"))
+		page := rec.Body.String()
+		for _, trace := range []string{"<footer", "github.com", "Geschützt durch", "Protected by", "Projekt unterstützen", ">Xibalba<"} {
+			if strings.Contains(page, trace) {
+				t.Errorf("%s: the page still shows %q although the attribution is hidden", name, trace)
+			}
+		}
+	}
+}
+
+// The attribution line is Xibalba's own. Its wording cannot be replaced
+// through the texts meant for the site owner.
+func TestAttributionTextsCannotBeReplaced(t *testing.T) {
+	for _, key := range fixedKeys {
+		problems := Check(Options{Texts: map[string]map[string]string{"de": {key: "Etwas anderes"}}})
+		if len(problems) != 1 || problems[0].Field != "texts.de."+key || !strings.Contains(problems[0].Message, "cannot be reworded") {
+			t.Errorf("replacing %s: problems = %+v", key, problems)
+		}
+	}
+	for _, key := range TextKeys() {
+		if has(fixedKeys, key) {
+			t.Errorf("%s is listed as replaceable", key)
+		}
 	}
 }

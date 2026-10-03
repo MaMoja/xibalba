@@ -6,7 +6,10 @@ package integration
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -27,9 +30,15 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/MaMoja/xibalba/internal/license"
 )
 
 var binary string
+
+// projectKey stands in for the project's license key: the test binary is
+// built to trust it, so the tests can issue sponsor licenses.
+var projectKey ed25519.PrivateKey
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "xibalba-it-")
@@ -37,8 +46,16 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	projectKey = private
 	binary = filepath.Join(dir, "xibalba")
-	build := exec.Command("go", "build", "-o", binary, "../../cmd/xibalba")
+	build := exec.Command("go", "build",
+		"-ldflags", "-X github.com/MaMoja/xibalba/internal/license.publicKeyHex="+hex.EncodeToString(public),
+		"-o", binary, "../../cmd/xibalba")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "building xibalba failed: %v\n%s", err, out)
 		os.Exit(1)
@@ -856,16 +873,67 @@ func TestInvalidRuleIsRejectedWithLineNumbers(t *testing.T) {
 	}
 }
 
-func TestBlockPageCanBeAdapted(t *testing.T) {
-	site := newWebsite(t)
-	custom := `pages:
+// licenseFile writes a sponsor license valid until the given day and
+// returns its path.
+func licenseFile(t *testing.T, expires string) string {
+	t.Helper()
+	text, err := license.Issue(projectKey, license.License{Licensee: "Stadt Musterhausen", Issued: "2026-01-01", Expires: expires})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "sponsor.license")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const customPages = `pages:
   operator: "Stadt Musterhausen"
   contact: "webmaster@musterhausen.example"
+  attribution: false
   texts:
     de:
       blocked_title: "Zugriff nicht möglich"
-` + testRules
-	inst := start(t, site.URL, custom)
+`
+
+func TestAttributionIsShownWithoutALicense(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "pages:\n  contact: \"webmaster@musterhausen.example\"\n"+testRules)
+
+	_, german := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "de"})
+	for _, want := range []string{
+		"<footer>",
+		`Geschützt durch <a href="https://github.com/MaMoja/xibalba" rel="noopener noreferrer">Xibalba</a>`,
+		`<a href="https://github.com/sponsors/MaMoja" rel="noopener noreferrer">Projekt unterstützen</a>`,
+		"Der Betreiber dieser Website lässt Anfragen dieser Art nicht zu.",
+		"Kontakt: webmaster@musterhausen.example", // the contact line is free
+	} {
+		if !strings.Contains(german, want) {
+			t.Errorf("block page without a license is missing %q:\n%s", want, german)
+		}
+	}
+	code, report := health(t, inst)
+	if _, listed := report.Components["license"]; code != 200 || listed {
+		t.Errorf("health lists a license although none is configured: %+v", report)
+	}
+}
+
+func TestSponsorSettingsAreRefusedWithoutALicense(t *testing.T) {
+	cmd, logs := run(t, "upstream:\n  url: http://127.0.0.1:1\n"+customPages)
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("xibalba started with sponsor settings and no license")
+	}
+	for _, want := range []string{"pages.operator: this setting needs a sponsor license", "pages.attribution", "pages.texts", "docs/SPONSORS.md"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("error should contain %q:\n%s", want, logs.String())
+		}
+	}
+}
+
+func TestBlockPageCanBeAdaptedWithALicense(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, fmt.Sprintf("license:\n  file: %q\n", licenseFile(t, "2099-01-01"))+customPages+testRules)
 
 	_, german := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "de"})
 	for _, want := range []string{
@@ -886,5 +954,72 @@ func TestBlockPageCanBeAdapted(t *testing.T) {
 		if !strings.Contains(english, want) {
 			t.Errorf("English block page is missing %q:\n%s", want, english)
 		}
+	}
+	for _, page := range []string{german, english} {
+		if strings.Contains(page, "<footer") || strings.Contains(page, "github.com") {
+			t.Errorf("the Xibalba line is still shown although attribution is off:\n%s", page)
+		}
+	}
+	_, report := health(t, inst)
+	if report.Components["license"].State != "ok" {
+		t.Errorf("license health = %+v, want ok", report.Components["license"])
+	}
+	if !strings.Contains(inst.logs.String(), `msg="sponsor license"`) || !strings.Contains(inst.logs.String(), "Stadt Musterhausen") {
+		t.Errorf("the log does not name the license:\n%s", inst.logs.String())
+	}
+}
+
+// A license that ran out must never take the website down. Xibalba starts,
+// the pages return to their standard form, and log and health say why.
+func TestExpiredLicenseFallsBackToTheStandardPages(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, fmt.Sprintf("license:\n  file: %q\n", licenseFile(t, "2026-01-31"))+customPages+testRules)
+
+	_, page := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "de"})
+	for _, want := range []string{
+		"<h1>Diese Anfrage wurde blockiert</h1>",
+		"Der Betreiber dieser Website lässt Anfragen dieser Art nicht zu.",
+		"Geschützt durch",
+		"Kontakt: webmaster@musterhausen.example",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page with an expired license is missing %q:\n%s", want, page)
+		}
+	}
+	if strings.Contains(page, "Stadt Musterhausen") || strings.Contains(page, "Zugriff nicht möglich") {
+		t.Errorf("sponsor wording is still shown after the license ran out:\n%s", page)
+	}
+
+	code, report := health(t, inst)
+	lic := report.Components["license"]
+	if code != 200 || lic.State != "degraded" || !strings.Contains(lic.Detail, "expired on 2026-01-31") {
+		t.Errorf("health = %d %+v; want 200 with the license degraded and the date named", code, lic)
+	}
+	for _, want := range []string{"the sponsor license has expired", "pages.operator, pages.texts, pages.attribution"} {
+		if !strings.Contains(inst.logs.String(), want) {
+			t.Errorf("the log should contain %q:\n%s", want, inst.logs.String())
+		}
+	}
+}
+
+func TestForgedLicenseIsRefused(t *testing.T) {
+	_, stranger, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := license.Issue(stranger, license.License{Licensee: "Nobody", Issued: "2026-01-01", Expires: "2099-01-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "forged.license")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd, logs := run(t, fmt.Sprintf("upstream:\n  url: http://127.0.0.1:1\nlicense:\n  file: %q\n", path))
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("xibalba started with a license it did not issue")
+	}
+	if !strings.Contains(logs.String(), "license.file") || !strings.Contains(logs.String(), "not genuine") {
+		t.Errorf("error should explain the license problem:\n%s", logs.String())
 	}
 }

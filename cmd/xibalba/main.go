@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/MaMoja/xibalba/internal/buildinfo"
 	"github.com/MaMoja/xibalba/internal/challenge"
@@ -24,6 +25,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/gate"
 	"github.com/MaMoja/xibalba/internal/health"
 	"github.com/MaMoja/xibalba/internal/httpserver"
+	"github.com/MaMoja/xibalba/internal/license"
 	"github.com/MaMoja/xibalba/internal/lifecycle"
 	"github.com/MaMoja/xibalba/internal/logging"
 	"github.com/MaMoja/xibalba/internal/pages"
@@ -44,6 +46,25 @@ func main() {
 	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
+}
+
+// licenseHealth reports the state of the sponsor license. A license past its
+// term never takes Xibalba down; it shows up here as "degraded" so that
+// whoever watches the health report learns about it in time.
+func licenseHealth(l license.License, usableAtStart bool, now time.Time) health.Status {
+	switch l.State(now) {
+	case license.Valid:
+		return health.Status{State: health.OK}
+	case license.Grace:
+		return health.Status{State: health.Degraded,
+			Detail: fmt.Sprintf("the sponsor license expired on %s; it keeps working until %s, please renew it", l.Expires, l.GraceEnds())}
+	default:
+		detail := fmt.Sprintf("the sponsor license expired on %s; the pages use the standard wording and show the Xibalba line", l.Expires)
+		if usableAtStart {
+			detail = fmt.Sprintf("the sponsor license expired on %s; from the next restart the pages use the standard wording and show the Xibalba line", l.Expires)
+		}
+		return health.Status{State: health.Degraded, Detail: detail}
+	}
 }
 
 // route sends requests for Xibalba's own address space to own and everything
@@ -125,10 +146,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	supervisor.Add(ops)
 
 	// The pages Xibalba itself shows to visitors.
-	page, err := pages.New(cfg.Pages.Options())
+	page, err := pages.New(cfg.PageOptions())
 	if err != nil {
 		log.Error("start-up failed", "error", "visitor pages: "+err.Error())
 		return exitFailed
+	}
+
+	if found := cfg.License.Info; found != nil {
+		usableAtStart := cfg.License.Usable()
+		registry.Register("license", func() health.Status { return licenseHealth(*found, usableAtStart, time.Now()) })
 	}
 
 	// The rule set was checked when the configuration was loaded, so
@@ -226,6 +252,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		"rules", engine.Len(),
 		"dry_run", cfg.Rules.DryRun,
 	)
+	if found := cfg.License.Info; found != nil {
+		switch cfg.License.State {
+		case license.Valid:
+			log.Info("sponsor license", "component", "license", "licensee", found.Licensee, "valid_until", found.Expires)
+		case license.Grace:
+			log.Warn("the sponsor license has expired; it keeps working for a grace period, please renew it",
+				"component", "license", "licensee", found.Licensee, "expired", found.Expires, "works_until", found.GraceEnds())
+		default:
+			log.Warn("the sponsor license has expired: the pages use the standard wording and show the Xibalba line",
+				"component", "license", "licensee", found.Licensee, "expired", found.Expires,
+				"settings_not_applied", strings.Join(cfg.SponsorSettings(), ", "))
+		}
+	}
 	if cfg.Rules.DryRun {
 		log.Warn("dry run: decisions are counted but nothing is blocked", "component", "rules")
 	}

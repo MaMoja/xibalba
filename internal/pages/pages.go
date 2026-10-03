@@ -59,6 +59,17 @@ var keys = []string{
 	"challenge_too_early", "challenge_retry",
 }
 
+// fixedKeys are texts that belong to Xibalba itself and cannot be replaced.
+var fixedKeys = []string{"attribution_text", "attribution_sponsor"}
+
+// Where the attribution line points.
+const (
+	// RepoURL is the project's home.
+	RepoURL = "https://github.com/MaMoja/xibalba"
+	// SponsorURL is where the project can be supported.
+	SponsorURL = "https://github.com/sponsors/MaMoja"
+)
+
 // operatorPlaceholder is replaced, in every text, by the operator's name.
 const operatorPlaceholder = "{operator}"
 
@@ -89,6 +100,9 @@ type Options struct {
 	// Texts replaces individual texts: language code, then text key, then
 	// the new text. A text may contain {operator}.
 	Texts map[string]map[string]string
+	// HideAttribution removes the "Protected by Xibalba" line from the
+	// bottom of every page.
+	HideAttribution bool
 }
 
 // Problem is one mistake in Options.
@@ -150,6 +164,9 @@ func Check(opts Options) []Problem {
 			field := "texts." + lang + "." + key
 			value := opts.Texts[lang][key]
 			switch {
+			case has(fixedKeys, key):
+				add(field, fmt.Sprintf("%q belongs to the Xibalba line at the bottom of the page and cannot be reworded", key),
+					"to remove the line, set pages.attribution: false (sponsor license required)")
 			case !has(keys, key):
 				add(field, fmt.Sprintf("%q is not a text Xibalba shows", key), "use one of: "+strings.Join(keys, ", "))
 			case strings.TrimSpace(value) == "":
@@ -181,6 +198,7 @@ type Renderer struct {
 	chCSP    string // policy of the challenge page: also allows its script and form
 	fallback string // language used without a usable preference
 	contact  string
+	hideAttr bool
 	locales  map[string]map[string]string
 }
 
@@ -225,6 +243,7 @@ func New(opts Options) (*Renderer, error) {
 		script:   template.JS(script),
 		fallback: languages[0],
 		contact:  strings.TrimSpace(opts.Contact),
+		hideAttr: opts.HideAttribution,
 		locales:  map[string]map[string]string{},
 	}
 	if opts.DefaultLanguage != "" {
@@ -239,13 +258,13 @@ func New(opts Options) (*Renderer, error) {
 		if err := json.Unmarshal(data, &texts); err != nil {
 			return nil, fmt.Errorf("language %q: %w", lang, err)
 		}
-		for _, key := range keys {
+		for _, key := range append(append([]string{}, keys...), fixedKeys...) {
 			if strings.TrimSpace(texts[key]) == "" {
 				return nil, fmt.Errorf("language %q: text %q is missing", lang, key)
 			}
 		}
-		if len(texts) != len(keys) {
-			return nil, fmt.Errorf("language %q: has %d texts, the program uses %d", lang, len(texts), len(keys))
+		if len(texts) != len(keys)+len(fixedKeys) {
+			return nil, fmt.Errorf("language %q: has %d texts, the program uses %d", lang, len(texts), len(keys)+len(fixedKeys))
 		}
 
 		// The site owner's adjustments: a name for all languages, then
@@ -310,11 +329,29 @@ type challengeVersion struct {
 	Lang, Name, Title, Text, Cookie string
 }
 
+// attribution is the "Protected by Xibalba" line.
+type attribution struct {
+	Text, Sponsor, RepoURL, SponsorURL string
+}
+
+// attributionFor returns the line in the given language, or nil if it is hidden.
+func (r *Renderer) attributionFor(lang string) *attribution {
+	if r.hideAttr {
+		return nil
+	}
+	texts := r.locales[lang]
+	return &attribution{
+		Text: texts["attribution_text"], Sponsor: texts["attribution_sponsor"],
+		RepoURL: RepoURL, SponsorURL: SponsorURL,
+	}
+}
+
 type challengePage struct {
-	CSS     template.CSS
-	Script  template.JS
-	Primary challengeVersion
-	Others  []challengeVersion
+	CSS         template.CSS
+	Attribution *attribution
+	Script      template.JS
+	Primary     challengeVersion
+	Others      []challengeVersion
 	ChallengeView
 	Notice                                     string
 	Working, Done, Manual, Button, NeedsScript string
@@ -326,7 +363,7 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
 	texts := r.locales[primary]
 	p := challengePage{
-		CSS: r.css, Script: r.script, ChallengeView: v,
+		CSS: r.css, Script: r.script, ChallengeView: v, Attribution: r.attributionFor(primary),
 		Working: texts["challenge_working"], Done: texts["challenge_done"],
 		Manual: texts["challenge_manual"], Button: texts["challenge_button"],
 		NeedsScript: texts["challenge_needs_script"],
@@ -363,16 +400,17 @@ type version struct {
 }
 
 type view struct {
-	CSS       template.CSS
-	Primary   version
-	Others    []version
-	Reference string
-	Contact   string
+	CSS         template.CSS
+	Attribution *attribution
+	Primary     version
+	Others      []version
+	Reference   string
+	Contact     string
 }
 
 func (r *Renderer) write(w http.ResponseWriter, req *http.Request, status int, kind, reference string) {
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
-	v := view{CSS: r.css, Reference: reference}
+	v := view{CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
 	if kind == "blocked" {
 		v.Contact = r.contact
 	}

@@ -337,9 +337,11 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | festlegen, wie lange ein Besucher nicht erneut geprüft wird | `challenge.pass_lifetime` | Abschnitt 7 |
 | Besucher ohne JavaScript zulassen oder abweisen | `challenge.no_javascript` | Abschnitt 7 |
 | dass Besucher nach einem Neustart nicht erneut geprüft werden | `challenge.key_file` | Schritt 6 |
-| meinen Namen statt „Der Betreiber dieser Website“ zeigen | `pages.operator` | Abschnitt 8 |
 | eine Kontaktangabe auf der Blockseite zeigen | `pages.contact` | Abschnitt 8 |
-| einen Text auf den Besucherseiten ändern | `pages.texts` | Abschnitt 8 |
+| meinen Namen statt „Der Betreiber dieser Website“ zeigen | `pages.operator` (Sponsor-Lizenz) | Abschnitt 8 |
+| einen Text auf den Besucherseiten ändern | `pages.texts` (Sponsor-Lizenz) | Abschnitt 8 |
+| die Zeile „Geschützt durch Xibalba“ entfernen | `pages.attribution: false` (Sponsor-Lizenz) | Abschnitt 8 |
+| meine Sponsor-Lizenz eintragen | `license.file` | Abschnitt 8 |
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
 | mehr oder weniger ins Protokoll schreiben | `log.level`, `log.format` | [Referenz](../CONFIGURATION.md#log) |
@@ -598,17 +600,94 @@ funktionieren ohne jede Einstellung, auf Deutsch oder Englisch je nach
 Browser des Besuchers; die jeweils andere Sprache ist auf derselben Seite
 aufklappbar.
 
-### Ihren Namen und eine Kontaktangabe zeigen
+### Was frei ist und was eine Sponsor-Lizenz braucht
+
+Xibalba ist kostenlos und ohne Lizenz vollständig: Regeln, Sicherheitsprüfung,
+Blockseite und Zähler funktionieren ohne Einschränkung. Am unteren Rand jeder
+Besucherseite steht dann klein die Zeile „Geschützt durch Xibalba · Projekt
+unterstützen“ mit je einem Link zum Projekt und zu dessen Sponsorenseite.
+
+Wer das Projekt mit 50 € im Monat oder mehr unterstützt, erhält eine
+Lizenzdatei. Mit ihr lassen sich die Seiten ganz zu den eigenen machen.
+
+| | Ohne Lizenz | Mit Sponsor-Lizenz |
+|---|---|---|
+| Regeln, Sicherheitsprüfung, Blockieren, Zähler | ja | ja |
+| Kontaktangabe auf der Blockseite (`pages.contact`) | ja | ja |
+| Sprache für Besucher ohne Deutsch oder Englisch (`pages.default_language`) | ja | ja |
+| Zeile „Geschützt durch Xibalba“ | wird immer gezeigt | abschaltbar (`pages.attribution: false`) |
+| Eigener Name auf den Seiten (`pages.operator`) | „Der Betreiber dieser Website“ | Ihr Name |
+| Eigene Texte (`pages.texts`) | eingebauter Wortlaut | jeder Text ersetzbar |
+
+Verwenden Sie eine der drei Sponsor-Einstellungen ohne Lizenz, startet Xibalba
+nicht und sagt, warum:
+
+```text
+configuration /etc/xibalba/xibalba.yaml: 2 problems
+  - line 4, pages.operator: this setting needs a sponsor license, and no license file is configured
+    fix: sponsors receive a license file; set license.file to it (see docs/SPONSORS.md). Without a license, remove this setting: the pages then use the standard wording and show the line "Protected by Xibalba"
+  - line 5, pages.attribution: this setting needs a sponsor license, and no license file is configured
+    fix: sponsors receive a license file; set license.file to it (see docs/SPONSORS.md). Without a license, remove this setting: the pages then use the standard wording and show the line "Protected by Xibalba"
+```
+
+### Die Sponsor-Lizenz eintragen
+
+1. Projekt unterstützen: <https://github.com/sponsors/MaMoja>
+2. Sie erhalten eine Lizenzdatei für Ihre Organisation.
+3. Datei neben die Konfiguration legen, etwa als
+   `/etc/xibalba/sponsor.license`, und eintragen:
+
+```yaml
+license:
+  file: sponsor.license
+
+pages:
+  operator: "Stadt Musterhausen"
+  attribution: false
+```
+
+Die Datei ist reiner Text. Kopieren Sie sie als Ganzes und ändern Sie nichts
+daran. Nach dem Neustart nennt das Protokoll die Lizenz, und `/healthz` führt
+sie als Teil `license`.
+
+**Die Prüfung geschieht auf Ihrem eigenen Rechner.** Xibalba vergleicht die
+Signatur der Datei mit einem Schlüssel, der im Programm steckt. Dabei wird
+nichts irgendwohin übertragen; es funktioniert auch auf einem Server ohne
+Internetzugang.
+
+**Eine abgelaufene Lizenz legt Ihre Website nie lahm.**
+
+| Zeitpunkt | Was geschieht |
+|---|---|
+| bis einschließlich Ablaufdatum | Alles funktioniert. |
+| 30 Tage danach (Kulanzzeit) | Alles funktioniert weiter. Das Protokoll warnt beim Start, `/healthz` zeigt `license` als `degraded` mit beiden Daten. |
+| nach der Kulanzzeit | Xibalba startet normal. Die Seiten zeigen wieder den eingebauten Wortlaut und die Xibalba-Zeile; `pages.operator`, `pages.texts` und `pages.attribution` werden nicht angewendet. Alles andere, auch `pages.contact`, läuft unverändert. |
+
+Die Lizenz wird beim Start gelesen. Läuft sie im Betrieb ab, ändert sich bis
+zum nächsten Neustart nichts; `/healthz` kündigt es vorher an. Zum Verlängern
+ersetzen Sie die Datei durch die neue und starten neu.
+
+Einzelheiten stehen in [SPONSORS.md](../SPONSORS.md) (englisch).
+
+### Eine Kontaktangabe zeigen
+
+```yaml
+pages:
+  contact: "webmaster@musterhausen.example"
+```
+
+Die Kontaktangabe erscheint als eigene Zeile auf der Blockseite. Sie braucht
+keine Lizenz: Wer zu Unrecht blockiert wird, soll Sie erreichen können.
+
+### Ihren Namen zeigen (Sponsor-Lizenz)
 
 ```yaml
 pages:
   operator: "Stadt Musterhausen"
-  contact: "webmaster@musterhausen.example"
 ```
 
 Aus „Der Betreiber dieser Website lässt Anfragen dieser Art nicht zu.“ wird
-„Stadt Musterhausen lässt Anfragen dieser Art nicht zu.“ Die Kontaktangabe
-erscheint als eigene Zeile auf der Blockseite.
+„Stadt Musterhausen lässt Anfragen dieser Art nicht zu.“
 
 Braucht der Name je Sprache eine andere Form, setzen Sie ihn pro Sprache:
 
@@ -621,7 +700,7 @@ pages:
       operator: "The City of Musterhausen"
 ```
 
-### Einen Text ändern
+### Einen Text ändern (Sponsor-Lizenz)
 
 ```yaml
 pages:
@@ -665,7 +744,7 @@ pages:
 
 Gilt für Besucher, deren Browser weder Deutsch noch Englisch anfragt.
 
-Logo und Akzentfarbe sind geplant.
+Logo und Akzentfarbe sind geplant (als Sponsor-Funktion).
 
 ## 9. Betrieb: prüfen, beobachten, ändern
 
@@ -685,6 +764,7 @@ eingeschränkt, `down` heißt ausgefallen. Bei einem Problem steht unter
 | `upstream` | Verbindung zu Ihrer Website | die letzte Anfrage an die Website fehlschlug |
 | `rules` | Auswertung der Regeln | eine Anfrage nicht ausgewertet werden konnte |
 | `ops` | der Betriebsport selbst | er nicht mehr lauscht |
+| `license` | die Sponsor-Lizenz; erscheint nur, wenn `license.file` gesetzt ist | sie abgelaufen ist (`degraded`); Xibalba läuft weiter |
 
 Ist Ihre Website nicht erreichbar, bleibt Xibalba in Betrieb: Besucher
 erhalten die Seite „Die Website ist gerade nicht erreichbar“, und `upstream`
@@ -807,6 +887,8 @@ Rechtsberatung.
 | Wie lange gilt es? | `challenge.pass_lifetime`, in der Voreinstellung eine Woche. |
 | Sieht meine Website das Cookie? | Nein. Xibalba entfernt es, bevor es eine Anfrage weiterreicht. |
 | Werden Daten an Dritte übertragen? | Nein. Die Seiten von Xibalba laden nichts von anderen Servern: keine Schriften, keine Skripte, keine Bilder. Xibalba selbst nimmt keine Verbindung nach außen auf, außer zu Ihrer Website. |
+| Was ist mit der Zeile „Geschützt durch Xibalba“? | Sie enthält zwei gewöhnliche Links zu GitHub. Beim Anzeigen der Seite wird nichts von dort geladen. Erst wenn ein Besucher einen der Links anklickt, ruft sein Browser GitHub auf; die Seite, von der er kommt, wird dabei nicht mitgeteilt. Mit Sponsor-Lizenz lässt sich die Zeile abschalten. |
+| Wird die Lizenz bei jemandem abgefragt? | Nein. Die Prüfung geschieht ausschließlich auf Ihrem Rechner. |
 | Was erhält meine Website zusätzlich? | Die Adresse des Besuchers in den Kopfzeilen `X-Forwarded-For` und `X-Real-IP`, wie bei jedem vorgeschalteten Webserver. Was Ihre Website damit tut, liegt bei Ihnen. |
 
 Die Prüfseite weist den Besucher selbst auf das Cookie hin (Text
@@ -818,6 +900,9 @@ Die Prüfseite weist den Besucher selbst auf das Cookie hin (Text
 |---|---|---|
 | Xibalba startet nicht | Fehler in der Konfiguration, belegter Port oder Problem mit der Schlüsseldatei | Die Meldung nennt Datei, Zeile und Abhilfe. `xibalba -check -config …` zeigt alle Konfigurationsfehler auf einmal. |
 | `start-up failed … address already in use` | Der Port ist belegt | Anderen Port in `server.listen` oder `ops.listen` wählen oder das andere Programm beenden. |
+| `this setting needs a sponsor license` | Eine der Einstellungen `pages.operator`, `pages.texts` oder `pages.attribution: false` wird ohne Lizenz verwendet | Die Einstellung entfernen oder die Lizenzdatei unter `license.file` eintragen (Abschnitt 8). |
+| `is not a usable license … not genuine` | Die Lizenzdatei wurde verändert, unvollständig kopiert oder stammt nicht vom Projekt | Die erhaltene Datei erneut und unverändert kopieren. |
+| Die eigenen Texte sind verschwunden, die Xibalba-Zeile ist wieder da | Die Sponsor-Lizenz ist abgelaufen | `/healthz` nennt unter `license` das Datum. Neue Lizenzdatei einspielen und neu starten. |
 | Besucher sehen „Die Website ist gerade nicht erreichbar“ | Ihre Website antwortet nicht oder zu langsam | `/healthz` ansehen: unter `upstream` steht die Ursache. `upstream.url` prüfen. Bei langsamer Website `upstream.response_header_timeout` erhöhen. |
 | Eine Adressregel greift für alle oder für niemanden | `server.trusted_proxies` fehlt; Xibalba sieht nur die Adresse Ihres Webservers | Schritt 5. |
 | Nach jedem Neustart werden alle erneut geprüft | Keine Schlüsseldatei | `challenge.key_file` setzen (Schritt 6). Im Protokoll steht dazu eine Warnung. |
@@ -851,7 +936,7 @@ Damit Sie wissen, woran Sie sind:
 - **Keine dauerhafte Statistik.** Die Zähler beginnen bei jedem Start bei null.
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
 - **Keine fertigen Pakete.** Xibalba wird aus dem Quelltext gebaut.
-- **Kein Logo, keine Akzentfarbe** auf den Besucherseiten.
+- **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).
 - **Keine Begrenzung der Anfragerate.**
 - **Meldungen des Programms sind englisch.**
 - **Die Besucherseiten sind mit einem automatischen Prüfwerkzeug und per
@@ -866,6 +951,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | [CONFIGURATION.md](../CONFIGURATION.md) | jede Einstellung mit Voreinstellung und erlaubten Werten | Englisch |
 | [RULES.md](../RULES.md) | alles, was Regeln können | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |
+| [SPONSORS.md](../SPONSORS.md) | was frei ist, was die Sponsor-Lizenz freischaltet, wie sie geprüft wird | Englisch |
 | [`xibalba.example.yaml`](../../xibalba.example.yaml) | Vorlage der Konfigurationsdatei mit allen Einstellungen | Englisch |
 | [`examples/rules/basic.yaml`](../../examples/rules/basic.yaml) | kommentierte Beispielregeln | Englisch |
 | [CHANGELOG.md](../../CHANGELOG.md) | was sich zwischen den Fassungen geändert hat | Englisch |

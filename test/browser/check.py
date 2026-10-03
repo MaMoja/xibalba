@@ -174,6 +174,15 @@ async def run(base, axe_source, shots):
         await page.keyboard.press("Enter")
         opened = await page.evaluate("document.querySelector('details').open")
         check("blocked: the other language opens with the keyboard", opened)
+        links = await page.evaluate("Array.from(document.querySelectorAll('footer a')).map(a => [a.textContent, a.href, a.rel])")
+        check("blocked: the Xibalba line shows the two project links",
+              [l[1] for l in links] == ["https://github.com/MaMoja/xibalba", "https://github.com/sponsors/MaMoja"]
+              and all(l[2] == "noopener noreferrer" for l in links), links)
+        reachable = []
+        for _ in range(4):
+            await page.keyboard.press("Tab")
+            reachable.append(await page.evaluate("document.activeElement.tagName + ':' + (document.activeElement.textContent || '')"))
+        check("blocked: both links can be reached with the keyboard", sum(1 for r in reachable if r.startswith("A:")) >= 2, reachable)
         if shots:
             await page.screenshot(path=os.path.join(shots, "blocked.png"))
         await ctx.close()
@@ -236,8 +245,6 @@ ops:
   listen: "127.0.0.1:{ops_port}"
 challenge:
   wait: 1s
-pages:
-  operator: "Stadt Musterhausen"
 rules:
   default_action: challenge
   list:
