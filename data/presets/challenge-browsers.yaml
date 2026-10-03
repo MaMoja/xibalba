@@ -1,0 +1,12 @@
+# Check everything that says it is a browser. Nearly every browser, and
+# nearly every crawler that pretends to be one, sends "Mozilla" in its user
+# agent. Programs that say what they are (curl, git, feed readers) are not
+# affected. List the allow- presets before this one, or search engines and
+# feed readers will be checked as well and fail.
+rules:
+  - name: preset.challenge-browsers
+    match:
+      any:
+        - user_agent: {contains: "Mozilla"}
+        - user_agent: {contains: "Opera"}
+    action: challenge

@@ -54,7 +54,8 @@ Each milestone ends with something that runs and is tested. Do them in order.
 Bots that pretend to be browsers cannot be told by their name. Owner's
 decision (2026-10-03): all of this comes before statistics.
 - [x] Request limits per client and period, switchable, with a list of exempt addresses
-- [ ] Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds; ready-made exceptions for git clients, container registry clients and feed readers
+- [x] Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds; ready-made exceptions for git clients and feed readers
+- [ ] Ready-made exceptions for container registry clients, small browsers and uptime monitors (their user agents must be looked up, not written from memory)
 - [ ] Plausibility of browser headers (a "Chrome" that sends no Chrome headers), as weights
 - [ ] Trap link that only a faulty crawler follows; clients that follow it gain weight
 - [ ] Maze of worthless pages behind the trap link, as an option, off by default

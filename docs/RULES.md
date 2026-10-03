@@ -224,6 +224,59 @@ Rule names must be unique across the configuration file and all rule files.
 [`examples/rules/basic.yaml`](../examples/rules/basic.yaml) is a commented
 example; a test keeps it valid.
 
+## Presets
+
+A preset is a rule that ships inside Xibalba. Switch presets on by listing
+them; nothing is on by default. They are evaluated after `rules.list` and
+before `rules.files`, **in the order you list them**, and the first rule
+that decides wins. So list what lets through before what checks or denies.
+
+| Preset | What it does |
+|---|---|
+| `keep-internet-working` | Lets everyone read `/.well-known/`, `/robots.txt` and `/favicon.ico`. |
+| `allow-feeds` | Lets feed readers fetch feeds: addresses ending in `.rss`, `.atom` or `.xml`, or in `/feed`, `/rss`, `/atom`. |
+| `allow-git-clients` | Lets programs that say they are git use git's own addresses (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`). |
+| `block-fake-crawlers` | Denies requests that carry a known crawler's name but do not come from its operator. |
+| `block-ai-training` | Denies crawlers that collect pages for AI training. |
+| `block-archive-crawlers` | Denies crawlers that build public copies of the web. |
+| `allow-search-engines` | Lets verified search engine crawlers through. |
+| `allow-ai-search` | Lets verified AI search crawlers through. |
+| `allow-ai-user-fetch` | Lets verified fetchers through that load a page because a person asked an assistant. |
+| `challenge-browsers` | Checks everything whose user agent says "Mozilla" or "Opera": every browser, and every crawler that pretends to be one. Programs that say what they are (curl, git, feed readers) are not affected. |
+
+The crawler presets are explained in [CRAWLERS.md](CRAWLERS.md#presets).
+
+A complete protection in one block: wanted crawlers and plain programs pass,
+unwanted crawlers are denied, and whatever claims to be a browser has to
+prove it.
+
+```yaml
+rules:
+  default_action: allow
+  presets:
+    - keep-internet-working
+    - allow-feeds
+    - block-fake-crawlers
+    - block-ai-training
+    - allow-search-engines
+    - allow-ai-search
+    - allow-ai-user-fetch
+    - challenge-browsers
+```
+
+Things to know:
+
+- `challenge-browsers` checks every visitor once a week (see
+  [CHALLENGE.md](CHALLENGE.md)). Programs that send a browser's user agent
+  but are not browsers, such as some monitoring services and API clients,
+  fail the check: let them through with a rule of your own in `rules.list`,
+  preferably by address.
+- `allow-feeds` and `allow-git-clients` open the addresses they name to
+  everyone, including crawlers. That is the price of letting programs in
+  that cannot be verified.
+- Each preset is one rule named `preset.<name>` and is counted in
+  `/decisions`. The files are in [`data/presets`](../data/presets).
+
 ## Trying a rule set safely
 
 Set `rules.dry_run: true`. Xibalba then evaluates and counts every decision

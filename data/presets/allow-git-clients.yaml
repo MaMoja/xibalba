@@ -1,0 +1,13 @@
+# Let git fetch and push over HTTP. Only the addresses git itself uses are
+# opened, and only to programs that say they are git. Useful in front of a
+# code hosting site when everything else is checked. Anyone can send git's
+# name, so this opens exactly these addresses to everyone who does.
+rules:
+  - name: preset.allow-git-clients
+    match:
+      user_agent: {prefix: "git/"}
+      any:
+        - path: {suffix: "/info/refs"}
+        - path: {suffix: "/git-upload-pack"}
+        - path: {suffix: "/git-receive-pack"}
+    action: allow

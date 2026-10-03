@@ -49,6 +49,10 @@ rules:
   # Ready-made rule groups that ship with Xibalba. They are evaluated after
   # the rules in list and before the rule files, in the order given:
   #
+  #   keep-internet-working   let everyone read /.well-known/, robots.txt and
+  #                           favicon.ico
+  #   allow-feeds             let feed readers fetch news feeds
+  #   allow-git-clients       let git fetch and push over HTTP
   #   block-fake-crawlers     deny requests that carry a crawler's name but do
   #                           not come from that crawler's operator
   #   block-ai-training       deny crawlers that collect pages for AI training
@@ -58,7 +62,10 @@ rules:
   #   allow-ai-user-fetch     let verified fetchers through that load a page
   #                           because a person asked an AI assistant about it
   #
-  # See docs/CRAWLERS.md.
+  #   challenge-browsers      check everything that says it is a browser;
+  #                           list it last
+  #
+  # See docs/RULES.md ("Presets") and docs/CRAWLERS.md.
   presets: []
   # Rule files to import, relative to this file. They are evaluated after
   # the rules in list and the presets, in the order given.

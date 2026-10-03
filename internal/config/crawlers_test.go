@@ -51,6 +51,9 @@ func TestPresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("all presets together: %v", err)
 	}
+	if len(cfg.Rules.Spec().Rules) != len(names) {
+		t.Errorf("%d presets hold %d rules; a preset is one rule", len(names), len(cfg.Rules.Spec().Rules))
+	}
 	if engine, _ := rules.Compile(cfg.Rules.Spec()); engine == nil || !engine.UsesCrawlers() {
 		t.Error("the presets do not use crawler conditions")
 	}

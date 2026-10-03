@@ -1287,3 +1287,53 @@ func TestBrowserGetsPastAChallengeLimit(t *testing.T) {
 		}
 	}
 }
+
+// The block the documentation recommends: plain programs and wanted
+// addresses pass, whatever says it is a browser is checked.
+func TestRecommendedPresets(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, `crawlers:
+  refresh: false
+rules:
+  presets: [keep-internet-working, allow-feeds, allow-git-clients, block-fake-crawlers, block-ai-training,
+            allow-search-engines, allow-ai-search, allow-ai-user-fetch, challenge-browsers]
+`)
+	browser := "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
+	tests := []struct {
+		name, method, path, ua string
+		status                 int
+	}{
+		{"browser on a page", "GET", "/seite", browser, 403},
+		{"browser reads robots.txt", "GET", "/robots.txt", browser, 200},
+		{"browser reads the icon", "GET", "/favicon.ico", browser, 200},
+		{"well-known address", "GET", "/.well-known/security.txt", browser, 200},
+		{"well-known is not a way round the check", "GET", "/.well-known/../seite", browser, 403},
+		{"posting to robots.txt is not let through", "POST", "/robots.txt", browser, 403},
+		{"feed", "GET", "/blog/index.xml", browser, 200},
+		{"feed address", "GET", "/blog/feed/", browser, 200},
+		{"curl", "GET", "/seite", "curl/8.5.0", 200},
+		{"git fetch", "GET", "/repo.git/info/refs", "git/2.43.0", 200},
+		{"git on another address", "GET", "/seite", "git/2.43.0", 200}, // says what it is, not a browser
+		{"training crawler", "GET", "/seite", "Mozilla/5.0 (compatible; GPTBot/1.2)", 403},
+		{"training crawler reads robots.txt", "GET", "/robots.txt", "GPTBot/1.2", 200},
+		{"opera", "GET", "/seite", "Opera/9.80 (Windows NT 6.1)", 403},
+	}
+	for _, tt := range tests {
+		req, _ := http.NewRequest(tt.method, inst.public+tt.path, nil)
+		req.URL.Opaque = tt.path // send the path as written
+		req.Header.Set("User-Agent", tt.ua)
+		req.Header.Set("Accept-Language", "en")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != tt.status {
+			t.Errorf("%s: status %d, want %d", tt.name, resp.StatusCode, tt.status)
+		}
+	}
+	d := getDecisions(t, inst)
+	if d.count("rule:preset.block-ai-training") != 1 || d.count("rule:preset.challenge-browsers") != 4 {
+		t.Errorf("counts: training %d, browsers %d", d.count("rule:preset.block-ai-training"), d.count("rule:preset.challenge-browsers"))
+	}
+}

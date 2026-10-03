@@ -187,8 +187,12 @@ func TestCrawlerDocumentationIsComplete(t *testing.T) {
 			t.Errorf("docs/CRAWLERS.md has no row for %s (%s, %s)", d.Name, d.Operator, d.Class)
 		}
 	}
+	rulesDoc, err := os.ReadFile(filepath.Join(root, "docs", "RULES.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range PresetNames() {
-		for file, text := range map[string][]byte{"docs/CRAWLERS.md": english, "docs/de/HANDBUCH.md": handbook} {
+		for file, text := range map[string][]byte{"docs/RULES.md": rulesDoc, "docs/de/HANDBUCH.md": handbook} {
 			if !strings.Contains(string(text), "| `"+name+"` |") {
 				t.Errorf("%s does not describe the preset %s", file, name)
 			}

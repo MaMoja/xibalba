@@ -8,6 +8,8 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Presets `challenge-browsers` (check everything that says it is a
+  browser), `keep-internet-working`, `allow-feeds` and `allow-git-clients`.
 - Request limits (`limits`). Up to four limits per client, each with a
   number of requests, a period and an action: `challenge` (the client has to
   pass the security check) or `deny` (status 429 with `Retry-After` and a

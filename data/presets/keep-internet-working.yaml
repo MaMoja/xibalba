@@ -1,0 +1,12 @@
+# Let through what every well-behaved program on the internet expects to be
+# able to read: the well-known addresses, robots.txt and the site icon.
+# Put this before any preset or rule that checks or denies.
+rules:
+  - name: preset.keep-internet-working
+    match:
+      method: ["GET", "HEAD"]
+      any:
+        - path: {prefix: "/.well-known/"}
+        - path: {equals: "/robots.txt"}
+        - path: {equals: "/favicon.ico"}
+    action: allow

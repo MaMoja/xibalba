@@ -1,0 +1,11 @@
+# Let feed readers fetch news feeds. A feed reader is a program and cannot
+# pass the security check. Matches addresses ending in .rss, .atom or .xml,
+# and the usual feed addresses.
+rules:
+  - name: preset.allow-feeds
+    match:
+      method: ["GET", "HEAD"]
+      any:
+        - path: {regex: "\\.(rss|atom|xml)$"}
+        - path: {regex: "/(feed|rss|atom)/?$"}
+    action: allow

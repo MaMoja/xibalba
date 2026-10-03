@@ -335,6 +335,8 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | Regeln in eigene Dateien auslagern | `rules.files` | Abschnitt 6 |
 | Anfragen je Anschluss begrenzen | `limits.enabled: true`, `limits.windows` | Abschnitt 6, „Anfragen begrenzen“ |
 | Adressen von der Begrenzung ausnehmen | `limits.exempt` | Abschnitt 6, „Anfragen begrenzen“ |
+| alles prüfen, was sich als Browser ausgibt | `rules.presets` mit `challenge-browsers` am Ende | Abschnitt 6, „Fertige Regelgruppen“ |
+| Feed-Leser, git, `robots.txt` trotz Prüfung durchlassen | `rules.presets` mit `allow-feeds`, `allow-git-clients`, `keep-internet-working` | Abschnitt 6, „Fertige Regelgruppen“ |
 | KI-Trainings-Crawler sperren | `rules.presets: [block-ai-training]` | Abschnitt 6, „Crawler erkennen und prüfen“ |
 | Suchmaschinen und KI-Suche durchlassen, aber nur die echten | `rules.presets` mit `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Abschnitt 6 |
 | Nachahmer sperren, die sich als Googlebot ausgeben | `rules.presets: [block-fake-crawlers]` | Abschnitt 6 |
@@ -507,6 +509,48 @@ Eine Regeldatei enthält eine Liste unter `rules:`. Die Regeln aus
 `rules.list` werden zuerst ausgewertet, danach die Dateien in der angegebenen
 Reihenfolge. Eine kommentierte Vorlage liegt in
 [`examples/rules/basic.yaml`](../../examples/rules/basic.yaml).
+
+### Fertige Regelgruppen
+
+Regelgruppen sind mitgelieferte Regeln, die Sie nur einschalten müssen.
+Ohne Eintrag ist keine aktiv. Sie werden nach Ihren Regeln in `rules.list`
+ausgewertet, **in der Reihenfolge, in der Sie sie aufzählen**; die erste
+Regel, die entscheidet, gilt. Zählen Sie deshalb zuerst auf, was durchlässt,
+und danach, was prüft oder sperrt.
+
+| Regelgruppe | Wirkung |
+|---|---|
+| `keep-internet-working` | lässt jeden `/.well-known/`, `/robots.txt` und `/favicon.ico` lesen |
+| `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (Adressen auf `.rss`, `.atom`, `.xml` oder `/feed`, `/rss`, `/atom`) |
+| `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen, die git selbst nutzt) |
+| `challenge-browsers` | prüft alles, was sich als Browser ausgibt (Kennung enthält „Mozilla“ oder „Opera“): jeden Browser und jeden Crawler, der sich als Browser tarnt. Programme, die sagen, was sie sind (curl, git, Feed-Leser), bleiben unberührt |
+
+Dazu kommen die sechs Regelgruppen für Crawler aus dem nächsten Abschnitt.
+
+**Ein vollständiger Schutz in einem Block:** Erwünschte Crawler und einfache
+Programme kommen durch, unerwünschte Crawler werden gesperrt, und was sich
+als Browser ausgibt, muss es beweisen.
+
+```yaml
+rules:
+  default_action: allow
+  presets:
+    - keep-internet-working
+    - allow-feeds
+    - block-fake-crawlers
+    - block-ai-training
+    - allow-search-engines
+    - allow-ai-search
+    - allow-ai-user-fetch
+    - challenge-browsers
+```
+
+Beachten Sie: Mit `challenge-browsers` wird jeder Besucher einmal pro Woche
+geprüft. Programme, die eine Browser-Kennung senden, aber keine Browser sind
+(manche Überwachungsdienste, Schnittstellen-Clients), bestehen die Prüfung
+nicht. Lassen Sie diese mit einer eigenen Regel in `rules.list` durch,
+möglichst anhand der Adresse. Probieren Sie den Block zuerst mit
+`rules.dry_run: true` aus.
 
 ### Crawler erkennen und prüfen
 

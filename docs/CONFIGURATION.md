@@ -116,7 +116,7 @@ What happens to each request. How rules are written is explained in
 | `rules.default_action` | `allow` | `allow`, `deny`, `challenge` | What happens when no rule decides and no threshold is reached. |
 | `rules.on_error` | `allow` | `allow`, `deny` | What happens to a request if evaluating it fails inside Xibalba. `allow` keeps the website reachable; `deny` answers `503` until the problem is fixed. |
 | `rules.thresholds` | `[]` | List of `{weight, action}`; weight 1 to 1000, action `challenge` or `deny` | Scores at which a request is challenged or denied. |
-| `rules.presets` | `[]` | List of: `block-fake-crawlers`, `block-ai-training`, `block-archive-crawlers`, `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Ready-made rule groups about crawlers. Evaluated after `rules.list` and before `rules.files`, in the order given. See [CRAWLERS.md](CRAWLERS.md#presets). |
+| `rules.presets` | `[]` | List of preset names; see [RULES.md](RULES.md#presets) | Ready-made rule groups. Evaluated after `rules.list` and before `rules.files`, in the order given. |
 | `rules.files` | `[]` | List of paths, relative to the configuration file | Rule files to import. Evaluated after `rules.list` and the presets, in the order given. |
 | `rules.list` | `[]` | List of rules | Rules written in the configuration file. Evaluated first, top to bottom. |
 
