@@ -8,6 +8,11 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Trap (`trap`). A link hidden in Xibalba's own pages, inert for people and
+  assistive technology, catches crawlers that follow every address in a
+  page. Rule condition `trapped` and preset `block-trapped` act on it. The
+  optional maze (`trap.maze`) answers with endless generated pages of
+  meaningless syllables. Both off by default. `GET /trap` shows the state.
 - Preset `weigh-odd-browsers`: score for requests that say they are a
   browser but lack what every browser sends.
 - Presets `challenge-browsers` (check everything that says it is a

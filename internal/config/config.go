@@ -45,6 +45,8 @@ type Config struct {
 	Rules Rules `yaml:"rules"`
 	// Crawlers says how crawlers are recognised and verified.
 	Crawlers Crawlers `yaml:"crawlers"`
+	// Trap is the hidden link that catches crawlers.
+	Trap Trap `yaml:"trap"`
 	// Limits are the request limits per client.
 	Limits Limits `yaml:"limits"`
 	// Challenge is the check a client has to pass when a rule says "challenge".
@@ -292,6 +294,7 @@ func Default() Config {
 		Rules:    defaultRules(),
 		Crawlers: defaultCrawlers(),
 		Limits:   defaultLimits(),
+		Trap:     defaultTrap(),
 		Challenge: Challenge{
 			Difficulty:        18,
 			NoJavaScript:      "button",
@@ -353,6 +356,10 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 	cfg.Challenge.check(filepath.Dir(name), func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
+	cfg.Trap.check(func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
+	cfg.Rules.TrapOn = cfg.Trap.Enabled
 	cfg.Limits.check(func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})

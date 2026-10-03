@@ -32,7 +32,7 @@ func TestPresets(t *testing.T) {
 		t.Fatalf("presets: %v", names)
 	}
 	for _, name := range names {
-		cfg, err := Parse("xibalba.yaml", []byte(base+"rules:\n  presets: ["+name+"]\n"))
+		cfg, err := Parse("xibalba.yaml", []byte(base+"trap:\n  enabled: true\nrules:\n  presets: ["+name+"]\n"))
 		if err != nil {
 			t.Errorf("%s: %v", name, err)
 			continue
@@ -47,7 +47,7 @@ func TestPresets(t *testing.T) {
 			}
 		}
 	}
-	cfg, err := Parse("xibalba.yaml", []byte(base+"rules:\n  presets: ["+strings.Join(names, ", ")+"]\n"))
+	cfg, err := Parse("xibalba.yaml", []byte(base+"trap:\n  enabled: true\nrules:\n  presets: ["+strings.Join(names, ", ")+"]\n"))
 	if err != nil {
 		t.Fatalf("all presets together: %v", err)
 	}

@@ -174,6 +174,15 @@ async def run(base, axe_source, shots):
         await page.keyboard.press("Enter")
         opened = await page.evaluate("document.querySelector('details').open")
         check("blocked: the other language opens with the keyboard", opened)
+        # The trap link must exist for programs and not exist for people.
+        trap = await page.evaluate("""() => {
+            const t = document.querySelector('template');
+            const inside = t ? t.content.querySelectorAll('a[href^="/.xibalba/trap/"]').length : 0;
+            const live = document.querySelectorAll('a[href^="/.xibalba/trap/"]').length;
+            return {inside, live, shown: t ? getComputedStyle(t).display : ''};
+        }""")
+        check("blocked: the trap link is in the page text but inert, invisible and not a link for people",
+              trap["inside"] == 1 and trap["live"] == 0 and trap["shown"] == "none", trap)
         links = await page.evaluate("Array.from(document.querySelectorAll('footer a')).map(a => [a.textContent, a.href, a.rel])")
         check("blocked: the Xibalba line shows the two project links",
               [l[1] for l in links] == ["https://github.com/MaMoja/xibalba", "https://github.com/sponsors/MaMoja"]
@@ -243,6 +252,8 @@ server:
   listen: "127.0.0.1:{public_port}"
 ops:
   listen: "127.0.0.1:{ops_port}"
+trap:
+  enabled: true
 challenge:
   wait: 1s
 rules:

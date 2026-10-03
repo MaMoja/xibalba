@@ -7,6 +7,18 @@ Newest first. One entry per decision: what, why, who decided.
 - **Limits and detection (new milestone M5) come before statistics.** Owner.
 - **The maze of worthless pages for crawlers will be an option, off by
   default.** Owner.
+- **Trap link inside a `template` element.** Agent. Its content is inert in
+  every browser: not rendered, not in the accessibility tree, not focusable.
+  The page stays accessible, and nothing has to be hidden with styles that a
+  screen reader might ignore.
+- **Being caught is a fact for rules (`trapped`), not an action.** Agent. The
+  site owner chooses deny, check or score; the preset `block-trapped` is the
+  short form.
+- **Caught clients are remembered by address (IPv6 /64), not by wider
+  network.** Agent. Neighbours of a caught client must not be denied.
+- **The maze is made of meaningless syllables, marked `lang="zxx"`.** Agent.
+  Nothing readable as a statement is served under the domain of an authority.
+  Off by default (owner).
 - **Request limits: sliding estimate from two fixed periods per client.**
   Agent. Two counters per limit, no list of timestamps; a client cannot
   double its allowance at a period boundary. Sharded table with a fixed upper

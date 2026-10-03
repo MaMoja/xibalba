@@ -35,6 +35,8 @@ flowchart TD
     main --> rules
     main --> crawlers
     main --> limit
+    main --> trap
+    trap --> clientip
     config --> limit
     config --> crawlers
     config --> data
@@ -82,6 +84,7 @@ the same code that later uses them.
 | `internal/crawlers` | Know the crawlers of the web and tell a genuine one from an impostor |
 | `data` | Hold the crawler definitions and presets that are built into the binary |
 | `internal/limit` | Count requests per client and say when a client is over a limit |
+| `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
 | `internal/challenge` | Make a client pass a check, verify its answer, recognise its pass |
@@ -130,6 +133,7 @@ cannot recover from.
 | An address list has not been renewed for over a week | It is no longer used; as above. | Same |
 | DNS does not answer | The reverse DNS check decides nothing and is retried after a minute. Crawlers verified that way are "unknown" meanwhile. | `pending` in `/crawlers` |
 | More clients are active than the limit table holds | Older entries make way; their counts start again. Requests are served as usual. | `clients` in `/limits` stays at `limits.max_clients` |
+| More clients were caught in the trap than its table holds | Older entries make way and are no longer treated as caught. | `clients` in `/trap` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
@@ -144,7 +148,7 @@ crawler identity, request limits, the challenge, and the upstream proxy. Lasting
 are **planned**.
 
 Requests under `/.xibalba/` are Xibalba's own (the challenge's answer
-address). They are routed to the challenge right after client identity and
+address and, if switched on, the trap). They are routed to the challenge right after client identity and
 never reach the rules or the website.
 
 ```mermaid

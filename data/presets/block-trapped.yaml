@@ -1,0 +1,6 @@
+# Deny clients that followed the hidden trap link. Needs trap.enabled.
+rules:
+  - name: preset.block-trapped
+    match:
+      trapped: true
+    action: deny

@@ -169,3 +169,30 @@ func TestCrawlerConditionDoesNotAllocate(t *testing.T) {
 		t.Errorf("Evaluate allocates %v times", n)
 	}
 }
+
+func TestTrappedCondition(t *testing.T) {
+	caught := request("GET", "h", "/", "x", "192.0.2.1")
+	caught.Trapped = true
+	free := request("GET", "h", "/", "x", "192.0.2.1")
+
+	e := mustCompile(t, Spec{DefaultAction: Allow, Trap: true, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Trapped: yes()}, Action: Deny},
+	}})
+	if !e.UsesTrap() || e.Evaluate(caught).Action != Deny || e.Evaluate(free).Action != Allow {
+		t.Error("trapped: true")
+	}
+	e = mustCompile(t, Spec{DefaultAction: Allow, Trap: true, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Trapped: no()}, Action: Deny},
+	}})
+	if e.Evaluate(caught).Action != Allow || e.Evaluate(free).Action != Deny {
+		t.Error("trapped: false")
+	}
+
+	// With the trap off the condition could never hold; that is a mistake.
+	_, problems := Compile(Spec{DefaultAction: Allow, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Trapped: yes()}, Action: Deny},
+	}})
+	if len(problems) != 1 || problems[0].Field != "match.trapped" || !strings.Contains(problems[0].Hint, "trap.enabled") {
+		t.Errorf("problems = %+v", problems)
+	}
+}

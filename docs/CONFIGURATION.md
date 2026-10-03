@@ -136,6 +136,17 @@ Without one, Xibalba makes no outgoing connection.
 | `crawlers.cache_dir` | empty | Path of an existing directory, relative to the configuration file | Keeps the downloaded lists across restarts. Empty: memory only. Must be writable for Xibalba's user and for nobody else. |
 | `crawlers.files` | `[]` | List of paths, relative to the configuration file; at most 64 | Your own crawler definition files. A crawler defined there replaces the built-in one of the same name. |
 
+### `trap`
+
+The hidden link that catches crawlers; explained in [TRAP.md](TRAP.md).
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `trap.enabled` | `false` | `true`, `false` | Hides the link in the pages Xibalba shows and remembers who follows it. Rules act on it with the condition `trapped`. |
+| `trap.remember` | `24h` | `1m` to `720h` | How long a client that followed the link is remembered. |
+| `trap.maze` | `false` | `true`, `false` | Answers the link with generated pages of meaningless syllables that link to more such pages. Needs `trap.enabled`. |
+| `trap.max_clients` | `100000` | 1000 to 5000000 | How many clients are remembered at most. |
+
 ### `limits`
 
 Request limits per client; explained in [LIMITS.md](LIMITS.md).
@@ -277,6 +288,7 @@ Endpoints:
 | `GET /healthz` | JSON health report. Status `200` while Xibalba can serve, `503` when a component of Xibalba is down. |
 | `GET /version` | JSON with the version, commit and Go version of the running build. |
 | `GET /limits` | Only while `limits.enabled` is `true`. JSON with the limits, how many clients are being counted and how many requests were over each limit. Holds no address. Example in [LIMITS.md](LIMITS.md#looking-at-what-happens). |
+| `GET /trap` | Only while `trap.enabled` is `true`. JSON with the number of requests that reached the trap and of clients remembered right now. Holds no address. |
 | `GET /crawlers` | JSON with every known crawler: operator, class, source, how it is verified, the state of its address list, and how many requests claimed to be it. Holds no client address. Example in [CRAWLERS.md](CRAWLERS.md#looking-at-what-happens). |
 | `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 

@@ -77,6 +77,9 @@ type Spec struct {
 	// Crawlers lists the crawler classes and names that crawler conditions
 	// may refer to. Without it a crawler condition is a mistake.
 	Crawlers *Catalog
+	// Trap says that the trap is switched on. Without it a trapped
+	// condition is a mistake, because it could never hold.
+	Trap bool
 }
 
 // Catalog lists what crawler conditions may refer to.
@@ -128,6 +131,9 @@ type MatchSpec struct {
 	// Crawler tests which known crawler the request claims to be and whether
 	// that claim was verified.
 	Crawler *CrawlerSpec `yaml:"crawler"`
+	// Trapped tests whether the client recently followed the hidden trap
+	// link (true) or did not (false).
+	Trapped *bool `yaml:"trapped"`
 	// All holds groups of conditions that must all hold.
 	All []MatchSpec `yaml:"all"`
 	// Any holds groups of conditions of which at least one must hold.
@@ -211,6 +217,9 @@ type Request struct {
 	// Client is the client address resolved by internal/clientip. If it is
 	// not valid, no ip condition matches.
 	Client netip.Addr
+	// Trapped reports that the client recently followed the hidden trap
+	// link, established by internal/trap.
+	Trapped bool
 	// Crawler is the crawler the request claims to be, established by
 	// internal/crawlers. The zero value means: none.
 	Crawler Crawler

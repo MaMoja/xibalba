@@ -510,3 +510,22 @@ func TestRequestLimitsInDryRun(t *testing.T) {
 		t.Error("dry run did not count")
 	}
 }
+
+func TestTrappedClientsReachTheRules(t *testing.T) {
+	yes := true
+	e, problems := rules.Compile(rules.Spec{DefaultAction: rules.Allow, Trap: true,
+		Rules: []rules.RuleSpec{{Name: "caught", Action: rules.Deny, Match: rules.MatchSpec{Trapped: &yes}}}})
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	h := newHarness(t, func(o *Options) {
+		o.Engine = e
+		o.Trapped = func(client netip.Addr) bool { return client == netip.MustParseAddr("203.0.113.66") }
+	})
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != http.StatusForbidden {
+		t.Errorf("a trapped client got %d", rec.Code)
+	}
+	if rec := h.do(call{target: "/", remote: "203.0.113.67:1"}); rec.Code != 200 {
+		t.Errorf("another client got %d", rec.Code)
+	}
+}

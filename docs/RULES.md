@@ -71,6 +71,7 @@ All conditions written in one `match` must hold.
 | `header` | Any other header, by name | A text test or `present` per header |
 | `ip` | The client's address | A list of addresses and networks |
 | `crawler` | Which known crawler the request claims to be, and whether that is true | `class`, `name`, `verified`; see [CRAWLERS.md](CRAWLERS.md) |
+| `trapped` | Whether the client recently followed the hidden trap link | `true` or `false`; see [TRAP.md](TRAP.md) |
 | `all` | Groups of conditions that must all hold | A list of `match` blocks |
 | `any` | Groups of conditions of which one must hold | A list of `match` blocks |
 | `not` | Conditions that must not hold | A `match` block |
@@ -143,7 +144,7 @@ write `regex: "^/admin(/|$)"`.
 
 ## What can be trusted
 
-**Only `ip` and a verified `crawler` are established by Xibalba.** The user
+**Only `ip`, `trapped` and a verified `crawler` are established by Xibalba.** The user
 agent and every header are whatever the client chooses to send.
 
 - A `deny` rule on a user agent stops crawlers that announce themselves
@@ -236,6 +237,7 @@ that decides wins. So list what lets through before what checks or denies.
 | `keep-internet-working` | Lets everyone read `/.well-known/`, `/robots.txt` and `/favicon.ico`. |
 | `allow-feeds` | Lets feed readers fetch feeds: addresses ending in `.rss`, `.atom` or `.xml`, or in `/feed`, `/rss`, `/atom`. |
 | `allow-git-clients` | Lets programs that say they are git use git's own addresses (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`). |
+| `block-trapped` | Denies clients that followed the hidden trap link. Needs `trap.enabled`; see [TRAP.md](TRAP.md). |
 | `block-fake-crawlers` | Denies requests that carry a known crawler's name but do not come from its operator. |
 | `block-ai-training` | Denies crawlers that collect pages for AI training. |
 | `block-archive-crawlers` | Denies crawlers that build public copies of the web. |

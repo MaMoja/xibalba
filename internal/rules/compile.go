@@ -28,7 +28,7 @@ var headersSetByXibalba = map[string]bool{
 // Compile checks spec and turns it into an Engine. If it finds mistakes it
 // returns all of them and no engine.
 func Compile(spec Spec) (*Engine, []Problem) {
-	c := &compiler{catalog: spec.Crawlers}
+	c := &compiler{catalog: spec.Crawlers, trap: spec.Trap}
 	e := &Engine{}
 
 	if !decides(spec.DefaultAction) {
@@ -127,6 +127,7 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		return nil, c.problems
 	}
 	e.usesCrawlers = c.usesCrawlers
+	e.usesTrap = c.usesTrap
 	return e, nil
 }
 
@@ -143,6 +144,8 @@ type compiler struct {
 	problems []Problem
 
 	catalog      *Catalog
+	trap         bool // the trap is switched on
+	usesTrap     bool
 	favours      bool // the rule being compiled allows, or lowers the score
 	negated      bool // the conditions being compiled are inside an odd number of "not"
 	usesCrawlers bool
@@ -267,6 +270,16 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 		}
 	}
 
+	if spec.Trapped != nil {
+		if c.trap {
+			parts = append(parts, trappedIs(*spec.Trapped))
+			c.usesTrap = true
+		} else {
+			c.add(field+".trapped", "the trap is switched off, so this condition could never hold",
+				"set trap.enabled to true, or remove the condition")
+		}
+	}
+
 	if spec.All != nil {
 		parts = append(parts, c.group(spec.All, field+".all", depth, func(ms []matcher) matcher { return allOf(ms) }))
 	}
@@ -283,7 +296,7 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	// Saying "no conditions" on top of that would send the reader looking for
 	// a second mistake that does not exist.
 	declared := spec.Method != nil || spec.Host != nil || spec.Path != nil || spec.UserAgent != nil ||
-		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
+		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.Trapped != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
 
 	switch len(parts) {
 	case 0:

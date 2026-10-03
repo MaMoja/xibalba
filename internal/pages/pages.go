@@ -106,6 +106,10 @@ type Options struct {
 	// HideAttribution removes the "Protected by Xibalba" line from the
 	// bottom of every page.
 	HideAttribution bool
+	// TrapLink, if set, is hidden in every page inside an inert element:
+	// invisible and unreachable for people, found by programs that collect
+	// every address in the page text (see internal/trap).
+	TrapLink string
 }
 
 // Problem is one mistake in Options.
@@ -202,6 +206,7 @@ type Renderer struct {
 	fallback string // language used without a usable preference
 	contact  string
 	hideAttr bool
+	trap     string
 	locales  map[string]map[string]string
 }
 
@@ -247,6 +252,7 @@ func New(opts Options) (*Renderer, error) {
 		fallback: languages[0],
 		contact:  strings.TrimSpace(opts.Contact),
 		hideAttr: opts.HideAttribution,
+		trap:     opts.TrapLink,
 		locales:  map[string]map[string]string{},
 	}
 	if opts.DefaultLanguage != "" {
@@ -359,6 +365,7 @@ func (r *Renderer) attributionFor(lang string) *attribution {
 }
 
 type challengePage struct {
+	Trap        string
 	CSS         template.CSS
 	Attribution *attribution
 	Script      template.JS
@@ -375,7 +382,8 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
 	texts := r.locales[primary]
 	p := challengePage{
-		CSS: r.css, Script: r.script, ChallengeView: v, Attribution: r.attributionFor(primary),
+		Trap: r.trap,
+		CSS:  r.css, Script: r.script, ChallengeView: v, Attribution: r.attributionFor(primary),
 		Working: texts["challenge_working"], Done: texts["challenge_done"],
 		Manual: texts["challenge_manual"], Button: texts["challenge_button"],
 		NeedsScript: texts["challenge_needs_script"],
@@ -412,6 +420,7 @@ type version struct {
 }
 
 type view struct {
+	Trap        string
 	CSS         template.CSS
 	Attribution *attribution
 	Primary     version
@@ -422,7 +431,7 @@ type view struct {
 
 func (r *Renderer) write(w http.ResponseWriter, req *http.Request, status int, kind, reference string) {
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
-	v := view{CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
+	v := view{Trap: r.trap, CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
 	if kind == "blocked" || kind == "limited" {
 		v.Contact = r.contact
 	}

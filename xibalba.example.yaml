@@ -53,6 +53,8 @@ rules:
   #                           favicon.ico
   #   allow-feeds             let feed readers fetch news feeds
   #   allow-git-clients       let git fetch and push over HTTP
+  #   block-trapped           deny clients that followed the hidden trap
+  #                           link (needs trap.enabled)
   #   block-fake-crawlers     deny requests that carry a crawler's name but do
   #                           not come from that crawler's operator
   #   block-ai-training       deny crawlers that collect pages for AI training
@@ -102,6 +104,22 @@ crawlers:
   # Your own crawler definition files, relative to this file. A crawler
   # defined there replaces the built-in one of the same name.
   files: []
+
+# The trap: a link hidden in the pages Xibalba shows (the security check, the
+# block page). No person can see or reach it; a program that collects every
+# address in a page follows it. Whoever does is remembered, and the rule
+# condition "trapped: true" and the preset "block-trapped" act on it.
+# Off by default. See docs/TRAP.md.
+trap:
+  enabled: false
+  # How long a client that followed the link is remembered (1m to 720h).
+  remember: 24h
+  # Answer the link with generated pages of meaningless syllables that link
+  # to more such pages, to keep such a crawler busy with nothing. false: the
+  # answer is a plain "not found".
+  maze: false
+  # How many clients are remembered at most.
+  max_clients: 100000
 
 # Request limits per client. Off by default. A client that sends more than a
 # limit allows has to pass the security check, or is refused for a while.

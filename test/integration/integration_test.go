@@ -1337,3 +1337,80 @@ rules:
 		t.Errorf("counts: training %d, browsers %d", d.count("rule:preset.block-ai-training"), d.count("rule:preset.challenge-browsers"))
 	}
 }
+
+// --- trap -------------------------------------------------------------------
+
+var trapLinkRE = regexp.MustCompile(`<template><a href="(/\.xibalba/trap/[0-9a-f]{16})" rel="nofollow">`)
+
+func TestTrapCatchesWhoFollowsTheHiddenLink(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, `server:
+  listen: PUBLIC
+  trusted_proxies: ["127.0.0.1"]
+trap:
+  enabled: true
+rules:
+  presets: [block-trapped]
+  list:
+    - name: check-wiki
+      match:
+        path: {prefix: "/wiki"}
+      action: challenge
+`)
+	browser := "Mozilla/5.0 Firefox/130.0"
+
+	// The page a checked client receives carries the hidden link.
+	_, page := get(t, inst.public+"/wiki/a", from("203.0.113.20", browser))
+	m := trapLinkRE.FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("no trap link in the check page:\n%s", page)
+	}
+
+	// A client that does not follow it is treated as before.
+	if resp, _ := get(t, inst.public+"/", from("203.0.113.20", browser)); resp.StatusCode != 200 {
+		t.Errorf("before following the link: %d", resp.StatusCode)
+	}
+	// A client that follows it gets "not found", never the website, and is denied from then on.
+	before := site.hitCount()
+	if resp, _ := get(t, inst.public+m[1], from("203.0.113.20", browser)); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("the trap answered %d", resp.StatusCode)
+	}
+	if site.hitCount() != before {
+		t.Error("the trap address reached the website")
+	}
+	resp, body := get(t, inst.public+"/", from("203.0.113.20", browser))
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "This request was blocked") {
+		t.Errorf("after following the link: %d", resp.StatusCode)
+	}
+	// Other clients are not affected.
+	if resp, _ := get(t, inst.public+"/", from("203.0.113.21", browser)); resp.StatusCode != 200 {
+		t.Errorf("another client: %d", resp.StatusCode)
+	}
+
+	_, report := get(t, inst.ops+"/trap", nil)
+	if !strings.Contains(report, `"hits": 1`) || !strings.Contains(report, `"clients": 1`) || strings.Contains(report, "203.0.113") {
+		t.Errorf("/trap = %s", report)
+	}
+	if strings.Contains(inst.logs.String(), "203.0.113") {
+		t.Error("a client address appears in the log")
+	}
+}
+
+func TestMazeAndTrapAreOffByDefault(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, challengeRules)
+	_, page := get(t, inst.public+"/wiki/a", language)
+	if strings.Contains(page, "trap") || strings.Contains(page, "<template") {
+		t.Error("the check page carries a trap link although the trap is off")
+	}
+	// Without the trap its address is just an unknown address of Xibalba's own.
+	if resp, _ := get(t, inst.public+"/.xibalba/trap/abc", language); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("trap address with the trap off: %d", resp.StatusCode)
+	}
+
+	maze := start(t, site.URL, "trap:\n  enabled: true\n  maze: true\n")
+	resp, page := get(t, maze.public+"/.xibalba/trap/abc", language)
+	if resp.StatusCode != 200 || strings.Count(page, `href="/.xibalba/trap/`) != 5 || !strings.Contains(resp.Header.Get("X-Robots-Tag"), "noindex") {
+		t.Errorf("maze: %d\n%.400s", resp.StatusCode, page)
+	}
+}

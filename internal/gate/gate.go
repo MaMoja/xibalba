@@ -61,6 +61,9 @@ type Options struct {
 	// Identify says which crawler a request claims to be. If nil, crawler
 	// conditions never match.
 	Identify func(userAgent string, client netip.Addr) rules.Crawler
+	// Trapped says whether a client recently followed the hidden trap
+	// link. If nil, trapped conditions see "no".
+	Trapped func(client netip.Addr) bool
 	// Limit counts a request from a client and reports whether the client
 	// is over a request limit and, if so, whether further requests are
 	// refused (deny) or have to pass the check. If nil, nothing is limited.
@@ -204,6 +207,9 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 		UserAgent: r.Header.Get("User-Agent"),
 		Header:    r.Header,
 		Client:    info.Client,
+	}
+	if g.opts.Trapped != nil {
+		req.Trapped = g.opts.Trapped(req.Client)
 	}
 	if g.opts.Identify != nil {
 		req.Crawler = g.opts.Identify(req.UserAgent, req.Client)

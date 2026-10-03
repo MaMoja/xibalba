@@ -58,8 +58,8 @@ decision (2026-10-03): all of this comes before statistics.
 - [ ] Ready-made exceptions for container registry clients, small browsers and uptime monitors (their user agents must be looked up, not written from memory)
 - [x] Plausibility of browser headers, as weights: no language, no Accept, headless browser
 - [ ] Further plausibility checks that depend on HTTPS (client hints, fetch metadata); need a condition for the scheme first
-- [ ] Trap link that only a faulty crawler follows; clients that follow it gain weight
-- [ ] Maze of worthless pages behind the trap link, as an option, off by default
+- [x] Trap link that only a careless crawler follows; rule condition `trapped`, preset `block-trapped`
+- [x] Maze of worthless pages behind the trap link, as an option, off by default
 - [ ] Patterns: one client fetching very many different pages, or the same page again and again
 - [ ] Country condition in rules, with a country database the operator supplies; licence of the database to be checked
 - [ ] Security review of the milestone by a second agent

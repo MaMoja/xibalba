@@ -44,6 +44,9 @@
 <p>{{.Attribution.Text}} <a href="{{.Attribution.RepoURL}}" rel="noopener noreferrer">Xibalba</a> · <a href="{{.Attribution.SponsorURL}}" rel="noopener noreferrer">{{.Attribution.Sponsor}}</a></p>
 </footer>
 {{- end}}
+{{- if .Trap}}
+<template><a href="{{.Trap}}" rel="nofollow">-</a></template>
+{{- end}}
 <script>{{.Script}}</script>
 </body>
 </html>

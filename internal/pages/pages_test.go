@@ -600,3 +600,37 @@ func TestLimitedPage(t *testing.T) {
 		t.Errorf("body:\n%s", rec.Body)
 	}
 }
+
+func TestTrapLinkIsInertAndOnlyThereWhenAsked(t *testing.T) {
+	plain := renderer(t)
+	rec := httptest.NewRecorder()
+	plain.Blocked(rec, get("de"), "a1b2c3d4")
+	if strings.Contains(rec.Body.String(), "<template") {
+		t.Error("a page without a trap has a template element")
+	}
+
+	r, err := New(Options{TrapLink: "/.xibalba/trap/0123456789abcdef"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pagesWith := map[string]func(*httptest.ResponseRecorder, *http.Request){
+		"blocked":     func(rec *httptest.ResponseRecorder, req *http.Request) { r.Blocked(rec, req, "a1b2c3d4") },
+		"limited":     func(rec *httptest.ResponseRecorder, req *http.Request) { r.Limited(rec, req, time.Second) },
+		"unavailable": func(rec *httptest.ResponseRecorder, req *http.Request) { r.Unavailable(rec, req, 502) },
+		"challenge": func(rec *httptest.ResponseRecorder, req *http.Request) {
+			r.Challenge(rec, req, ChallengeView{Action: "/.xibalba/verify", Token: "t", Return: "/", Nonce: "n", Difficulty: 10, AllowButton: true})
+		},
+	}
+	const want = `<template><a href="/.xibalba/trap/0123456789abcdef" rel="nofollow">-</a></template>`
+	for name, fn := range pagesWith {
+		rec := httptest.NewRecorder()
+		fn(rec, get("de"))
+		page := rec.Body.String()
+		if strings.Count(page, want) != 1 {
+			t.Errorf("%s: the trap link is not in the page exactly once inside a template element", name)
+		}
+		if strings.Count(page, "/.xibalba/trap/") != 1 {
+			t.Errorf("%s: the trap address appears outside the template element", name)
+		}
+	}
+}

@@ -67,3 +67,31 @@ func TestLimitProblems(t *testing.T) {
 		})
 	}
 }
+
+func TestTrapSettings(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Trap.Enabled || cfg.Trap.Maze {
+		t.Error("the trap or the maze is on by default")
+	}
+	if _, err := Parse("xibalba.yaml", []byte(base+"trap:\n  enabled: true\n  maze: true\n  remember: 2h\nrules:\n  presets: [block-trapped]\n")); err != nil {
+		t.Errorf("valid trap settings: %v", err)
+	}
+	tests := []struct{ name, yaml, path, message string }{
+		{"remember too short", "trap:\n  remember: 1s\n", "trap.remember", "out of range"},
+		{"table too small", "trap:\n  max_clients: 1\n", "trap.max_clients", "out of range"},
+		{"maze without trap", "trap:\n  maze: true\n", "trap.maze", "the trap is off"},
+		{"preset without trap", "rules:\n  presets: [block-trapped]\n", "preset block-trapped", "the trap is switched off"},
+		{"rule without trap", "rules:\n  list:\n    - {name: r, match: {trapped: true}, action: deny}\n", "rules.list[0].match.trapped", "the trap is switched off"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse("xibalba.yaml", []byte(base+tt.yaml))
+			if err == nil || !strings.Contains(err.Error(), tt.path) || !strings.Contains(err.Error(), tt.message) {
+				t.Errorf("error = %v", err)
+			}
+		})
+	}
+}

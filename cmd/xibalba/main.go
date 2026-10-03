@@ -35,6 +35,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/proxy"
 	"github.com/MaMoja/xibalba/internal/rules"
 	"github.com/MaMoja/xibalba/internal/token"
+	"github.com/MaMoja/xibalba/internal/trap"
 )
 
 // Exit codes.
@@ -84,6 +85,18 @@ func crawlerOf(id crawlers.Identity) rules.Crawler {
 		c.Status = rules.CrawlerUnknown
 	}
 	return c
+}
+
+// withTrap sends requests for the trap's addresses to the trap and the rest
+// of Xibalba's own address space to next.
+func withTrap(snare, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, trap.Prefix) {
+			snare.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // route sends requests for Xibalba's own address space to own and everything
@@ -164,8 +177,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	registry.Register(ops.Name(), ops.Health)
 	supervisor.Add(ops)
 
+	// The trap, if switched on: a hidden link in the visitor pages.
+	var snare *trap.Trap
+	pageOptions := cfg.PageOptions()
+	if cfg.Trap.Enabled {
+		snare, err = trap.New(trap.Options{Remember: cfg.Trap.Remember, MaxClients: cfg.Trap.MaxClients, Maze: cfg.Trap.Maze})
+		if err != nil {
+			log.Error("start-up failed", "error", err.Error(), "component", "trap")
+			return exitFailed
+		}
+		pageOptions.TrapLink = snare.Link()
+		supervisor.Add(snare)
+		opsMux.Handle("GET /trap", snare.ReportHandler())
+	}
+
 	// The pages Xibalba itself shows to visitors.
-	page, err := pages.New(cfg.PageOptions())
+	page, err := pages.New(pageOptions)
 	if err != nil {
 		log.Error("start-up failed", "error", "visitor pages: "+err.Error())
 		return exitFailed
@@ -262,7 +289,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	var trapped func(netip.Addr) bool
+	own := check.Handler()
+	if snare != nil {
+		trapped = snare.Caught
+		own = withTrap(snare.Handler(), own)
+	}
+
 	decisions := gate.New(gate.Options{
+		Trapped:     trapped,
 		Engine:      engine,
 		Identify:    identify,
 		Limit:       limitFn,
@@ -282,7 +317,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	public := httpserver.New(httpserver.Options{
 		Name:              "public",
 		Addr:              cfg.Server.Listen,
-		Handler:           clientip.Middleware(resolver, route(check.Handler(), decisions)),
+		Handler:           clientip.Middleware(resolver, route(own, decisions)),
 		Log:               log,
 		OnFailure:         supervisor.Reporter("public"),
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,

@@ -337,6 +337,8 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | Adressen von der Begrenzung ausnehmen | `limits.exempt` | Abschnitt 6, „Anfragen begrenzen“ |
 | alles prüfen, was sich als Browser ausgibt | `rules.presets` mit `challenge-browsers` am Ende | Abschnitt 6, „Fertige Regelgruppen“ |
 | Feed-Leser, git, `robots.txt` trotz Prüfung durchlassen | `rules.presets` mit `allow-feeds`, `allow-git-clients`, `keep-internet-working` | Abschnitt 6, „Fertige Regelgruppen“ |
+| Crawler fangen, die jedem Link folgen | `trap.enabled: true` und `rules.presets: [block-trapped]` | Abschnitt 6, „Die Falle“ |
+| gefangene Crawler in einen Irrgarten schicken | `trap.maze: true` | Abschnitt 6, „Die Falle“ |
 | KI-Trainings-Crawler sperren | `rules.presets: [block-ai-training]` | Abschnitt 6, „Crawler erkennen und prüfen“ |
 | Suchmaschinen und KI-Suche durchlassen, aber nur die echten | `rules.presets` mit `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Abschnitt 6 |
 | Nachahmer sperren, die sich als Googlebot ausgeben | `rules.presets: [block-fake-crawlers]` | Abschnitt 6 |
@@ -524,6 +526,7 @@ und danach, was prüft oder sperrt.
 | `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (Adressen auf `.rss`, `.atom`, `.xml` oder `/feed`, `/rss`, `/atom`) |
 | `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen, die git selbst nutzt) |
 | `weigh-odd-browsers` | vergibt Punkte an Anfragen, die sich als Browser ausgeben, denen aber fehlt, was jeder Browser sendet (keine Sprachangabe: +10, keine `Accept`-Angabe: +10, fensterloser Automatik-Browser: +20). Entscheidet selbst nichts; braucht `rules.thresholds` |
+| `block-trapped` | sperrt Anschlüsse, die dem versteckten Fallen-Link gefolgt sind (braucht `trap.enabled`, siehe „Die Falle“) |
 | `challenge-browsers` | prüft alles, was sich als Browser ausgibt (Kennung enthält „Mozilla“ oder „Opera“): jeden Browser und jeden Crawler, der sich als Browser tarnt. Programme, die sagen, was sie sind (curl, git, Feed-Leser), bleiben unberührt |
 
 Dazu kommen die sechs Regelgruppen für Crawler aus dem nächsten Abschnitt.
@@ -746,6 +749,49 @@ dem Start. Adressen stehen dort nicht.
 
 Zum Datenschutz siehe [Abschnitt 10](#10-datenschutz). Alle Einzelheiten:
 [LIMITS.md](../LIMITS.md) (englisch).
+
+### Die Falle
+
+Manche Crawler rufen jede Adresse ab, die sie im Text einer Seite finden,
+gleich ob ein Mensch sie je anklicken könnte. Die Falle nutzt das: Xibalba
+versteckt in seinen eigenen Seiten (Sicherheitsprüfung, Blockseite) einen
+Link, den kein Mensch sehen oder erreichen kann. Wer ihn abruft, ist ein
+solches Programm und wird gemerkt. Die Falle ist in der Voreinstellung aus.
+
+```yaml
+trap:
+  enabled: true
+rules:
+  presets: [block-trapped]
+```
+
+Damit wird ein Anschluss, der dem versteckten Link folgt, für 24 Stunden
+gesperrt.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `trap.enabled` | `true` versteckt den Link und merkt sich, wer ihm folgt |
+| `trap.remember` | wie lange ein Anschluss gemerkt bleibt (Voreinstellung `24h`) |
+| `trap.maze` | `true` schaltet den Irrgarten ein (siehe unten) |
+| `block-trapped` in `rules.presets` | sperrt gemerkte Anschlüsse |
+| Bedingung `trapped: true` in einer eigenen Regel | für eine andere Folge, etwa Punkte vergeben und prüfen statt sperren |
+
+**Für Menschen unsichtbar:** Der Link steht in einem Seitenteil, den Browser
+als inaktiv behandeln. Er wird nicht angezeigt, von Vorleseprogrammen nicht
+vorgelesen und ist mit der Tastatur nicht erreichbar. Die Seiten Ihrer
+Website verändert Xibalba nicht.
+
+**Der Irrgarten** (`trap.maze: true`) beantwortet den Link nicht mit „nicht
+gefunden“, sondern mit einer erzeugten Seite und fünf Links zu weiteren
+solchen Seiten, ohne Ende. Der Text besteht aus sinnlosen Silben in keiner
+Sprache; unter Ihrer Domain erscheint also nichts, was sich als Aussage lesen
+ließe. Die Seiten sind für Suchmaschinen gesperrt. Ob das zu Ihrer
+Einrichtung passt, entscheiden Sie; in der Voreinstellung ist er aus.
+
+**Nachsehen:** `curl http://127.0.0.1:9090/trap` zeigt, wie viele Anfragen in
+die Falle gingen und wie viele Anschlüsse gerade gemerkt sind, ohne Adressen.
+
+Alle Einzelheiten: [TRAP.md](../TRAP.md) (englisch).
 
 ### Pfade lassen sich nicht umgehen
 
@@ -1134,6 +1180,7 @@ Rechtsberatung.
 | Speichert Xibalba IP-Adressen? | Nicht auf Datenträger. Die Adresse wird während der Bearbeitung einer Anfrage verwendet und in keine Datei geschrieben. Im Arbeitsspeicher gibt es zwei Ausnahmen: die Begrenzung der Anfragen, falls eingeschaltet (nächste Zeile), und die Crawler-Prüfung: Gibt sich eine Anfrage als Crawler aus, der per DNS geprüft wird (Bingbot, Applebot), merkt sich Xibalba das Ergebnis zu dieser Adresse bis zu 24 Stunden, um nicht jedes Mal neu zu fragen. Das betrifft keine gewöhnlichen Besucher und endet mit dem Neustart. |
 | Protokolliert Xibalba, wer was aufruft? | Nein. Es gibt kein Zugriffsprotokoll. Auch die ausführlichste Protokollstufe (`debug`) nennt bei einer Entscheidung nur die Regel, nicht Adresse, Pfad oder Kennung. Eine Ausnahme: Tritt bei der Bearbeitung einer Anfrage ein Programmfehler auf, wird zur Fehlersuche der Pfad dieser einen Anfrage protokolliert, nicht aber die Adresse. |
 | Und bei eingeschalteter Begrenzung der Anfragen? | Dann merkt sich Xibalba die Adressen der Anfragenden im Arbeitsspeicher, um zählen zu können. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. Ein Anschluss, der nichts mehr sendet, wird nach dem Doppelten des längsten eingestellten Zeitraums vergessen: bei einer Grenze je Minute nach zwei Minuten, bei einer Grenze je Tag nach spätestens zwei Tagen. Ein Neustart vergisst alles. Adressen der Ausnahmeliste werden gar nicht gespeichert. |
+| Und bei eingeschalteter Falle? | Xibalba merkt sich im Arbeitsspeicher die Adressen der Anschlüsse, die dem versteckten Link gefolgt sind, für die Dauer von `trap.remember` (Voreinstellung 24 Stunden). Wer dem Link nicht folgt, wird nicht erfasst. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. |
 | Was wird gezählt? | Wie oft jede Regel entschieden hat. Ohne Bezug zu Personen, nur im Arbeitsspeicher, bis zum nächsten Neustart. |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |
 | Was steht in dem Cookie? | Ein Ablaufzeitpunkt und ein Prüfwert, der es an Netz und Browserkennung bindet. Der Prüfwert ist ein Hash mit geheimem Schlüssel; Adresse und Kennung lassen sich daraus nicht zurückgewinnen. Keine Kennung der Person, nichts über aufgerufene Seiten. |
@@ -1212,6 +1259,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | [CONFIGURATION.md](../CONFIGURATION.md) | jede Einstellung mit Voreinstellung und erlaubten Werten | Englisch |
 | [RULES.md](../RULES.md) | alles, was Regeln können | Englisch |
 | [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
+| [TRAP.md](../TRAP.md) | die Falle und der Irrgarten im Detail | Englisch |
 | [LIMITS.md](../LIMITS.md) | Begrenzung der Anfragen im Detail | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |
 | [SPONSORS.md](../SPONSORS.md) | was frei ist, was die Sponsor-Lizenz freischaltet, wie sie geprüft wird | Englisch |

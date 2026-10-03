@@ -27,6 +27,7 @@ func withUpstream() Config {
 func settings(cfg Config) Config {
 	cfg.Crawlers.Definitions = nil
 	cfg.Rules.Catalog = nil
+	cfg.Rules.TrapOn = false
 	return cfg
 }
 
@@ -93,6 +94,7 @@ shutdown_timeout: 30s
 		Rules:           defaultRules(),
 		Crawlers:        defaultCrawlers(),
 		Limits:          defaultLimits(),
+		Trap:            defaultTrap(),
 		Challenge:       Default().Challenge,
 		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},

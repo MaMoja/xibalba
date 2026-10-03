@@ -53,6 +53,9 @@ type Rules struct {
 	// Catalog lists the crawlers that rules may refer to. It is filled when
 	// the configuration is loaded and is not a setting.
 	Catalog *rules.Catalog `yaml:"-"`
+	// TrapOn says whether the trap is switched on. It is filled when the
+	// configuration is loaded and is not a setting.
+	TrapOn bool `yaml:"-"`
 
 	// Imported holds the rules read from Files, in the order of Files. It is
 	// filled when the configuration is loaded and is not a setting.
@@ -96,7 +99,7 @@ func (r Rules) Spec() rules.Spec {
 	for _, file := range r.Imported {
 		all = append(all, file.Rules...)
 	}
-	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog}
+	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn}
 }
 
 // PresetNames returns the names of the presets that ship with Xibalba, sorted.

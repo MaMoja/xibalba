@@ -14,7 +14,11 @@ type Engine struct {
 	defaultSource int
 	sources       []Source
 	usesCrawlers  bool
+	usesTrap      bool
 }
+
+// UsesTrap reports whether any rule has a trapped condition.
+func (e *Engine) UsesTrap() bool { return e.usesTrap }
 
 // UsesCrawlers reports whether any rule has a crawler condition. If none
 // has, nobody needs to find out which crawler a request claims to be.
@@ -219,6 +223,11 @@ func (p ipIn) match(r *Request) bool {
 	}
 	return false
 }
+
+// trappedIs tests whether the client followed the trap link.
+type trappedIs bool
+
+func (t trappedIs) match(r *Request) bool { return r.Trapped == bool(t) }
 
 // crawlerMatch tests the crawler a request claims to be.
 type crawlerMatch struct {
