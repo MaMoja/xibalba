@@ -4,7 +4,7 @@
 //	xibalba-license keygen
 //	    Print a new key pair. Done once for the project.
 //
-//	xibalba-license issue -key FILE -licensee NAME -expires YYYY-MM-DD [-sponsor ACCOUNT]
+//	xibalba-license issue -key FILE -licensee NAME [-days N | -expires YYYY-MM-DD] [-sponsor ACCOUNT]
 //	    Print a license file for a sponsor.
 //
 //	xibalba-license show FILE [-public HEX]
@@ -45,13 +45,21 @@ func run(args []string, stdout, stderr io.Writer, now time.Time) int {
 		keyFile := flags.String("key", "", "file holding the project's private key")
 		licensee := flags.String("licensee", "", "organisation the license is issued to")
 		sponsor := flags.String("sponsor", "", "sponsoring account (optional)")
-		expires := flags.String("expires", "", "last day the license is valid, YYYY-MM-DD")
+		expires := flags.String("expires", "", "last day the license is valid, YYYY-MM-DD; instead of -days")
+		days := flags.Int("days", 365, "how many days the license is valid from today")
 		if err := flags.Parse(args[1:]); err != nil {
 			return 2
 		}
-		if *keyFile == "" || *licensee == "" || *expires == "" {
-			_, _ = fmt.Fprintln(stderr, "issue needs -key, -licensee and -expires")
+		if *keyFile == "" || *licensee == "" {
+			_, _ = fmt.Fprintln(stderr, "issue needs -key and -licensee")
 			return 2
+		}
+		if *expires == "" {
+			if *days < 1 || *days > 36500 {
+				_, _ = fmt.Fprintln(stderr, "-days must be from 1 to 36500")
+				return 2
+			}
+			*expires = now.UTC().AddDate(0, 0, *days).Format("2006-01-02")
 		}
 		data, err := os.ReadFile(*keyFile)
 		if err != nil {
@@ -113,7 +121,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `xibalba-license: sponsor licenses for Xibalba (maintainer's tool)
 
   xibalba-license keygen
-  xibalba-license issue -key FILE -licensee NAME -expires YYYY-MM-DD [-sponsor ACCOUNT]
+  xibalba-license issue -key FILE -licensee NAME [-days N | -expires YYYY-MM-DD] [-sponsor ACCOUNT]
   xibalba-license show FILE [-public HEX]
 `)
 }

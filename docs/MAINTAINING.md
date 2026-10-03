@@ -33,8 +33,7 @@ go run ./cmd/xibalba-license keygen
 go run ./cmd/xibalba-license issue \
     -key /path/to/xibalba-license-private.key \
     -licensee "Stadt Musterhausen" \
-    -sponsor musterhausen \
-    -expires 2027-10-03 > musterhausen.license
+    -sponsor musterhausen > musterhausen.license
 ```
 
 | Flag | Meaning |
@@ -42,7 +41,11 @@ go run ./cmd/xibalba-license issue \
 | `-key` | File holding the private key. |
 | `-licensee` | The organisation's name. Shown in the operator's log. |
 | `-sponsor` | The sponsoring GitHub account. For your own records. |
-| `-expires` | Last day of validity. The license works 30 more days after it. |
+| `-days` | How many days the license is valid, counted from today. Default: 365, a full year. |
+| `-expires` | Instead of `-days`: the last day of validity as `YYYY-MM-DD`. |
+
+Without either flag a license is valid for 365 days. It works 30 more days
+after its last day.
 
 Choose the expiry date to match how you want to follow up on sponsorships:
 a year ahead is the least work; a shorter term means renewing more often.
