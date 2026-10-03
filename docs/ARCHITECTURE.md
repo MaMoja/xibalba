@@ -154,7 +154,8 @@ Rules and translations work today; the rest is **planned**.
 - **Crawler definitions**: data files under `data/crawlers/`.
 - **Challenge types**: implement `Challenger`, register under a name, select it in a rule.
 - **Storage backends**: implement the storage interface for challenge state or statistics.
-- **Branding**: customer logo, name and accent colour from configuration.
+- **Wording of visitor pages**: operator name, contact line and any text, from the `pages` section of the configuration (built).
+- **Branding**: customer logo and accent colour from configuration.
 
 ## Adding a component
 

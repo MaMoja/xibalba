@@ -48,7 +48,7 @@ Documentation is part of the change, not a follow-up.
 |---|---|
 | A setting | `internal/config`, `xibalba.example.yaml`, `docs/CONFIGURATION.md` |
 | What rules can do | `internal/rules`, `docs/RULES.md`, `examples/rules/basic.yaml` |
-| A text visitors see | Every file in `internal/pages/assets/locales` |
+| A text visitors see | Every file in `internal/pages/assets/locales`, and the text-name table in `docs/CONFIGURATION.md` |
 | A package or its job | Package comment, `docs/ARCHITECTURE.md` |
 | A user-visible behaviour | `README.md` status table, `CHANGELOG.md` |
 | A technical choice | `docs/DECISIONS.md` |

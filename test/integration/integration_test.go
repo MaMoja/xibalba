@@ -568,3 +568,36 @@ func TestInvalidRuleIsRejectedWithLineNumbers(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockPageCanBeAdapted(t *testing.T) {
+	site := newWebsite(t)
+	custom := `pages:
+  operator: "Stadt Musterhausen"
+  contact: "webmaster@musterhausen.example"
+  texts:
+    de:
+      blocked_title: "Zugriff nicht möglich"
+` + testRules
+	inst := start(t, site.URL, custom)
+
+	_, german := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "de"})
+	for _, want := range []string{
+		"<h1>Zugriff nicht möglich</h1>",
+		"Stadt Musterhausen lässt Anfragen dieser Art nicht zu.",
+		"Kontakt: webmaster@musterhausen.example",
+	} {
+		if !strings.Contains(german, want) {
+			t.Errorf("German block page is missing %q:\n%s", want, german)
+		}
+	}
+	_, english := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "en"})
+	for _, want := range []string{
+		"<h1>This request was blocked</h1>",
+		"Stadt Musterhausen does not allow requests of this kind.",
+		"Contact: webmaster@musterhausen.example",
+	} {
+		if !strings.Contains(english, want) {
+			t.Errorf("English block page is missing %q:\n%s", want, english)
+		}
+	}
+}

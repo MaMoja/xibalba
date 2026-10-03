@@ -120,6 +120,52 @@ With the defaults nothing is blocked. The action `challenge` is accepted but
 the challenge is **planned**: until it is built, requests that would be
 challenged are counted and let through, and Xibalba says so in the log at start-up.
 
+### `pages`
+
+The pages Xibalba itself shows to visitors: "request blocked" and "website
+unavailable". They work without any setting. Use this section to put your
+name on them or to change the wording.
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `pages.operator` | empty | Text, up to 200 characters | Who runs the website, as it should read in a sentence, for example `"Stadt Musterhausen"`. Replaces the neutral phrase "The operator of this website" in every language. |
+| `pages.contact` | empty | Text, up to 200 characters | How to reach you: an e-mail address, a telephone number, an office. Shown as a line on the block page. Empty shows no contact line. |
+| `pages.default_language` | `de` | `de`, `en` | Language for visitors whose browser states none of the supported languages. Every page offers the other language as well. |
+| `pages.texts` | `{}` | Language, then text name, then text (up to 1000 characters) | Replaces single texts. Texts you do not list keep their built-in wording. |
+
+Text names for `pages.texts`:
+
+| Name | Where it appears | Built-in English text |
+|---|---|---|
+| `operator` | Inside other texts, where they say `{operator}` | The operator of this website |
+| `blocked_title` | Heading and window title of the block page | This request was blocked |
+| `blocked_text` | Paragraph of the block page | {operator} does not allow requests of this kind. If you think this is a mistake, please get in touch and quote the following reference. |
+| `reference_label` | In front of the reference on the block page | Reference: |
+| `contact_label` | In front of `pages.contact` on the block page | Contact: |
+| `unavailable_title` | Heading and window title of the unavailable page | The website is currently unavailable |
+| `unavailable_text` | Paragraph of the unavailable page | Please try again in a few minutes. |
+| `language_name` | Label of the language switch | English |
+
+`{operator}` inside a text is replaced by the operator: `pages.operator` if
+set, or the `operator` text of that language. It is the only placeholder.
+
+Example: a name that needs a different form in each language, and a reworded
+German paragraph.
+
+```yaml
+pages:
+  contact: "webmaster@musterhausen.example"
+  texts:
+    de:
+      operator: "Die Stadt Musterhausen"
+      blocked_text: "{operator} erlaubt keine automatisierten Abrufe. Bei Fragen nennen Sie bitte die folgende Referenz."
+    en:
+      operator: "The City of Musterhausen"
+```
+
+Everything you write here is shown as plain text. HTML in a text is displayed
+literally and never interpreted, so a typo cannot break the page.
+
 ### `log`
 
 | Setting | Default | Allowed values | Meaning |

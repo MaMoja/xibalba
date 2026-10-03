@@ -154,7 +154,8 @@ HTTP/1.1 403 Forbidden
 ```
 
 The visitor gets a plain page in their language with a short reference that
-identifies the rule. `curl http://127.0.0.1:9090/decisions` shows how often
+identifies the rule. You can put your name and a contact line on it, or
+reword it, in the `pages` section of the configuration. `curl http://127.0.0.1:9090/decisions` shows how often
 each rule decided, without recording who was blocked. To see what a rule set
 would do before it blocks anyone, set `rules.dry_run: true`.
 [docs/RULES.md](docs/RULES.md) explains everything rules can do.

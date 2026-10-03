@@ -4,6 +4,16 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-03
 
+- **Wording of the visitor pages approved; operator and texts must be
+  adjustable at set-up.** Owner's decision. Implemented as the `pages`
+  section: `operator`, `contact`, `default_language`, `texts`.
+- **Custom page texts are plain text with one placeholder, `{operator}`.**
+  Agent's choice. No HTML and no template language in the configuration: a
+  typo cannot break a page, and nothing a site owner writes can become markup.
+- **The block text names the operator once, as the subject of the sentence.**
+  Agent's choice. A name then fits without changing its grammatical case in
+  German; names that need an article are set per language in `pages.texts`.
+
 - **Combined conditions are structured (`all`, `any`, `not`), not a text
   expression language.** Agent's choice. They are checked field by field with
   line-accurate errors, a rule editor in the web interface can show them as a
@@ -87,8 +97,6 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## Open (owner to decide)
 
-- Wording of the "request blocked" page (German and English), in
-  `internal/pages/assets/locales`.
 
 - Copyright holder named in `LICENSE` (currently "The Xibalba Authors").
 - Whether the challenge page shows a "Protected by Xibalba" line.

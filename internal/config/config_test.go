@@ -83,6 +83,7 @@ shutdown_timeout: 30s
 			ResponseHeaderTimeout: 15 * time.Second,
 		},
 		Rules:           defaultRules(),
+		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},
 		ShutdownTimeout: 30 * time.Second,
 	}
@@ -306,5 +307,52 @@ func TestExampleFileMatchesDefaults(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg, withUpstream()) {
 		t.Errorf("xibalba.example.yaml =\n%+v\nwant the defaults\n%+v", cfg, withUpstream())
+	}
+}
+
+func TestPagesSettings(t *testing.T) {
+	cfg, err := Parse("test.yaml", []byte(minimal+`
+pages:
+  operator: "Stadt Musterhausen"
+  contact: "webmaster@musterhausen.example"
+  default_language: en
+  texts:
+    de:
+      operator: "Die Stadt Musterhausen"
+      blocked_title: "Zugriff nicht möglich"
+`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	opts := cfg.Pages.Options()
+	if opts.Operator != "Stadt Musterhausen" || opts.Contact != "webmaster@musterhausen.example" ||
+		opts.DefaultLanguage != "en" || opts.Texts["de"]["blocked_title"] != "Zugriff nicht möglich" {
+		t.Errorf("pages settings not read: %+v", opts)
+	}
+}
+
+func TestPagesProblemsPointAtTheLine(t *testing.T) {
+	tests := []struct {
+		name  string
+		pages string // appended after minimal (2 lines), so "pages:" is line 3
+		want  []string
+	}{
+		{"unknown language", "pages:\n  default_language: fr\n", []string{"line 4, pages.default_language", "de, en"}},
+		{"unknown text name", "pages:\n  texts:\n    de:\n      blocked_heading: \"x\"\n", []string{"line 6, pages.texts.de.blocked_heading", "not a text Xibalba shows", "blocked_title"}},
+		{"unknown placeholder", "pages:\n  texts:\n    en:\n      blocked_text: \"Ask {name}\"\n", []string{"line 6, pages.texts.en.blocked_text", "{name}", "{operator}"}},
+		{"texts for an unknown language", "pages:\n  texts:\n    fr:\n      blocked_title: \"x\"\n", []string{"line 5, pages.texts.fr", "not a supported language"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse("test.yaml", []byte(minimal+tt.pages))
+			if err == nil {
+				t.Fatal("expected an error, got none")
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("error is missing %q:\n%v", w, err)
+				}
+			}
+		})
 	}
 }

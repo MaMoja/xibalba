@@ -12,7 +12,7 @@ import (
 
 func renderer(t *testing.T) *Renderer {
 	t.Helper()
-	r, err := New()
+	r, err := New(Options{})
 	if err != nil {
 		t.Fatalf("the embedded page assets are broken: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestPickLanguage(t *testing.T) {
 		strings.Repeat("xx,", 500) + "en": "de", // the preference lies beyond the bound
 	}
 	for header, want := range tests {
-		if got := pickLanguage(header); got != want {
+		if got := pickLanguage(header, "de"); got != want {
 			t.Errorf("pickLanguage(%.40q) = %q, want %q", header, got, want)
 		}
 	}
@@ -85,6 +85,12 @@ func TestBlocked(t *testing.T) {
 	}
 	if !strings.Contains(page, "<h1>This request was blocked</h1>") {
 		t.Errorf("wrong heading:\n%s", page)
+	}
+	if !strings.Contains(page, "The operator of this website does not allow requests of this kind.") {
+		t.Errorf("the neutral operator phrase is missing:\n%s", page)
+	}
+	if strings.Contains(page, "{operator}") || strings.Contains(page, "Contact:") {
+		t.Errorf("a placeholder or an empty contact line was sent:\n%s", page)
 	}
 	if n := strings.Count(page, "<code>a1b2c3d4</code>"); n != 2 {
 		t.Errorf("the reference appears %d times, want once per language", n)
@@ -177,6 +183,9 @@ func TestEveryLanguageHasEveryText(t *testing.T) {
 		if len(r.locales[lang]) != len(keys) {
 			t.Errorf("language %q has %d texts, the program uses %d: remove unused ones or register new ones in keys", lang, len(r.locales[lang]), len(keys))
 		}
+		if strings.Contains(r.locales[lang]["blocked_text"], "{") {
+			t.Errorf("language %q: a placeholder was left in the block text", lang)
+		}
 	}
 }
 
@@ -196,5 +205,155 @@ func TestStyleBlockMatchesThePolicyHash(t *testing.T) {
 	want := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, want) {
 		t.Errorf("the policy %q does not allow the style block actually sent (%s)", csp, want)
+	}
+}
+
+func blockedPage(t *testing.T, opts Options, acceptLanguage string) string {
+	t.Helper()
+	r, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	r.Blocked(rec, get(acceptLanguage), "a1b2c3d4")
+	return rec.Body.String()
+}
+
+func TestOperatorNameReplacesTheNeutralPhrase(t *testing.T) {
+	opts := Options{Operator: "Stadt Musterhausen"}
+	german := blockedPage(t, opts, "de")
+	english := blockedPage(t, opts, "en")
+	if !strings.Contains(german, "<p>Stadt Musterhausen lässt Anfragen dieser Art nicht zu.") {
+		t.Errorf("German page does not name the operator:\n%s", german)
+	}
+	if !strings.Contains(english, "<p>Stadt Musterhausen does not allow requests of this kind.") {
+		t.Errorf("English page does not name the operator:\n%s", english)
+	}
+	if strings.Contains(german, "Der Betreiber dieser Website") {
+		t.Errorf("the neutral phrase is still there:\n%s", german)
+	}
+}
+
+func TestOperatorNamePerLanguage(t *testing.T) {
+	opts := Options{
+		Operator: "Musterhausen",
+		Texts: map[string]map[string]string{
+			"de": {"operator": "Die Stadt Musterhausen"},
+			"en": {"operator": "The City of Musterhausen"},
+		},
+	}
+	if page := blockedPage(t, opts, "de"); !strings.Contains(page, "<p>Die Stadt Musterhausen lässt") {
+		t.Errorf("German operator text not used:\n%s", page)
+	}
+	if page := blockedPage(t, opts, "en"); !strings.Contains(page, "<p>The City of Musterhausen does not allow") {
+		t.Errorf("English operator text not used:\n%s", page)
+	}
+}
+
+func TestContactIsShownOnTheBlockPageOnly(t *testing.T) {
+	opts := Options{Contact: "webmaster@musterhausen.example"}
+	page := blockedPage(t, opts, "de")
+	if n := strings.Count(page, "webmaster@musterhausen.example"); n != 2 {
+		t.Errorf("contact appears %d times on the block page, want once per language:\n%s", n, page)
+	}
+	if !strings.Contains(page, "<p>Kontakt: webmaster@musterhausen.example</p>") || !strings.Contains(page, "<p>Contact: webmaster@musterhausen.example</p>") {
+		t.Errorf("contact line is not labelled in both languages:\n%s", page)
+	}
+
+	r, _ := New(opts)
+	rec := httptest.NewRecorder()
+	r.Unavailable(rec, get("de"), 502)
+	if strings.Contains(rec.Body.String(), "webmaster") {
+		t.Error("the unavailable page shows the contact")
+	}
+}
+
+func TestCustomTexts(t *testing.T) {
+	opts := Options{
+		Operator: "Musterfirma GmbH",
+		Texts: map[string]map[string]string{
+			"de": {
+				"blocked_title": "Zugriff nicht möglich",
+				"blocked_text":  "Automatisierte Abrufe sind bei {operator} nicht gestattet.",
+			},
+		},
+	}
+	german := blockedPage(t, opts, "de")
+	if !strings.Contains(german, "<h1>Zugriff nicht möglich</h1>") || !strings.Contains(german, "<title>Zugriff nicht möglich</title>") {
+		t.Errorf("custom title not used:\n%s", german)
+	}
+	if !strings.Contains(german, "<p>Automatisierte Abrufe sind bei Musterfirma GmbH nicht gestattet.</p>") {
+		t.Errorf("custom text with the operator filled in not used:\n%s", german)
+	}
+	// English was not changed and keeps the built-in text with the name.
+	if !strings.Contains(german, "<p>Musterfirma GmbH does not allow requests of this kind.") {
+		t.Errorf("the English version lost its built-in text:\n%s", german)
+	}
+}
+
+// Whatever a site owner writes is shown as text. It can never become markup,
+// so a configuration mistake cannot break the page or inject a script.
+func TestCustomTextIsEscaped(t *testing.T) {
+	opts := Options{
+		Operator: `<b>Firma</b> & Söhne`,
+		Contact:  `<a href="https://example.org">hier</a>`,
+		Texts:    map[string]map[string]string{"de": {"blocked_text": `{operator} <script>alert(1)</script>`}},
+	}
+	page := blockedPage(t, opts, "de")
+	for _, banned := range []string{"<b>", "<script>", "<a href"} {
+		if strings.Contains(page, banned) {
+			t.Errorf("custom text became markup (%s):\n%s", banned, page)
+		}
+	}
+	if !strings.Contains(page, "&lt;b&gt;Firma&lt;/b&gt; &amp; Söhne") {
+		t.Errorf("the operator name is not shown as written:\n%s", page)
+	}
+}
+
+func TestDefaultLanguage(t *testing.T) {
+	opts := Options{DefaultLanguage: "en"}
+	if page := blockedPage(t, opts, ""); !strings.Contains(page, `<html lang="en">`) {
+		t.Errorf("no preference: want the configured default language:\n%s", page)
+	}
+	if page := blockedPage(t, opts, "fr"); !strings.Contains(page, `<html lang="en">`) {
+		t.Errorf("unsupported preference: want the configured default language:\n%s", page)
+	}
+	if page := blockedPage(t, opts, "de"); !strings.Contains(page, `<html lang="de">`) {
+		t.Errorf("a visitor who prefers German must still get German:\n%s", page)
+	}
+}
+
+func TestCheck(t *testing.T) {
+	long := strings.Repeat("x", maxTextLength+1)
+	tests := []struct {
+		name      string
+		opts      Options
+		wantField string
+		wantText  string
+	}{
+		{"unknown default language", Options{DefaultLanguage: "fr"}, "default_language", "not a supported language"},
+		{"unknown language in texts", Options{Texts: map[string]map[string]string{"fr": {"blocked_title": "x"}}}, "texts.fr", "not a supported language"},
+		{"unknown text key", Options{Texts: map[string]map[string]string{"de": {"blocked_heading": "x"}}}, "texts.de.blocked_heading", "not a text Xibalba shows"},
+		{"empty text", Options{Texts: map[string]map[string]string{"de": {"blocked_title": "  "}}}, "texts.de.blocked_title", "empty"},
+		{"text too long", Options{Texts: map[string]map[string]string{"en": {"blocked_text": long}}}, "texts.en.blocked_text", "limit"},
+		{"operator too long", Options{Operator: long}, "operator", "limit"},
+		{"contact too long", Options{Contact: long}, "contact", "limit"},
+		{"unknown placeholder", Options{Texts: map[string]map[string]string{"de": {"blocked_text": "Hallo {name}"}}}, "texts.de.blocked_text", "{name} is not a placeholder"},
+		{"placeholder in the operator name", Options{Operator: "{operator}"}, "operator", "not a placeholder"},
+		{"operator text referring to itself", Options{Texts: map[string]map[string]string{"de": {"operator": "{operator} GmbH"}}}, "texts.de.operator", "not a placeholder"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			problems := Check(tt.opts)
+			if len(problems) != 1 || problems[0].Field != tt.wantField || !strings.Contains(problems[0].Message, tt.wantText) || problems[0].Hint == "" {
+				t.Errorf("problems = %+v, want one at %q containing %q with a hint", problems, tt.wantField, tt.wantText)
+			}
+			if _, err := New(tt.opts); err == nil {
+				t.Error("New accepted options that Check rejects")
+			}
+		})
+	}
+	if problems := Check(Options{}); len(problems) != 0 {
+		t.Errorf("empty options have problems: %+v", problems)
 	}
 }

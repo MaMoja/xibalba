@@ -91,7 +91,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	supervisor.Add(ops)
 
 	// The pages Xibalba itself shows to visitors.
-	page, err := pages.New()
+	page, err := pages.New(cfg.Pages.Options())
 	if err != nil {
 		log.Error("start-up failed", "error", "visitor pages: "+err.Error())
 		return exitFailed

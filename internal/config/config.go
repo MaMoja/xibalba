@@ -24,6 +24,8 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
+
+	"github.com/MaMoja/xibalba/internal/pages"
 )
 
 // Config is the complete, validated configuration.
@@ -39,6 +41,8 @@ type Config struct {
 	Upstream Upstream `yaml:"upstream"`
 	// Rules decide what happens to each request.
 	Rules Rules `yaml:"rules"`
+	// Pages adapts the pages Xibalba shows to visitors.
+	Pages Pages `yaml:"pages"`
 	// Ops is the internal listener for health checks and, later, metrics.
 	Ops Ops `yaml:"ops"`
 	// ShutdownTimeout is how long running requests get to finish on shutdown.
@@ -102,6 +106,31 @@ func (u Upstream) Target() *url.URL {
 	return target
 }
 
+// Pages holds the settings of the pages Xibalba itself shows to visitors
+// ("request blocked", "website unavailable").
+type Pages struct {
+	// Operator is who runs the website, as it should appear in a sentence.
+	// Empty keeps the neutral phrase "The operator of this website".
+	Operator string `yaml:"operator"`
+	// Contact says how to reach the operator. Shown on the block page.
+	Contact string `yaml:"contact"`
+	// DefaultLanguage is used when the visitor's browser states no
+	// supported language.
+	DefaultLanguage string `yaml:"default_language"`
+	// Texts replaces individual texts: language, then text name, then text.
+	Texts map[string]map[string]string `yaml:"texts"`
+}
+
+// Options returns the settings in the form internal/pages takes them.
+func (p Pages) Options() pages.Options {
+	return pages.Options{
+		Operator:        p.Operator,
+		Contact:         p.Contact,
+		DefaultLanguage: p.DefaultLanguage,
+		Texts:           p.Texts,
+	}
+}
+
 // Ops holds the settings of the operations listener.
 type Ops struct {
 	// Listen is the host:port the listener binds to.
@@ -134,6 +163,7 @@ func Default() Config {
 			ResponseHeaderTimeout: 60 * time.Second,
 		},
 		Rules:           defaultRules(),
+		Pages:           Pages{DefaultLanguage: pages.Languages()[0], Texts: map[string]map[string]string{}},
 		Ops:             Ops{Listen: "127.0.0.1:9090"},
 		ShutdownTimeout: 10 * time.Second,
 	}
@@ -249,6 +279,9 @@ func (c Config) validate(lines map[string]int) []Problem {
 	if c.Upstream.ResponseHeaderTimeout <= 0 {
 		add("upstream.response_header_timeout", fmt.Sprintf("%s must be greater than zero", c.Upstream.ResponseHeaderTimeout),
 			`use a duration such as "60s"`)
+	}
+	for _, p := range pages.Check(c.Pages.Options()) {
+		add("pages."+p.Field, p.Message, p.Hint)
 	}
 	if c.Server.Listen == c.Ops.Listen && !strings.HasSuffix(c.Server.Listen, ":0") {
 		add("ops.listen", fmt.Sprintf("%q is already used by server.listen", c.Ops.Listen),

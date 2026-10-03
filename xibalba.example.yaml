@@ -58,6 +58,29 @@ rules:
   #       action: deny
   list: []
 
+# The pages Xibalba itself shows to visitors: "request blocked" and "website
+# unavailable". They work as they are; adapt them here if you want.
+pages:
+  # Who runs the website, as it should read in a sentence, for example
+  # "Stadt Musterhausen". Empty keeps "The operator of this website".
+  operator: ""
+  # How to reach you, shown on the block page, for example an e-mail address
+  # or a telephone number. Empty shows no contact line.
+  contact: ""
+  # Language for visitors whose browser states none of the supported ones (de, en).
+  default_language: de
+  # Replace any text, per language. {operator} stands for the operator. Example:
+  #
+  #   texts:
+  #     de:
+  #       operator: "Die Stadt Musterhausen"
+  #       blocked_text: "{operator} erlaubt keine automatisierten Abrufe."
+  #     en:
+  #       operator: "The City of Musterhausen"
+  #
+  # The text names are listed in docs/CONFIGURATION.md.
+  texts: {}
+
 # What Xibalba writes to its log (standard error).
 log:
   # Lowest severity that is written: debug, info, warn, error.

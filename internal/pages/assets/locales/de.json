@@ -1,8 +1,10 @@
 {
   "language_name": "Deutsch",
+  "operator": "Der Betreiber dieser Website",
   "unavailable_title": "Die Website ist gerade nicht erreichbar",
   "unavailable_text": "Bitte versuchen Sie es in einigen Minuten erneut.",
   "blocked_title": "Diese Anfrage wurde blockiert",
-  "blocked_text": "Der Betreiber dieser Website lässt Anfragen dieser Art nicht zu. Wenn Sie das für einen Fehler halten, wenden Sie sich bitte an den Betreiber der Website und nennen Sie die folgende Referenz.",
-  "reference_label": "Referenz:"
+  "blocked_text": "{operator} lässt Anfragen dieser Art nicht zu. Wenn Sie das für einen Fehler halten, nehmen Sie bitte Kontakt auf und nennen Sie die folgende Referenz.",
+  "reference_label": "Referenz:",
+  "contact_label": "Kontakt:"
 }

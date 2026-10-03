@@ -28,6 +28,10 @@ All notable changes are listed here. The format follows
   other language on the same page, and are sent with a
   Content-Security-Policy that forbids scripts and outside resources.
 - Health component `rules`.
+- New `pages` section: `operator` puts your name on the visitor pages,
+  `contact` adds a contact line to the block page, `default_language` sets
+  the language for visitors without a supported preference, and `texts`
+  replaces any text per language.
 
 ### Changed
 

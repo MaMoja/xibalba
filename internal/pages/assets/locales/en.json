@@ -1,8 +1,10 @@
 {
   "language_name": "English",
+  "operator": "The operator of this website",
   "unavailable_title": "The website is currently unavailable",
   "unavailable_text": "Please try again in a few minutes.",
   "blocked_title": "This request was blocked",
-  "blocked_text": "The operator of this website does not allow requests of this kind. If you think this is a mistake, please contact the operator of the website and quote the following reference.",
-  "reference_label": "Reference:"
+  "blocked_text": "{operator} does not allow requests of this kind. If you think this is a mistake, please get in touch and quote the following reference.",
+  "reference_label": "Reference:",
+  "contact_label": "Contact:"
 }
