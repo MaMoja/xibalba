@@ -39,11 +39,16 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [ ] A pass with a real screen reader (NVDA or VoiceOver). Not possible in the development environment; needs a person.
 
 ## M4: Crawler classes and identity
-- [ ] Crawler data format and loader
-- [ ] Verification by published IP ranges, refreshed in the background
-- [ ] Verification by reverse DNS, cached
-- [ ] First data set, every entry with source and date
-- [ ] Presets: block training crawlers, allow AI search, allow user fetches, allow search engines
+- [x] Crawler data format and loader
+- [x] Verification by published IP ranges, refreshed in the background
+- [x] Verification by reverse DNS, cached
+- [x] First data set, every entry with source and date
+- [x] Presets: block training crawlers, allow AI search, allow user fetches, allow search engines
+- [x] `crawler` rule condition; rules that favour a crawler by name alone are refused
+- [x] Own crawler definition files
+- [ ] Confirm the downloads against the operators' live lists (not reachable from the development environment)
+- [ ] Amazon and Meta crawlers: find a verification method Xibalba can use
+- [ ] Per-network limit on queued reverse DNS lookups
 
 ## M5: Statistics
 - [ ] Aggregated counters per hour: by action, rule, crawler, network

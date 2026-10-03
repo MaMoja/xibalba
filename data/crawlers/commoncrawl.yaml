@@ -1,0 +1,15 @@
+operator: Common Crawl
+source: https://commoncrawl.org/ccbot
+checked: 2026-10-03
+crawlers:
+  - name: CCBot
+    class: archive
+    user_agent: CCBot
+    purpose: Builds a public copy of the web that anyone may download and use.
+    note: >-
+      The operator describes its data as an open repository for research and
+      does not name AI training as a purpose. What others do with the public
+      copy is outside the operator's and the site owner's control, which is
+      why this crawler has a class of its own.
+    verify:
+      ranges_url: https://index.commoncrawl.org/ccbot.json

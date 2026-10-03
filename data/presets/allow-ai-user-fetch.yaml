@@ -1,0 +1,7 @@
+# Let through fetchers that load a page because a person just asked an AI
+# assistant about it, but only when they really come from their operator.
+rules:
+  - name: preset.allow-ai-user-fetch
+    match:
+      crawler: {class: [user-fetch], verified: true}
+    action: allow

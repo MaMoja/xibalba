@@ -1,0 +1,31 @@
+operator: OpenAI
+source: https://developers.openai.com/api/docs/bots
+checked: 2026-10-03
+crawlers:
+  - name: GPTBot
+    class: training
+    user_agent: GPTBot
+    purpose: Collects pages that may be used to train OpenAI's models.
+    verify:
+      ranges_url: https://openai.com/gptbot.json
+
+  - name: OAI-SearchBot
+    class: ai-search
+    user_agent: OAI-SearchBot
+    purpose: Builds the index from which ChatGPT's search shows and links websites.
+    verify:
+      ranges_url: https://openai.com/searchbot.json
+
+  - name: ChatGPT-User
+    class: user-fetch
+    user_agent: ChatGPT-User
+    purpose: Fetches a page when a ChatGPT user's request calls for it.
+    verify:
+      ranges_url: https://openai.com/chatgpt-user.json
+
+  - name: OAI-AdsBot
+    class: other
+    user_agent: OAI-AdsBot
+    purpose: Checks pages that were submitted as advertisements on ChatGPT.
+    verify:
+      ranges_url: https://openai.com/adsbot.json

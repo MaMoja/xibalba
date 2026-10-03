@@ -1,0 +1,8 @@
+# Deny requests that carry the name of a known crawler but do not come from
+# that crawler's own addresses. Crawlers whose operator publishes no way to
+# verify them are not affected by this preset.
+rules:
+  - name: preset.block-fake-crawlers
+    match:
+      crawler: {verified: false}
+    action: deny

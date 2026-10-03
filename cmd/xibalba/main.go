@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/clientip"
 	"github.com/MaMoja/xibalba/internal/config"
+	"github.com/MaMoja/xibalba/internal/crawlers"
 	"github.com/MaMoja/xibalba/internal/gate"
 	"github.com/MaMoja/xibalba/internal/health"
 	"github.com/MaMoja/xibalba/internal/httpserver"
@@ -65,6 +67,22 @@ func licenseHealth(l license.License, usableAtStart bool, now time.Time) health.
 		}
 		return health.Status{State: health.Degraded, Detail: detail}
 	}
+}
+
+// crawlerOf translates what the crawler registry found into what rules test.
+func crawlerOf(id crawlers.Identity) rules.Crawler {
+	c := rules.Crawler{Name: id.Name, Class: string(id.Class)}
+	switch id.Status {
+	case crawlers.NotACrawler:
+		return rules.Crawler{}
+	case crawlers.Verified:
+		c.Status = rules.CrawlerVerified
+	case crawlers.Unverified:
+		c.Status = rules.CrawlerImpostor
+	default: // cannot be verified, or not verified yet
+		c.Status = rules.CrawlerUnknown
+	}
+	return c
 }
 
 // route sends requests for Xibalba's own address space to own and everything
@@ -209,8 +227,31 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Log: log,
 	})
 
+	// Crawler identity. The definitions are always known and listed; the
+	// background work (address lists, DNS) only runs if a rule asks which
+	// crawler a request is, so an installation without such rules makes no
+	// outgoing connection.
+	known := crawlers.New(crawlers.Options{
+		Definitions:     cfg.Crawlers.Definitions,
+		Refresh:         cfg.Crawlers.Refresh,
+		RefreshInterval: cfg.Crawlers.RefreshInterval,
+		CacheDir:        cfg.Crawlers.CachePath,
+		UserAgent:       "Xibalba/" + buildinfo.Get().Version + " (+https://github.com/MaMoja/xibalba)",
+		Log:             log,
+	})
+	opsMux.Handle("GET /crawlers", known.Handler())
+	var identify func(string, netip.Addr) rules.Crawler
+	if engine.UsesCrawlers() {
+		registry.Register(known.Name(), known.Health)
+		supervisor.Add(known)
+		identify = func(userAgent string, client netip.Addr) rules.Crawler {
+			return crawlerOf(known.Identify(userAgent, client))
+		}
+	}
+
 	decisions := gate.New(gate.Options{
 		Engine:      engine,
+		Identify:    identify,
 		DryRun:      cfg.Rules.DryRun,
 		FailOpen:    cfg.Rules.OnError == "allow",
 		Challenge:   check,
@@ -251,6 +292,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		"trusted_proxies", len(cfg.Server.TrustedProxies),
 		"rules", engine.Len(),
 		"dry_run", cfg.Rules.DryRun,
+		"crawlers", len(cfg.Crawlers.Definitions),
 	)
 	if found := cfg.License.Info; found != nil {
 		switch cfg.License.State {

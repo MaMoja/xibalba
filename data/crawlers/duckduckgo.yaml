@@ -1,0 +1,10 @@
+operator: DuckDuckGo
+source: https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot
+checked: 2026-10-03
+crawlers:
+  - name: DuckAssistBot
+    class: user-fetch
+    user_agent: DuckAssistBot
+    purpose: Fetches pages in real time for DuckDuckGo's AI-assisted answers, which cite their sources. The operator says the data is not used to train models.
+    verify:
+      ranges_url: https://duckduckgo.com/duckassistbot.json

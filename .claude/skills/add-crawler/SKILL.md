@@ -21,13 +21,21 @@ A wrong allow entry is a hole; a wrong deny entry blocks a customer's search tra
    - `ai-search`: builds an index for answers that link to sources,
    - `user-fetch`: fetches because a person just asked,
    - `search-engine`: classic search,
-   - `other`: anything else (SEO tools, archives, monitors).
+   - `archive`: builds a public copy of the web for anyone to download,
+   - `other`: anything else (SEO tools, previews, monitors).
    One operator usually has several crawlers in different classes. Add each separately.
 4. **Write the entry** in `data/crawlers/<operator>.yaml` with `source` (URL) and
    `checked` (today's date).
-5. **No verification method published?** Set `verify: none`. The engine then
-   treats a name match as unidentified, so an allow preset will not let it through
-   on the name alone. Say this in the entry's note.
-6. **Test.** Add a case to the crawler data tests: a request with the right name
-   from a verified address, and one with the right name from a wrong address.
-7. **Report** what was added, the class chosen and the source.
+   The format is described in `docs/CRAWLERS.md` ("Your own crawlers"):
+   `verify.ranges_url` (https only), `verify.ranges`, `verify.reverse_dns`.
+5. **No verification method published, or its format not confirmed?** Leave
+   `verify` out. The engine then never treats the crawler as verified, so an
+   allow preset will not let it through. Say this in the entry's `note`; a
+   test requires the note.
+6. **Robots.txt-only tokens** (Google-Extended, Applebot-Extended) have no
+   user agent and are not crawlers. Do not add them; mention them in the note
+   of the operator's main crawler.
+7. **Test.** `go test ./internal/crawlers ./internal/config` checks every
+   built-in entry (source, date, uniqueness) and that `docs/CRAWLERS.md` lists
+   it. Add the row to the table there.
+8. **Report** what was added, the class chosen and the source.

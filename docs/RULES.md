@@ -70,6 +70,7 @@ All conditions written in one `match` must hold.
 | `method` | The HTTP method | A list such as `["POST", "PUT"]` |
 | `header` | Any other header, by name | A text test or `present` per header |
 | `ip` | The client's address | A list of addresses and networks |
+| `crawler` | Which known crawler the request claims to be, and whether that is true | `class`, `name`, `verified`; see [CRAWLERS.md](CRAWLERS.md) |
 | `all` | Groups of conditions that must all hold | A list of `match` blocks |
 | `any` | Groups of conditions of which one must hold | A list of `match` blocks |
 | `not` | Conditions that must not hold | A `match` block |
@@ -142,8 +143,8 @@ write `regex: "^/admin(/|$)"`.
 
 ## What can be trusted
 
-**Only `ip` is established by Xibalba.** The user agent and every header are
-whatever the client chooses to send.
+**Only `ip` and a verified `crawler` are established by Xibalba.** The user
+agent and every header are whatever the client chooses to send.
 
 - A `deny` rule on a user agent stops crawlers that announce themselves
   honestly. It does not stop one that lies.
@@ -160,7 +161,10 @@ whatever the client chooses to send.
   action: deny
 ```
 
-Verified crawler identities, maintained for you, are **planned** (milestone M4).
+For the crawlers of the large operators you do not need to maintain such
+networks yourself: the `crawler` condition with `verified: true` checks the
+operator's published addresses. Xibalba refuses a rule that would let a
+crawler through, or spare it, on its name alone. See [CRAWLERS.md](CRAWLERS.md).
 
 ## Weights and thresholds
 

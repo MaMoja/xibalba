@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,6 +58,9 @@ type Options struct {
 	// FailOpen says what happens if evaluating a request fails inside
 	// Xibalba: true passes the request on, false refuses it.
 	FailOpen bool
+	// Identify says which crawler a request claims to be. If nil, crawler
+	// conditions never match.
+	Identify func(userAgent string, client netip.Addr) rules.Crawler
 	// Challenge handles requests whose decision is "challenge". If nil,
 	// such requests are passed on.
 	Challenge Challenger
@@ -170,6 +174,9 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, ok bool) {
 		UserAgent: r.Header.Get("User-Agent"),
 		Header:    r.Header,
 		Client:    info.Client,
+	}
+	if g.opts.Identify != nil {
+		req.Crawler = g.opts.Identify(req.UserAgent, req.Client)
 	}
 	return g.opts.Engine.Evaluate(&req), true
 }

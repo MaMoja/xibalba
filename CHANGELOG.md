@@ -8,6 +8,23 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Crawler identity. Xibalba knows 23 crawlers of OpenAI, Anthropic,
+  Perplexity, Google, Microsoft, Apple, DuckDuckGo, Common Crawl, Meta and
+  Amazon, each with its class (`training`, `ai-search`, `user-fetch`,
+  `search-engine`, `archive`, `other`) and the operator's page it was taken
+  from. A crawler counts as genuine only if the request comes from the
+  operator's published addresses or passes a forward-confirmed reverse DNS
+  check. Both run in the background; no request waits for the network.
+- Rule condition `crawler` with `class`, `name` and `verified`. A rule that
+  would let a crawler through, or spare it, on its name alone is refused.
+- Presets (`rules.presets`): `block-fake-crawlers`, `block-ai-training`,
+  `block-archive-crawlers`, `allow-search-engines`, `allow-ai-search`,
+  `allow-ai-user-fetch`.
+- Settings `crawlers.builtin`, `crawlers.refresh`,
+  `crawlers.refresh_interval`, `crawlers.cache_dir`, `crawlers.files` (own
+  crawler definitions).
+- `GET /crawlers` on the operations listener and the health component
+  `crawlers`.
 - Attribution line. Every page Xibalba shows to visitors ends with a small
   "Protected by Xibalba" line linking to the project and its sponsor page.
   New setting `pages.attribution` (default `true`).

@@ -1,0 +1,24 @@
+operator: Anthropic
+source: https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+checked: 2026-10-03
+crawlers:
+  - name: ClaudeBot
+    class: training
+    user_agent: ClaudeBot
+    purpose: Collects pages that may be used to train Anthropic's models.
+    verify:
+      ranges_url: https://claude.com/crawling/bots.json
+
+  - name: Claude-SearchBot
+    class: ai-search
+    user_agent: Claude-SearchBot
+    purpose: Crawls to improve the search results Claude gives its users.
+    verify:
+      ranges_url: https://claude.com/crawling/bots.json
+
+  - name: Claude-User
+    class: user-fetch
+    user_agent: Claude-User
+    purpose: Fetches a page when a Claude user's question calls for it.
+    verify:
+      ranges_url: https://claude.com/crawling/bots.json

@@ -15,7 +15,7 @@
 | `make test` | All tests with the race detector, including integration tests |
 | `make lint` | Formatting check and `go vet`; `golangci-lint` too if installed |
 | `make cross` | Build for linux/amd64 and linux/arm64 into `dist/` |
-| `make bench` | Run the benchmarks (rule engine) |
+| `make bench` | Run the benchmarks (rule engine, crawler identification) |
 | `make browser-check` | Check the visitor pages in a real browser (needs Playwright; see below) |
 | `make webserver-check` | Run Xibalba behind real nginx and Caddy with the example configurations |
 | `make check` | `lint`, `test` and `cross`: everything CI runs |
@@ -94,6 +94,7 @@ Documentation is part of the change, not a follow-up.
 | A setting | `internal/config`, `xibalba.example.yaml`, `docs/CONFIGURATION.md`, `docs/de/HANDBUCH.md` |
 | What rules can do | `internal/rules`, `docs/RULES.md`, `examples/rules/basic.yaml` |
 | A text visitors see | Every file in `internal/pages/assets/locales`, and the text-name table in `docs/CONFIGURATION.md` |
+| A crawler definition or preset | `data/crawlers` or `data/presets` (use the `add-crawler` skill), the tables in `docs/CRAWLERS.md` and `docs/de/HANDBUCH.md` |
 | A package or its job | Package comment, `docs/ARCHITECTURE.md` |
 | A user-visible behaviour | `README.md` status table, `CHANGELOG.md` |
 | A technical choice | `docs/DECISIONS.md` |

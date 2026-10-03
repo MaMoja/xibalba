@@ -1,0 +1,7 @@
+# Let through crawlers that build an index for AI answers which link back to
+# their sources, but only when they really come from their operator.
+rules:
+  - name: preset.allow-ai-search
+    match:
+      crawler: {class: [ai-search], verified: true}
+    action: allow

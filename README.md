@@ -67,7 +67,8 @@ flowchart LR
 | Own name and wording on the visitor pages, Xibalba line removable (sponsor license) | Built |
 | Tested configurations for nginx and Caddy | Built |
 | Logo and accent colour on visitor pages | Planned |
-| Crawler classes and identity checks | Next |
+| Crawler classes, verified crawler identity (address lists, reverse DNS), presets | Built |
+| Own crawler definitions | Built |
 | Statistics and web interface | Planned |
 
 The order and the details are in the [roadmap](docs/ROADMAP.md).
@@ -187,6 +188,7 @@ configuration xibalba.yaml: 1 problem
 | [Configuration](docs/CONFIGURATION.md) | Every setting, its default and its allowed values |
 | [Handbuch (Deutsch)](docs/de/HANDBUCH.md) | Für Betreiber: installieren, einrichten, wo man was einstellt |
 | [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
+| [Crawlers](docs/CRAWLERS.md) | Crawler classes, presets, how identity is verified, the crawlers Xibalba knows |
 | [Challenge](docs/CHALLENGE.md) | The security check: how it works, its settings, what to consider |
 | [Sponsors](docs/SPONSORS.md) | What is free, what the sponsor license adds, how it is checked |
 | [Architecture](docs/ARCHITECTURE.md) | How the program is divided and how failures are contained |

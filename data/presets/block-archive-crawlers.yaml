@@ -1,0 +1,6 @@
+# Deny crawlers that build a public copy of the web for anyone to download.
+rules:
+  - name: preset.block-archive-crawlers
+    match:
+      crawler: {class: [archive]}
+    action: deny

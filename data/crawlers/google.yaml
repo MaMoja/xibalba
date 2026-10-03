@@ -1,0 +1,32 @@
+operator: Google
+source: https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
+checked: 2026-10-03
+crawlers:
+  - name: Googlebot
+    class: search-engine
+    user_agent: Googlebot
+    purpose: Crawls for Google Search and the products built on it. Also covers Googlebot-Image and Googlebot-Video.
+    note: >-
+      Whether Google may use crawled pages to train Gemini is controlled by the
+      robots.txt token Google-Extended. Google-Extended has no user agent of
+      its own and cannot be told apart from Googlebot in a request, so it is
+      not a crawler Xibalba can block.
+    verify:
+      source: https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests
+      ranges_url: https://developers.google.com/static/crawling/ipranges/common-crawlers.json
+
+  - name: GoogleOther
+    class: other
+    user_agent: GoogleOther
+    purpose: Generic crawler used by various Google product teams; affects no particular product.
+    verify:
+      source: https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests
+      ranges_url: https://developers.google.com/static/crawling/ipranges/common-crawlers.json
+
+  - name: Google-CloudVertexBot
+    class: other
+    user_agent: Google-CloudVertexBot
+    purpose: Crawls at a site owner's own request when building Vertex AI agents.
+    verify:
+      source: https://developers.google.com/crawling/docs/crawlers-fetchers/verify-google-requests
+      ranges_url: https://developers.google.com/static/crawling/ipranges/common-crawlers.json

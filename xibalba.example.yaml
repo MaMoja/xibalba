@@ -46,8 +46,22 @@ rules:
   # Scores at which a request is challenged or denied, for example
   # [{weight: 10, action: challenge}, {weight: 20, action: deny}].
   thresholds: []
+  # Ready-made rule groups that ship with Xibalba. They are evaluated after
+  # the rules in list and before the rule files, in the order given:
+  #
+  #   block-fake-crawlers     deny requests that carry a crawler's name but do
+  #                           not come from that crawler's operator
+  #   block-ai-training       deny crawlers that collect pages for AI training
+  #   block-archive-crawlers  deny crawlers that build public copies of the web
+  #   allow-search-engines    let verified search engine crawlers through
+  #   allow-ai-search         let verified AI search crawlers through
+  #   allow-ai-user-fetch     let verified fetchers through that load a page
+  #                           because a person asked an AI assistant about it
+  #
+  # See docs/CRAWLERS.md.
+  presets: []
   # Rule files to import, relative to this file. They are evaluated after
-  # the rules in list, in the order given.
+  # the rules in list and the presets, in the order given.
   files: []
   # Rules written here are evaluated first, from top to bottom. Example:
   #
@@ -57,6 +71,27 @@ rules:
   #         user_agent: {contains: "ExampleBot"}
   #       action: deny
   list: []
+
+# How crawlers are recognised. Only used if a rule or preset has a crawler
+# condition; without one, Xibalba makes no outgoing connection for this.
+crawlers:
+  # Use the crawler definitions that ship with Xibalba (docs/CRAWLERS.md
+  # lists them). false: only the crawlers from "files" below are known.
+  builtin: true
+  # Download the address lists that crawler operators publish, so a genuine
+  # crawler can be told from an impostor. The lists are fetched over HTTPS
+  # from the operators (OpenAI, Google and so on); nothing about your
+  # visitors is sent. false: crawlers that are verified by such a list are
+  # never counted as genuine.
+  refresh: true
+  # How often the lists are downloaded again (1h to 720h).
+  refresh_interval: 24h
+  # Directory that keeps the downloaded lists across restarts, relative to
+  # this file. Empty: memory only.
+  cache_dir: ""
+  # Your own crawler definition files, relative to this file. A crawler
+  # defined there replaces the built-in one of the same name.
+  files: []
 
 # The security check a client has to pass when a rule or threshold says
 # "challenge". Explained in docs/CHALLENGE.md.

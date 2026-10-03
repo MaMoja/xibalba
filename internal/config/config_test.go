@@ -22,13 +22,21 @@ func withUpstream() Config {
 	return cfg
 }
 
+// settings returns cfg without what loading derives from the settings: the
+// crawler definitions and the catalog built from them.
+func settings(cfg Config) Config {
+	cfg.Crawlers.Definitions = nil
+	cfg.Rules.Catalog = nil
+	return cfg
+}
+
 func TestParseMinimalUsesDefaults(t *testing.T) {
 	for _, input := range []string{minimal, "# a comment\n" + minimal, "log:\nops:\nserver:\n" + minimal} {
 		cfg, err := Parse("test.yaml", []byte(input))
 		if err != nil {
 			t.Fatalf("Parse(%q) returned error: %v", input, err)
 		}
-		if !reflect.DeepEqual(cfg, withUpstream()) {
+		if !reflect.DeepEqual(settings(cfg), withUpstream()) {
 			t.Errorf("Parse(%q) =\n%+v\nwant\n%+v", input, cfg, withUpstream())
 		}
 	}
@@ -83,12 +91,13 @@ shutdown_timeout: 30s
 			ResponseHeaderTimeout: 15 * time.Second,
 		},
 		Rules:           defaultRules(),
+		Crawlers:        defaultCrawlers(),
 		Challenge:       Default().Challenge,
 		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},
 		ShutdownTimeout: 30 * time.Second,
 	}
-	if !reflect.DeepEqual(cfg, want) {
+	if !reflect.DeepEqual(settings(cfg), want) {
 		t.Errorf("got\n%+v\nwant\n%+v", cfg, want)
 	}
 
@@ -109,7 +118,7 @@ func TestParsePartialKeepsDefaults(t *testing.T) {
 	}
 	want := withUpstream()
 	want.Log.Level = "warn"
-	if !reflect.DeepEqual(cfg, want) {
+	if !reflect.DeepEqual(settings(cfg), want) {
 		t.Errorf("got\n%+v\nwant\n%+v", cfg, want)
 	}
 }
@@ -306,7 +315,7 @@ func TestExampleFileMatchesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("xibalba.example.yaml is not valid: %v", err)
 	}
-	if !reflect.DeepEqual(cfg, withUpstream()) {
+	if !reflect.DeepEqual(settings(cfg), withUpstream()) {
 		t.Errorf("xibalba.example.yaml =\n%+v\nwant the defaults\n%+v", cfg, withUpstream())
 	}
 }

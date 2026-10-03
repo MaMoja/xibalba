@@ -4,6 +4,46 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-03
 
+- **Crawler identity is its own package (`internal/crawlers`); rules test a
+  plain `Crawler` value.** Agent. The two packages do not import each other;
+  `cmd/xibalba` translates. A fault in list downloads or DNS therefore cannot
+  reach the rule engine.
+- **"Unknown" is a third state besides genuine and impostor.** Agent. A
+  crawler whose list has not arrived, whose DNS lookup is running, or whose
+  operator publishes no verification is neither let through nor denied for
+  its name. Treating it as an impostor would block real search engines during
+  a network outage; treating it as genuine would be a hole.
+- **Rules that favour a crawler by name alone do not compile.** Agent. Applies
+  to `allow`, negative `weigh`, and restricting rules with the condition
+  under `not`. Found incomplete by the security review (the `not` form) and
+  fixed before the milestone closed.
+- **Address lists are parsed without knowing any operator's layout.** Agent.
+  Every text in the JSON that is an address or network is taken. One parser
+  for all operators, and no breakage when one renames a key. Guarded by
+  refusing whole lists with implausible content (larger than /8 or /24,
+  private addresses, over 100 000 entries, over 2 MiB).
+- **Only https for address lists, also after redirects; plain http for
+  loopback only** (tests). Agent.
+- **Lists older than a week (or three refresh intervals) are no longer used.**
+  Agent. Operators give up address space.
+- **Reverse DNS: negative results are kept per IPv4 address and per IPv6
+  /64; confirmed addresses in a table of their own; full tables evict instead
+  of refusing.** Agent, after the security review.
+- **Crawler machinery is idle unless a rule uses a `crawler` condition.**
+  Agent. An installation without such rules makes no outgoing connection.
+- **New class `archive`** for Common Crawl. Agent, for the owner to confirm:
+  it is neither a search engine nor (by itself) a training crawler, and site
+  owners will want to decide about it separately.
+- **Presets are opt-in; evaluation order is list, presets, files.** Agent.
+  Whether new installations should start with presets on is the owner's call
+  (see Open).
+- **`crawlers.builtin: false`** lets a site run on its own definitions only;
+  also keeps the integration tests off the internet. Agent.
+- **Amazon and Meta crawlers have no verification.** Agent. The pages cited
+  give no method whose format could be confirmed; they can be denied by name
+  and are never allowed as verified.
+- **Only the first 512 bytes of a user agent are searched for crawler names.**
+  Agent. Bounds the cost per request.
 - **Attribution line on all visitor pages; removing it and customising the
   pages needs a sponsor license (50 € per month on GitHub Sponsors).** Owner's
   decision. Locked: `pages.attribution: false`, `pages.operator`, `pages.texts`.
@@ -165,5 +205,10 @@ Newest first. One entry per decision: what, why, who decided.
 - How long licenses are issued for (the tool takes any expiry date).
 
 
+- Should a fresh installation start with crawler presets switched on (the
+  spec says training "default deny", search "default allow")? Today nothing is
+  on until the site owner lists presets.
+- Is the class `archive` (Common Crawl) wanted, and should it be blocked by a
+  default preset?
 - Copyright holder named in `LICENSE` (currently "The Xibalba Authors").
 - Whether the challenge page shows a "Protected by Xibalba" line.

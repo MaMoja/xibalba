@@ -45,6 +45,12 @@ Behaviour may be matched; code and text may not be copied.
   - `ai-search`: builds an index for answers that link back. Default allow.
   - `user-fetch`: fetches a page because a person just asked. Default allow.
   - `search-engine`: classic search. Default allow.
+  - `archive`: builds a public copy of the web. No default yet.
+  - `other`: everything else.
+
+  As built in M4, these defaults are presets the site owner switches on;
+  nothing is on by default. Whether a fresh installation should start with
+  presets switched on is an open product decision.
 - **Verified identity.** A crawler is trusted by name only if it comes from the
   operator's published IP ranges or passes a reverse DNS check. Otherwise it is
   treated as unidentified.

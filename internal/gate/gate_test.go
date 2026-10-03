@@ -391,3 +391,48 @@ func TestChallengeEnforcement(t *testing.T) {
 		}
 	})
 }
+
+// The gate asks who a request claims to be and hands the answer to the rules.
+func TestCrawlerIdentityReachesTheRules(t *testing.T) {
+	yes := true
+	e, problems := rules.Compile(rules.Spec{
+		DefaultAction: rules.Deny,
+		Crawlers:      &rules.Catalog{Classes: []string{"search-engine"}, Names: []string{"ExBot"}},
+		Rules: []rules.RuleSpec{{Name: "genuine", Action: rules.Allow,
+			Match: rules.MatchSpec{Crawler: &rules.CrawlerSpec{Name: []string{"ExBot"}, Verified: &yes}}}},
+	})
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	var asked []string
+	h := newHarness(t, func(o *Options) {
+		o.Engine = e
+		o.Identify = func(userAgent string, client netip.Addr) rules.Crawler {
+			asked = append(asked, userAgent+" "+client.String())
+			if userAgent != "ExBot" {
+				return rules.Crawler{}
+			}
+			c := rules.Crawler{Name: "ExBot", Class: "search-engine", Status: rules.CrawlerImpostor}
+			if client == netip.MustParseAddr("192.0.2.1") {
+				c.Status = rules.CrawlerVerified
+			}
+			return c
+		}
+	})
+	ua := map[string]string{"User-Agent": "ExBot"}
+	if rec := h.do(call{target: "/", remote: "192.0.2.1:1", headers: ua}); rec.Code != http.StatusOK {
+		t.Errorf("the genuine crawler got %d", rec.Code)
+	}
+	if rec := h.do(call{target: "/", remote: "203.0.113.5:1", headers: ua}); rec.Code != http.StatusForbidden {
+		t.Errorf("the impostor got %d", rec.Code)
+	}
+	if len(asked) != 2 || asked[0] != "ExBot 192.0.2.1" {
+		t.Errorf("asked = %v", asked)
+	}
+
+	// Without the hook a crawler condition never matches.
+	h = newHarness(t, func(o *Options) { o.Engine = e })
+	if rec := h.do(call{target: "/", remote: "192.0.2.1:1", headers: ua}); rec.Code != http.StatusForbidden {
+		t.Errorf("without identification the crawler got %d", rec.Code)
+	}
+}

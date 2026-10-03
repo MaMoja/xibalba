@@ -1,0 +1,21 @@
+operator: Amazon
+source: https://developer.amazon.com/amazonbot
+checked: 2026-10-03
+crawlers:
+  - name: Amazonbot
+    class: training
+    user_agent: Amazonbot
+    purpose: Crawls to improve Amazon's products; the operator says the data may be used to train its AI models.
+    note: Amazon publishes this crawler's addresses on a web page whose format was not confirmed, so it is not verified yet.
+
+  - name: Amzn-SearchBot
+    class: ai-search
+    user_agent: Amzn-SearchBot
+    purpose: Crawls to improve search in Amazon's products. The operator says it does not crawl for training.
+    note: Amazon publishes this crawler's addresses on a web page whose format was not confirmed, so it is never let through as verified yet.
+
+  - name: Amzn-User
+    class: user-fetch
+    user_agent: Amzn-User
+    purpose: Fetches pages for user actions such as Alexa questions that need current information.
+    note: Amazon publishes this crawler's addresses on a web page whose format was not confirmed, so it is never let through as verified yet.

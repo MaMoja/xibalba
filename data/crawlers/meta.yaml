@@ -1,0 +1,27 @@
+operator: Meta
+source: https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers
+checked: 2026-10-03
+crawlers:
+  - name: meta-externalagent
+    class: training
+    user_agent: meta-externalagent
+    purpose: Crawls for training Meta's AI models and for indexing content for its products.
+    note: The cited page names no way to verify this crawler's addresses.
+
+  - name: meta-webindexer
+    class: ai-search
+    user_agent: meta-webindexer
+    purpose: Crawls to improve the search results of Meta AI.
+    note: The cited page names no way to verify this crawler's addresses, so it is never let through as verified.
+
+  - name: meta-externalfetcher
+    class: user-fetch
+    user_agent: meta-externalfetcher
+    purpose: Fetches single links at a user's request.
+    note: The cited page names no way to verify this crawler's addresses, so it is never let through as verified.
+
+  - name: facebookexternalhit
+    class: other
+    user_agent: facebookexternalhit
+    purpose: Fetches a page that was shared in one of Meta's apps, to show a preview.
+    note: The cited page names no way to verify this crawler's addresses.

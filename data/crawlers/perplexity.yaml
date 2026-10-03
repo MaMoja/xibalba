@@ -1,0 +1,18 @@
+operator: Perplexity
+source: https://docs.perplexity.ai/docs/resources/perplexity-crawlers
+checked: 2026-10-03
+crawlers:
+  - name: PerplexityBot
+    class: ai-search
+    user_agent: PerplexityBot
+    purpose: Builds the index from which Perplexity shows and links websites. The operator says it is not used to train models.
+    verify:
+      ranges_url: https://www.perplexity.com/perplexitybot.json
+
+  - name: Perplexity-User
+    class: user-fetch
+    user_agent: Perplexity-User
+    purpose: Fetches a page when a Perplexity user's question calls for it.
+    note: The operator says this fetcher generally ignores robots.txt, because a person asked for the page.
+    verify:
+      ranges_url: https://www.perplexity.com/perplexity-user.json

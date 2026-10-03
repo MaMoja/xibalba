@@ -1,0 +1,7 @@
+# Deny crawlers that collect pages for training AI models. The name alone is
+# enough: nobody is harmed if an impostor is turned away as well.
+rules:
+  - name: preset.block-ai-training
+    match:
+      crawler: {class: [training]}
+    action: deny

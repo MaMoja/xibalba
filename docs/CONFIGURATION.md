@@ -116,10 +116,25 @@ What happens to each request. How rules are written is explained in
 | `rules.default_action` | `allow` | `allow`, `deny`, `challenge` | What happens when no rule decides and no threshold is reached. |
 | `rules.on_error` | `allow` | `allow`, `deny` | What happens to a request if evaluating it fails inside Xibalba. `allow` keeps the website reachable; `deny` answers `503` until the problem is fixed. |
 | `rules.thresholds` | `[]` | List of `{weight, action}`; weight 1 to 1000, action `challenge` or `deny` | Scores at which a request is challenged or denied. |
-| `rules.files` | `[]` | List of paths, relative to the configuration file | Rule files to import. Evaluated after `rules.list`, in the order given. |
+| `rules.presets` | `[]` | List of: `block-fake-crawlers`, `block-ai-training`, `block-archive-crawlers`, `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Ready-made rule groups about crawlers. Evaluated after `rules.list` and before `rules.files`, in the order given. See [CRAWLERS.md](CRAWLERS.md#presets). |
+| `rules.files` | `[]` | List of paths, relative to the configuration file | Rule files to import. Evaluated after `rules.list` and the presets, in the order given. |
 | `rules.list` | `[]` | List of rules | Rules written in the configuration file. Evaluated first, top to bottom. |
 
 With the defaults nothing is blocked and nobody is challenged.
+
+### `crawlers`
+
+How crawlers are recognised and verified; explained in [CRAWLERS.md](CRAWLERS.md).
+These settings only take effect if a rule or preset has a `crawler` condition.
+Without one, Xibalba makes no outgoing connection.
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `crawlers.builtin` | `true` | `true`, `false` | Use the crawler definitions that ship with Xibalba. `false`: only the crawlers from `crawlers.files` are known. |
+| `crawlers.refresh` | `true` | `true`, `false` | Download the address lists that crawler operators publish. `false`: no downloads; crawlers verified by such a list are never counted as genuine. |
+| `crawlers.refresh_interval` | `24h` | `1h` to `720h` | How often the lists are downloaded again. |
+| `crawlers.cache_dir` | empty | Path of an existing directory, relative to the configuration file | Keeps the downloaded lists across restarts. Empty: memory only. Must be writable for Xibalba's user and for nobody else. |
+| `crawlers.files` | `[]` | List of paths, relative to the configuration file; at most 64 | Your own crawler definition files. A crawler defined there replaces the built-in one of the same name. |
 
 ### `challenge`
 
@@ -244,6 +259,7 @@ Endpoints:
 |---|---|
 | `GET /healthz` | JSON health report. Status `200` while Xibalba can serve, `503` when a component of Xibalba is down. |
 | `GET /version` | JSON with the version, commit and Go version of the running build. |
+| `GET /crawlers` | JSON with every known crawler: operator, class, source, how it is verified, the state of its address list, and how many requests claimed to be it. Holds no client address. Example in [CRAWLERS.md](CRAWLERS.md#looking-at-what-happens). |
 | `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 
 Example health report:
@@ -271,6 +287,7 @@ top-level state is the worst state of any component. A component that is not
 |---|---|---|
 | `ops` | The operations listener | It stopped listening (`down`). |
 | `public` | The public listener | It stopped listening (`down`). |
+| `crawlers` | Crawler verification. Listed only if a rule or preset has a `crawler` condition. | An address list is missing, out of date or too old (`degraded`). The detail names the list and the reason. The crawlers concerned are not counted as genuine until it is back. |
 | `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |

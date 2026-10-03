@@ -3,12 +3,16 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/MaMoja/xibalba/data"
+	"github.com/MaMoja/xibalba/internal/crawlers"
 	"github.com/MaMoja/xibalba/internal/rules"
 )
 
@@ -34,11 +38,21 @@ type Rules struct {
 	OnError string `yaml:"on_error"`
 	// Thresholds turn a request's score into an action.
 	Thresholds []rules.ThresholdSpec `yaml:"thresholds"`
+	// Presets names ready-made rule groups that ship with Xibalba. They are
+	// evaluated after List and before Files.
+	Presets []string `yaml:"presets"`
 	// Files lists rule files to import, relative to the configuration file.
 	Files []string `yaml:"files"`
 	// List holds the rules written directly in the configuration file. They
-	// are evaluated before the rules from Files.
+	// are evaluated first.
 	List []rules.RuleSpec `yaml:"list"`
+
+	// Preset holds the rules of Presets, in the order of Presets. It is
+	// filled when the configuration is loaded and is not a setting.
+	Preset []RuleFile `yaml:"-"`
+	// Catalog lists the crawlers that rules may refer to. It is filled when
+	// the configuration is loaded and is not a setting.
+	Catalog *rules.Catalog `yaml:"-"`
 
 	// Imported holds the rules read from Files, in the order of Files. It is
 	// filled when the configuration is loaded and is not a setting.
@@ -64,20 +78,45 @@ func defaultRules() Rules {
 		DefaultAction: rules.Allow,
 		OnError:       "allow",
 		Thresholds:    []rules.ThresholdSpec{},
+		Presets:       []string{},
 		Files:         []string{},
 		List:          []rules.RuleSpec{},
 	}
 }
 
 // Spec returns the complete rule set in evaluation order: the rules from the
-// configuration file first, then each imported file in the order listed.
-// Rules written by the site owner therefore take precedence over imported ones.
+// configuration file first, then the presets, then each imported file in the
+// order listed. A rule in the list therefore overrides a preset, and a preset
+// is not shadowed by a general rule in an imported file.
 func (r Rules) Spec() rules.Spec {
 	all := append([]rules.RuleSpec(nil), r.List...)
+	for _, preset := range r.Preset {
+		all = append(all, preset.Rules...)
+	}
 	for _, file := range r.Imported {
 		all = append(all, file.Rules...)
 	}
-	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all}
+	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog}
+}
+
+// PresetNames returns the names of the presets that ship with Xibalba, sorted.
+func PresetNames() []string {
+	entries, _ := fs.ReadDir(data.Files, "presets")
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, strings.TrimSuffix(entry.Name(), ".yaml"))
+	}
+	sort.Strings(names)
+	return names
+}
+
+// catalog lists what crawler conditions may refer to.
+func catalog(defs []crawlers.Definition) *rules.Catalog {
+	c := &rules.Catalog{Names: crawlers.Names(defs)}
+	for _, class := range crawlers.Classes {
+		c.Classes = append(c.Classes, string(class))
+	}
+	return c
 }
 
 // origin says where a rule in the combined rule set was written.
@@ -107,6 +146,36 @@ func (r *Rules) load(dir string, lines map[string]int) []Problem {
 		origins = append(origins, origin{path: fmt.Sprintf("rules.list[%d]", i), lines: lines})
 	}
 
+	r.Preset = nil
+	known := PresetNames()
+	listed := map[string]int{}
+	for i, name := range r.Presets {
+		field := fmt.Sprintf("rules.presets[%d]", i)
+		if !contains(known, name) {
+			add(field, fmt.Sprintf("%q is not a preset", name), "use one of: "+strings.Join(known, ", "))
+			continue
+		}
+		if first, dup := listed[name]; dup {
+			add(field, fmt.Sprintf("%q is already listed as entry number %d", name, first+1), "list every preset once")
+			continue
+		}
+		listed[name] = i
+		content, err := fs.ReadFile(data.Files, "presets/"+name+".yaml")
+		var doc ruleFileDoc
+		if err == nil {
+			err = yaml.UnmarshalWithOptions(content, &doc, yaml.Strict())
+		}
+		if err != nil {
+			add(field, fmt.Sprintf("the preset %q cannot be read: %v", name, err), "this is a fault in Xibalba; please report it")
+			continue
+		}
+		presetLines := lineIndex(content)
+		for j := range doc.Rules {
+			origins = append(origins, origin{file: "preset " + name, path: fmt.Sprintf("rules[%d]", j), lines: presetLines})
+		}
+		r.Preset = append(r.Preset, RuleFile{Path: name, Rules: doc.Rules})
+	}
+
 	if len(r.Files) > maxRuleFiles {
 		add("rules.files", fmt.Sprintf("%d files are listed; the limit is %d", len(r.Files), maxRuleFiles),
 			"combine rule files")
@@ -133,15 +202,15 @@ func (r *Rules) load(dir string, lines map[string]int) []Problem {
 		}
 		seen[full] = i
 
-		data, err := readRuleFile(full)
+		raw, err := readRuleFile(full)
 		if err != nil {
 			add(field, fmt.Sprintf("the rule file %q cannot be used: %v", name, err),
 				"check the path; it is relative to the directory of the configuration file")
 			continue
 		}
 		var doc ruleFileDoc
-		if hasContent(data) {
-			if err := yaml.UnmarshalWithOptions(data, &doc, yaml.Strict()); err != nil {
+		if hasContent(raw) {
+			if err := yaml.UnmarshalWithOptions(raw, &doc, yaml.Strict()); err != nil {
 				problems = append(problems, Problem{
 					File:    name,
 					Message: "the file is not valid: " + strings.TrimSpace(yaml.FormatError(err, false, true)),
@@ -150,7 +219,7 @@ func (r *Rules) load(dir string, lines map[string]int) []Problem {
 				continue
 			}
 		}
-		fileLines := lineIndex(data)
+		fileLines := lineIndex(raw)
 		for j := range doc.Rules {
 			origins = append(origins, origin{file: name, path: fmt.Sprintf("rules[%d]", j), lines: fileLines})
 		}

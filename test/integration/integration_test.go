@@ -1023,3 +1023,165 @@ func TestForgedLicenseIsRefused(t *testing.T) {
 		t.Errorf("error should explain the license problem:\n%s", logs.String())
 	}
 }
+
+// --- crawlers ---------------------------------------------------------------
+
+// crawlerSetup starts Xibalba with two crawlers of its own whose addresses
+// are published by a local server, behind a trusted proxy so the test can
+// arrive from any address.
+func crawlerSetup(t *testing.T, list string) (*instance, *website) {
+	t.Helper()
+	lists := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, list) }))
+	t.Cleanup(lists.Close)
+	dir := t.TempDir()
+	defs := filepath.Join(dir, "crawlers.yaml")
+	content := `operator: Example
+source: https://example.org/bots
+checked: 2026-10-03
+crawlers:
+  - name: ExSearch
+    class: ai-search
+    user_agent: ExSearch
+    purpose: Test crawler.
+    verify: {ranges_url: "` + lists.URL + `/list.json"}
+  - name: ExTrain
+    class: training
+    user_agent: ExTrain
+    purpose: Test crawler.
+    verify: {ranges_url: "` + lists.URL + `/list.json"}
+`
+	if err := os.WriteFile(defs, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	site := newWebsite(t)
+	inst := start(t, site.URL, `server:
+  listen: PUBLIC
+  trusted_proxies: ["127.0.0.1"]
+crawlers:
+  builtin: false
+  cache_dir: `+dir+`
+  files: ["`+defs+`"]
+rules:
+  default_action: challenge
+  presets: [block-fake-crawlers, block-ai-training, allow-ai-search]
+`)
+	return inst, site
+}
+
+func from(addr, userAgent string) map[string]string {
+	return map[string]string{"X-Forwarded-For": addr, "User-Agent": userAgent, "Accept-Language": "en"}
+}
+
+func TestVerifiedCrawlersAndImpostors(t *testing.T) {
+	inst, site := crawlerSetup(t, `{"prefixes": [{"ipv4Prefix": "192.0.2.0/24"}]}`)
+
+	// The list is downloaded in the background right after the start.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, report := health(t, inst)
+		if report.Components["crawlers"].State == "ok" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the address list did not arrive: %+v\n%s", report, inst.logs.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	search := "Mozilla/5.0 (compatible; ExSearch/1.0; +https://example.org/bots)"
+	tests := []struct {
+		name, addr, ua string
+		status         int
+		body           string
+	}{
+		{"genuine AI search crawler", "192.0.2.5", search, 200, "website says hello"},
+		{"impostor with the crawler's name", "203.0.113.9", search, 403, "This request was blocked"},
+		{"genuine training crawler", "192.0.2.5", "ExTrain/2.0", 403, "This request was blocked"},
+		{"training crawler's name from elsewhere", "203.0.113.9", "ExTrain/2.0", 403, "This request was blocked"},
+		{"browser from the crawler's network", "192.0.2.5", "Mozilla/5.0 Firefox/130.0", 403, "quick security check"},
+	}
+	for _, tt := range tests {
+		before := site.hitCount()
+		resp, body := get(t, inst.public+"/", from(tt.addr, tt.ua))
+		if resp.StatusCode != tt.status || !strings.Contains(body, tt.body) {
+			t.Errorf("%s: status %d, want %d with %q; body:\n%.300s", tt.name, resp.StatusCode, tt.status, tt.body, body)
+		}
+		if tt.status != 200 && site.hitCount() != before {
+			t.Errorf("%s: the request reached the website", tt.name)
+		}
+	}
+
+	d := getDecisions(t, inst)
+	for source, want := range map[string]uint64{
+		"rule:preset.block-fake-crawlers": 2, "rule:preset.block-ai-training": 1, "rule:preset.allow-ai-search": 1, "default": 1,
+	} {
+		if got := d.count(source); got != want {
+			t.Errorf("%s decided %d times, want %d", source, got, want)
+		}
+	}
+
+	_, body := get(t, inst.ops+"/crawlers", nil)
+	var report struct {
+		Crawlers []struct {
+			Name      string `json:"name"`
+			Addresses int    `json:"addresses"`
+			Requests  struct {
+				Verified   int `json:"verified"`
+				Unverified int `json:"unverified"`
+			} `json:"requests"`
+		} `json:"crawlers"`
+	}
+	if err := json.Unmarshal([]byte(body), &report); err != nil {
+		t.Fatalf("/crawlers: %v\n%s", err, body)
+	}
+	if len(report.Crawlers) != 2 || report.Crawlers[0].Name != "ExSearch" || report.Crawlers[0].Addresses != 1 ||
+		report.Crawlers[0].Requests.Verified != 1 || report.Crawlers[0].Requests.Unverified != 1 {
+		t.Errorf("/crawlers = %s", body)
+	}
+	for _, private := range []string{"192.0.2.5", "203.0.113.9"} {
+		if strings.Contains(body, private) || strings.Contains(inst.logs.String(), private) {
+			t.Errorf("the client address %s appears in the report or the log", private)
+		}
+	}
+}
+
+// A list that would make the whole internet a "genuine crawler" is refused:
+// the crawler stays unverified-so-far and Xibalba says what is wrong.
+func TestHostileAddressListIsRefused(t *testing.T) {
+	inst, _ := crawlerSetup(t, `{"prefixes": [{"ipv4Prefix": "0.0.0.0/0"}]}`)
+
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(inst.logs.String(), "could not be downloaded") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the refusal is not logged:\n%s", inst.logs.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	status, report := health(t, inst)
+	if c := report.Components["crawlers"]; status != 200 || c.State != "degraded" || !strings.Contains(c.Detail, "too much of the internet") {
+		t.Errorf("health: %d %+v", status, report)
+	}
+	// Not verified, so not let through as a crawler; not refuted either, so
+	// it gets what everyone else gets: the check.
+	resp, body := get(t, inst.public+"/", from("192.0.2.5", "ExSearch/1.0"))
+	if resp.StatusCode != 403 || !strings.Contains(body, "quick security check") {
+		t.Errorf("status %d, body:\n%.300s", resp.StatusCode, body)
+	}
+}
+
+// Without a crawler rule the crawler machinery does not run: no component,
+// no download, but the definitions can still be looked up.
+func TestCrawlersAreIdleWithoutCrawlerRules(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, testRules)
+	_, report := health(t, inst)
+	if _, running := report.Components["crawlers"]; running {
+		t.Errorf("the crawlers component runs without a crawler rule: %+v", report)
+	}
+	_, body := get(t, inst.ops+"/crawlers", nil)
+	for _, name := range []string{"GPTBot", "ClaudeBot", "PerplexityBot", "Googlebot"} {
+		if !strings.Contains(body, `"name": "`+name+`"`) {
+			t.Errorf("/crawlers does not list %s", name)
+		}
+	}
+}

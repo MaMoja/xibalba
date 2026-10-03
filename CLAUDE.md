@@ -69,7 +69,7 @@ without telling the owner why.
 ## 6. Crawler data is data, not code
 
 - Crawler definitions live in `data/crawlers/*.yaml`. Each entry has a class
-  (`training`, `ai-search`, `user-fetch`, `search-engine`, `other`), the match
+  (`training`, `ai-search`, `user-fetch`, `search-engine`, `archive`, `other`), the match
   rule, how identity is verified, the source URL, and the date it was checked.
 - Never write a crawler name, IP range or verification method from memory. Look
   it up in the operator's own documentation and record the source.
@@ -152,6 +152,8 @@ internal/health/      per-component health report
 internal/httpserver/  HTTP listener with safe defaults
 internal/clientip/    real client address behind trusted proxies
 internal/rules/       compile a rule set, decide about a request
+internal/crawlers/    know the crawlers, tell genuine from impostor
+data/                 built-in crawler definitions and presets (embedded)
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
@@ -165,7 +167,7 @@ test/webserver/       checks behind real nginx and Caddy (not in CI)
 examples/rules/       example rule files, kept valid by a test
 examples/nginx/       tested nginx configuration; the handbook shows it
 examples/caddy/       tested Caddy configuration; the handbook shows it
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, challenge, development
 docs/de/              operator handbook in German
 ```
 

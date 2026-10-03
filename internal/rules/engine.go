@@ -13,7 +13,12 @@ type Engine struct {
 	thresholds    []threshold // highest weight first
 	defaultSource int
 	sources       []Source
+	usesCrawlers  bool
 }
+
+// UsesCrawlers reports whether any rule has a crawler condition. If none
+// has, nobody needs to find out which crawler a request claims to be.
+func (e *Engine) UsesCrawlers() bool { return e.usesCrawlers }
 
 type compiledRule struct {
 	match  matcher
@@ -209,6 +214,37 @@ func (p ipIn) match(r *Request) bool {
 	}
 	for _, prefix := range p {
 		if prefix.Contains(r.Client) {
+			return true
+		}
+	}
+	return false
+}
+
+// crawlerMatch tests the crawler a request claims to be.
+type crawlerMatch struct {
+	classes []string // nil: any class
+	names   []string // nil: any name
+	any     bool     // the claim alone is enough
+	status  CrawlerStatus
+}
+
+func (m crawlerMatch) match(r *Request) bool {
+	cr := &r.Crawler
+	if cr.Status == CrawlerNone {
+		return false
+	}
+	if !m.any && cr.Status != m.status {
+		return false
+	}
+	if m.classes != nil && !inList(m.classes, cr.Class) {
+		return false
+	}
+	return m.names == nil || inList(m.names, cr.Name)
+}
+
+func inList(list []string, s string) bool {
+	for _, entry := range list {
+		if entry == s {
 			return true
 		}
 	}

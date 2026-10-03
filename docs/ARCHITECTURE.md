@@ -33,6 +33,10 @@ flowchart TD
     main --> buildinfo
     main --> clientip
     main --> rules
+    main --> crawlers
+    config --> crawlers
+    config --> data
+    crawlers --> health
     main --> token
     main --> challenge
     main --> gate
@@ -57,6 +61,9 @@ flowchart TD
 `gate`, `challenge` and `proxy` do not import `pages`: they are handed the
 functions that write a page. `gate` uses the rule engine and the challenge
 through small interfaces and imports neither implementation of the latter.
+`rules` and `crawlers` do not know each other: `rules` tests a `Crawler` value
+that `cmd/xibalba` fills from what `crawlers` found, and gets the list of
+valid classes and names as plain text from `config`.
 `config` imports the feature packages only to validate their settings with
 the same code that later uses them.
 
@@ -70,6 +77,8 @@ the same code that later uses them.
 | `internal/httpserver` | Run one HTTP listener with timeouts, limits and panic recovery |
 | `internal/clientip` | Work out the real address of the client behind a request |
 | `internal/rules` | Decide what happens to a request: compile a rule set, evaluate requests against it |
+| `internal/crawlers` | Know the crawlers of the web and tell a genuine one from an impostor |
+| `data` | Hold the crawler definitions and presets that are built into the binary |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
 | `internal/challenge` | Make a client pass a check, verify its answer, recognise its pass |
@@ -113,6 +122,10 @@ cannot recover from.
 | The system's random source fails while issuing a task | That request gets a plain 503. | Log line `no random numbers available` with `component=challenge` |
 | The sponsor license file is missing, damaged or not issued by the project | The program does not start and says so, like any wrong setting. | Standard error, exit code 1 |
 | The sponsor license has expired | The program starts and runs. For 30 days nothing changes; after that the visitor pages use the standard wording and show the Xibalba line. | Warning in the log with `component=license`; `license` is `degraded` in `/healthz` |
+| A crawler definition file has a mistake | The program does not start. Every mistake is listed with file, setting and fix. | Standard error, exit code 1 |
+| An address list cannot be downloaded, or its content is refused | The previous list stays in use; the download is retried after 1, 5 and 30 minutes. Without a previous list the crawlers concerned are "unknown": not let through as crawlers, not denied as impostors. Requests are served as usual. | One warning per outage with `component=crawlers`; `crawlers` is `degraded` in `/healthz`; `list_error` in `/crawlers` |
+| An address list has not been renewed for over a week | It is no longer used; as above. | Same |
+| DNS does not answer | The reverse DNS check decides nothing and is retried after a minute. Crawlers verified that way are "unknown" meanwhile. | `pending` in `/crawlers` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
@@ -123,8 +136,8 @@ The public side is a pipeline of stages. Each stage is a small interface, so a
 stage can be tested alone, swapped, or switched off in configuration.
 
 Built today: the listener, client identity, rules with the block page, the
-challenge, and the upstream proxy. Crawler identity and lasting statistics are
-**planned**.
+crawler identity, the challenge, and the upstream proxy. Lasting statistics
+are **planned**.
 
 Requests under `/.xibalba/` are Xibalba's own (the challenge's answer
 address). They are routed to the challenge right after client identity and
@@ -152,7 +165,6 @@ Planned packages and their seams:
 
 | Package | Its one job | Interface it exposes |
 |---|---|---|
-| `internal/identity` | Decide whether a claimed crawler is genuine | `Verifier` |
 | `internal/stats` | Count decisions | `Recorder` |
 | `internal/admin` | Serve the web interface | `http.Handler` |
 
@@ -172,7 +184,7 @@ Rules and translations work today; the rest is **planned**.
 
 - **Rules and rule sets**: data files, loaded and validated at start-up. See [RULES.md](RULES.md).
 - **Translations of visitor pages**: one JSON file per language in `internal/pages/assets/locales`, plus its code in the language list of that package. A test checks that every language has every text.
-- **Crawler definitions**: data files under `data/crawlers/`.
+- **Crawler definitions**: data files, built in (`data/crawlers/`) or your own (`crawlers.files`) (built). See [CRAWLERS.md](CRAWLERS.md).
 - **Challenge methods**: a client names the method it answered with (`pow`, `button`); each is verified by its own branch in `internal/challenge`. Selecting a method or difficulty per rule is planned.
 - **Storage backends**: implement the storage interface for challenge state or statistics.
 - **Wording of visitor pages**: operator name, contact line and any text, from the `pages` section of the configuration (built).

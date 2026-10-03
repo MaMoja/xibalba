@@ -70,6 +70,10 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 				config = minimal + thresholds + "  list:\n" + indent(example, "    ")
 			case strings.HasPrefix(first, "match:"):
 				config = minimal + thresholds + "  list:\n    - name: example\n" + indent(example, "      ") + "      action: deny\n"
+			case strings.HasPrefix(first, "operator:"):
+				// A crawler definition file.
+				files["example-crawlers.yaml"] = example
+				config = minimal + "crawlers:\n  files: [example-crawlers.yaml]\n"
 			case first == "rules:" && ruleFileRE.MatchString(example):
 				files["example-rules.yaml"] = example
 				config = minimal + thresholds + "  files: [example-rules.yaml]\n"
@@ -158,6 +162,35 @@ func TestWebServerExamplesInTheHandbookMatchTheTestedFiles(t *testing.T) {
 				if !lines[normal] {
 					t.Errorf("the handbook's %s example has the line %q, which is not in the tested file %s", language, normal, file)
 				}
+			}
+		}
+	}
+}
+
+// The documentation lists every built-in crawler and preset by name.
+func TestCrawlerDocumentationIsComplete(t *testing.T) {
+	root := filepath.Join("..", "..")
+	english, err := os.ReadFile(filepath.Join(root, "docs", "CRAWLERS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handbook, err := os.ReadFile(filepath.Join(root, "docs", "de", "HANDBUCH.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Parse("xibalba.yaml", []byte("upstream:\n  url: http://127.0.0.1:3000\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range cfg.Crawlers.Definitions {
+		if !strings.Contains(string(english), "| "+d.Operator+" | "+d.Name+" | "+string(d.Class)+" |") {
+			t.Errorf("docs/CRAWLERS.md has no row for %s (%s, %s)", d.Name, d.Operator, d.Class)
+		}
+	}
+	for _, name := range PresetNames() {
+		for file, text := range map[string][]byte{"docs/CRAWLERS.md": english, "docs/de/HANDBUCH.md": handbook} {
+			if !strings.Contains(string(text), "| `"+name+"` |") {
+				t.Errorf("%s does not describe the preset %s", file, name)
 			}
 		}
 	}

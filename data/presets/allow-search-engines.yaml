@@ -1,0 +1,7 @@
+# Let through the crawlers of classic search engines, but only when they
+# really come from their operator.
+rules:
+  - name: preset.allow-search-engines
+    match:
+      crawler: {class: [search-engine], verified: true}
+    action: allow

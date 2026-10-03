@@ -74,6 +74,17 @@ type Spec struct {
 	Thresholds []ThresholdSpec
 	// Rules are evaluated in order.
 	Rules []RuleSpec
+	// Crawlers lists the crawler classes and names that crawler conditions
+	// may refer to. Without it a crawler condition is a mistake.
+	Crawlers *Catalog
+}
+
+// Catalog lists what crawler conditions may refer to.
+type Catalog struct {
+	// Classes are the crawler classes, such as "training".
+	Classes []string
+	// Names are the crawler names, such as "GPTBot".
+	Names []string
 }
 
 // ThresholdSpec says: at this score or above, take this action.
@@ -114,12 +125,54 @@ type MatchSpec struct {
 	Header map[string]*StringSpec `yaml:"header"`
 	// IP lists addresses and networks; the client address must be in one of them.
 	IP []string `yaml:"ip"`
+	// Crawler tests which known crawler the request claims to be and whether
+	// that claim was verified.
+	Crawler *CrawlerSpec `yaml:"crawler"`
 	// All holds groups of conditions that must all hold.
 	All []MatchSpec `yaml:"all"`
 	// Any holds groups of conditions of which at least one must hold.
 	Any []MatchSpec `yaml:"any"`
 	// Not holds conditions that must not hold.
 	Not *MatchSpec `yaml:"not"`
+}
+
+// CrawlerSpec tests the crawler a request claims to be. A request claims to
+// be a crawler by carrying its name in the user agent. At least one of Class,
+// Name and Verified must be set; those that are set must all hold.
+type CrawlerSpec struct {
+	// Class lists crawler classes; the crawler must be of one of them.
+	Class []string `yaml:"class"`
+	// Name lists crawler names; the crawler must be one of them.
+	Name []string `yaml:"name"`
+	// Verified, if true, holds only for requests that really come from the
+	// crawler's operator. If false, it holds only for requests that were
+	// checked and do not: impostors. Left out, the claim alone is enough.
+	// A crawler that cannot be verified, or is not verified yet, is neither.
+	Verified *bool `yaml:"verified"`
+}
+
+// CrawlerStatus says what is known about a request's claim to be a crawler.
+type CrawlerStatus uint8
+
+const (
+	// CrawlerNone: the request does not claim to be a known crawler.
+	CrawlerNone CrawlerStatus = iota
+	// CrawlerVerified: the request comes from the crawler's operator.
+	CrawlerVerified
+	// CrawlerImpostor: the request carries the name but was checked and
+	// does not come from the crawler's operator.
+	CrawlerImpostor
+	// CrawlerUnknown: the claim cannot be checked, or is not checked yet.
+	CrawlerUnknown
+)
+
+// Crawler is the crawler a request claims to be.
+type Crawler struct {
+	// Name and Class describe the crawler. Empty if Status is CrawlerNone.
+	Name  string
+	Class string
+	// Status says whether the claim is true.
+	Status CrawlerStatus
 }
 
 // StringSpec tests a piece of text. Exactly one of Equals, Contains, Prefix,
@@ -158,6 +211,9 @@ type Request struct {
 	// Client is the client address resolved by internal/clientip. If it is
 	// not valid, no ip condition matches.
 	Client netip.Addr
+	// Crawler is the crawler the request claims to be, established by
+	// internal/crawlers. The zero value means: none.
+	Crawler Crawler
 }
 
 // Decision is the outcome of evaluating one request.

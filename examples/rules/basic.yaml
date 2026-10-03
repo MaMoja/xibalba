@@ -63,3 +63,19 @@ rules:
       path: {regex: "\\.(zip|tar\\.gz|iso)$"}
     action: weigh
     weight: 5
+
+  # A known crawler, recognised and verified by Xibalba (docs/CRAWLERS.md).
+  # Keep AI search out of one area, whoever sends the name.
+  - name: no-ai-search-in-internal-docs
+    match:
+      path: {prefix: "/intern"}
+      crawler: {class: [ai-search, user-fetch]}
+    action: deny
+
+  # A request that claims to be a known crawler but does not come from that
+  # crawler's operator looks scripted.
+  - name: weigh-fake-crawler
+    match:
+      crawler: {verified: false}
+    action: weigh
+    weight: 10

@@ -1,0 +1,15 @@
+operator: Apple
+source: https://support.apple.com/en-us/119829
+checked: 2026-10-03
+crawlers:
+  - name: Applebot
+    class: search-engine
+    user_agent: Applebot
+    purpose: Crawls for search in Apple products such as Spotlight, Siri and Safari.
+    note: >-
+      Apple says crawled pages may also be used to train its models unless the
+      robots.txt token Applebot-Extended disallows it. Applebot-Extended does
+      not crawl and cannot be told apart in a request. Apple also publishes an
+      address list, but only over unencrypted HTTP, so reverse DNS is used.
+    verify:
+      reverse_dns: [".applebot.apple.com"]

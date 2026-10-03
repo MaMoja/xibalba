@@ -43,6 +43,8 @@ type Config struct {
 	Upstream Upstream `yaml:"upstream"`
 	// Rules decide what happens to each request.
 	Rules Rules `yaml:"rules"`
+	// Crawlers says how crawlers are recognised and verified.
+	Crawlers Crawlers `yaml:"crawlers"`
 	// Challenge is the check a client has to pass when a rule says "challenge".
 	Challenge Challenge `yaml:"challenge"`
 	// Pages adapts the pages Xibalba shows to visitors.
@@ -285,7 +287,8 @@ func Default() Config {
 			DialTimeout:           5 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
 		},
-		Rules: defaultRules(),
+		Rules:    defaultRules(),
+		Crawlers: defaultCrawlers(),
 		Challenge: Challenge{
 			Difficulty:        18,
 			NoJavaScript:      "button",
@@ -350,6 +353,8 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 	cfg.checkLicense(filepath.Dir(name), env, func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
+	problems = append(problems, cfg.Crawlers.load(filepath.Dir(name), lines)...)
+	cfg.Rules.Catalog = catalog(cfg.Crawlers.Definitions)
 	problems = append(problems, cfg.Rules.load(filepath.Dir(name), lines)...)
 	if len(problems) > 0 {
 		return Config{}, &Error{File: name, Problems: problems}

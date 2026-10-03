@@ -333,6 +333,14 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | alles prüfen, was keine Regel ausdrücklich erlaubt | `rules.default_action: challenge` | Abschnitt 6 |
 | Regeln ausprobieren, ohne jemanden auszusperren | `rules.dry_run: true` | Schritt 7 |
 | Regeln in eigene Dateien auslagern | `rules.files` | Abschnitt 6 |
+| KI-Trainings-Crawler sperren | `rules.presets: [block-ai-training]` | Abschnitt 6, „Crawler erkennen und prüfen“ |
+| Suchmaschinen und KI-Suche durchlassen, aber nur die echten | `rules.presets` mit `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Abschnitt 6 |
+| Nachahmer sperren, die sich als Googlebot ausgeben | `rules.presets: [block-fake-crawlers]` | Abschnitt 6 |
+| einen bestimmten Crawler erlauben oder sperren | Regel mit `crawler: {name: […]}` | Abschnitt 6 |
+| die Adresslisten der Crawler-Betreiber über Neustarts behalten | `crawlers.cache_dir` | Abschnitt 6 |
+| das Laden der Adresslisten abschalten oder seltener machen | `crawlers.refresh`, `crawlers.refresh_interval` | [Referenz](../CONFIGURATION.md#crawlers) |
+| eigene Crawler eintragen | `crawlers.files` | [CRAWLERS.md](../CRAWLERS.md#your-own-crawlers) |
+| nur eigene Crawler-Angaben verwenden | `crawlers.builtin: false` | [Referenz](../CONFIGURATION.md#crawlers) |
 | die Prüfung schwerer oder leichter machen | `challenge.difficulty` | Abschnitt 7 |
 | festlegen, wie lange ein Besucher nicht erneut geprüft wird | `challenge.pass_lifetime` | Abschnitt 7 |
 | Besucher ohne JavaScript zulassen oder abweisen | `challenge.no_javascript` | Abschnitt 7 |
@@ -498,6 +506,127 @@ Eine Regeldatei enthält eine Liste unter `rules:`. Die Regeln aus
 Reihenfolge. Eine kommentierte Vorlage liegt in
 [`examples/rules/basic.yaml`](../../examples/rules/basic.yaml).
 
+### Crawler erkennen und prüfen
+
+Xibalba kennt die Crawler der großen KI- und Suchanbieter und weiß, wozu
+jeder dient. Wichtiger noch: Es kann einen **echten** Crawler von einem
+Programm unterscheiden, das sich nur dessen Namen gibt. Den Namen kann jeder
+senden. Echt ist ein Crawler nur, wenn die Anfrage aus dem Netz seines
+Betreibers kommt. Das prüft Xibalba anhand der Adresslisten, die die Betreiber
+veröffentlichen, oder über eine Rückfrage im DNS.
+
+**Fertige Regelgruppen einschalten**
+
+```yaml
+rules:
+  default_action: allow
+  presets:
+    - block-fake-crawlers
+    - block-ai-training
+    - allow-search-engines
+    - allow-ai-search
+    - allow-ai-user-fetch
+```
+
+| Regelgruppe | Wirkung |
+|---|---|
+| `block-fake-crawlers` | sperrt Anfragen, die den Namen eines bekannten Crawlers tragen, aber nachweislich nicht von dessen Betreiber kommen |
+| `block-ai-training` | sperrt Crawler, die Seiten für das Training von KI-Modellen sammeln (z. B. GPTBot, ClaudeBot) |
+| `block-archive-crawlers` | sperrt Crawler, die öffentliche Kopien des Webs anlegen (Common Crawl) |
+| `allow-search-engines` | lässt echte Suchmaschinen-Crawler durch (Google, Bing, Apple) |
+| `allow-ai-search` | lässt echte Crawler der KI-Suche durch, die auf ihre Quellen verlinken (z. B. OAI-SearchBot, PerplexityBot) |
+| `allow-ai-user-fetch` | lässt echte Abrufe durch, die ein Mensch gerade bei einem KI-Assistenten ausgelöst hat (z. B. ChatGPT-User, Perplexity-User) |
+
+Ohne Eintrag ist keine Regelgruppe aktiv. Die Reihenfolge der Auswertung ist:
+erst Ihre Regeln in `rules.list`, dann die Regelgruppen in der angegebenen
+Reihenfolge, dann die Dateien aus `rules.files`. Eine eigene Regel in
+`rules.list` hat also Vorrang.
+
+Die `allow-`Gruppen sind vor allem dann wichtig, wenn Sie danach prüfen oder
+sperren (`default_action: challenge`): Ein Crawler kann die Sicherheitsprüfung
+nicht bestehen. Ohne `allow-search-engines` verschwänden geprüfte Seiten aus
+den Suchmaschinen.
+
+**Eigene Regeln mit Crawlern**
+
+```yaml
+rules:
+  list:
+    # Nur den Such-Crawler von OpenAI, und nur den echten.
+    - name: allow-openai-search
+      match:
+        crawler: {name: [OAI-SearchBot], verified: true}
+      action: allow
+
+    # KI-Suche aus einem Bereich heraushalten.
+    - name: no-ai-in-archive
+      match:
+        path: {prefix: "/archiv"}
+        crawler: {class: [ai-search, user-fetch]}
+      action: deny
+```
+
+| Angabe | Bedeutung |
+|---|---|
+| `class` | Zweck des Crawlers: `training`, `ai-search`, `user-fetch`, `search-engine`, `archive`, `other` |
+| `name` | Name des Crawlers aus der Liste in [CRAWLERS.md](../CRAWLERS.md#the-crawlers-xibalba-knows) |
+| `verified: true` | nur der echte Crawler |
+| `verified: false` | nur nachweislich falsche (Nachahmer) |
+| ohne `verified` | der Name allein genügt; nur zum Sperren oder Prüfen sinnvoll |
+
+Eine Regel, die einen Crawler allein wegen seines Namens besserstellt, nimmt
+Xibalba nicht an. Die Meldung sagt, was zu tun ist:
+
+```text
+  - line 7, rules.list[0].match.crawler.verified: a rule that lets a crawler through must make sure it is genuine, because anyone can send a crawler's name
+    fix: add verified: true to the crawler condition
+```
+
+**Was Sie wissen sollten**
+
+- **Drei Ergebnisse, nicht zwei.** Eine Anfrage mit Crawler-Namen ist *echt*,
+  *falsch* oder *ungeklärt*. Ungeklärt ist sie, solange die Adressliste noch
+  nicht geladen ist, die DNS-Rückfrage noch läuft oder der Betreiber gar keine
+  Prüfmöglichkeit anbietet. Ungeklärte Anfragen werden weder als Crawler
+  durchgelassen noch als Nachahmer gesperrt; für sie gelten Ihre übrigen
+  Regeln.
+- **Nicht jeder Crawler ist prüfbar.** Für die Crawler von Meta und Amazon
+  kennt Xibalba derzeit kein Prüfverfahren. Sie lassen sich über den Namen
+  sperren, aber nie als „echt“ durchlassen.
+- **Google-Extended lässt sich nicht sperren.** Das ist kein eigener Crawler,
+  sondern eine Angabe in Ihrer `robots.txt`, ob Google Ihre Seiten für Gemini
+  verwenden darf. Tragen Sie es dort ein.
+- **Ausgehende Verbindungen.** Sobald eine Regel oder Regelgruppe Crawler
+  verwendet, lädt Xibalba einmal täglich die Adresslisten der Betreiber
+  (OpenAI, Anthropic, Perplexity, Google, DuckDuckGo, Common Crawl) über HTTPS
+  und stellt DNS-Rückfragen. Ihr Server braucht dafür Zugang nach außen. Was
+  dabei übertragen wird, steht in [Abschnitt 10](#10-datenschutz). Ohne
+  Crawler-Regeln nimmt Xibalba keine dieser Verbindungen auf.
+- **Listen über Neustarts behalten:** `crawlers.cache_dir` auf ein
+  Verzeichnis setzen, das nur der Benutzer von Xibalba beschreiben darf.
+- **Noch nicht gegen die echten Listen erprobt.** In der
+  Entwicklungsumgebung waren die Server der Betreiber nicht erreichbar; die
+  Abrufe sind nur gegen einen Testserver geprüft. Sehen Sie nach dem ersten
+  Start nach (nächster Absatz).
+
+**Nachsehen, ob es funktioniert**
+
+```sh
+curl http://127.0.0.1:9090/crawlers
+```
+
+Für jeden Crawler steht dort Betreiber, Zweck, Quelle der Angaben und unter
+`addresses` die Zahl der bekannten Netze. Bei Crawlern mit Adressliste muss
+`addresses` größer als 0 sein; steht dort `list_error`, konnte die Liste nicht
+geladen werden. `requests` zählt, wie viele Anfragen sich seit dem Start als
+dieser Crawler ausgegeben haben: `verified` echte, `unverified` falsche.
+In `/healthz` zeigt der Teil `crawlers` `degraded`, wenn eine Liste fehlt
+oder veraltet ist.
+
+**Eigene Crawler** (etwa Ihre Überwachung) und Korrekturen an den
+mitgelieferten Angaben tragen Sie in eigenen Dateien ein (`crawlers.files`);
+das Format beschreibt [CRAWLERS.md](../CRAWLERS.md#your-own-crawlers).
+
 ### Pfade lassen sich nicht umgehen
 
 Eine Regel auf `/admin` greift auch bei `//admin`, `/x/../admin`, `/%61dmin`
@@ -581,7 +710,8 @@ JavaScript nicht ausgeschlossen werden.
   aus, möglichst anhand der Adresse.
 - **Suchmaschinen:** Auch deren Crawler bestehen die Prüfung nicht. Wenn
   geprüfte Seiten in Suchmaschinen erscheinen sollen, erlauben Sie die
-  Suchmaschinen vorher. Gepflegte Listen dafür sind geplant.
+  Suchmaschinen vorher: `rules.presets: [allow-search-engines]` (Abschnitt 6,
+  „Crawler erkennen und prüfen“).
 - **Zwischenspeicher:** Ein Cache oder CDN vor Xibalba darf geprüfte Seiten
   nicht speichern, sonst liefert er sie ohne Prüfung aus.
 
@@ -764,6 +894,7 @@ eingeschränkt, `down` heißt ausgefallen. Bei einem Problem steht unter
 | `upstream` | Verbindung zu Ihrer Website | die letzte Anfrage an die Website fehlschlug |
 | `rules` | Auswertung der Regeln | eine Anfrage nicht ausgewertet werden konnte |
 | `ops` | der Betriebsport selbst | er nicht mehr lauscht |
+| `crawlers` | Prüfung der Crawler; erscheint nur, wenn eine Regel Crawler verwendet | eine Adressliste fehlt oder veraltet ist (`degraded`); die betroffenen Crawler gelten dann nicht als echt, alles andere läuft weiter |
 | `license` | die Sponsor-Lizenz; erscheint nur, wenn `license.file` gesetzt ist | sie abgelaufen ist (`degraded`); Xibalba läuft weiter |
 
 Ist Ihre Website nicht erreichbar, bleibt Xibalba in Betrieb: Besucher
@@ -878,7 +1009,7 @@ Rechtsberatung.
 
 | Frage | Antwort |
 |---|---|
-| Speichert Xibalba IP-Adressen? | Nein. Die Adresse wird nur während der Bearbeitung einer Anfrage verwendet und in keine Datei geschrieben. |
+| Speichert Xibalba IP-Adressen? | Nicht auf Datenträger. Die Adresse wird während der Bearbeitung einer Anfrage verwendet und in keine Datei geschrieben. Einzige Ausnahme im Arbeitsspeicher: Gibt sich eine Anfrage als Crawler aus, der per DNS geprüft wird (Bingbot, Applebot), merkt sich Xibalba das Ergebnis zu dieser Adresse bis zu 24 Stunden, um nicht jedes Mal neu zu fragen. Das betrifft keine gewöhnlichen Besucher und endet mit dem Neustart. |
 | Protokolliert Xibalba, wer was aufruft? | Nein. Es gibt kein Zugriffsprotokoll. Auch die ausführlichste Protokollstufe (`debug`) nennt bei einer Entscheidung nur die Regel, nicht Adresse, Pfad oder Kennung. Eine Ausnahme: Tritt bei der Bearbeitung einer Anfrage ein Programmfehler auf, wird zur Fehlersuche der Pfad dieser einen Anfrage protokolliert, nicht aber die Adresse. |
 | Was wird gezählt? | Wie oft jede Regel entschieden hat. Ohne Bezug zu Personen, nur im Arbeitsspeicher, bis zum nächsten Neustart. |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |
@@ -886,7 +1017,8 @@ Rechtsberatung.
 | Wozu dient das Cookie? | Allein dazu, einen Besucher nach bestandener Prüfung nicht erneut zu prüfen. |
 | Wie lange gilt es? | `challenge.pass_lifetime`, in der Voreinstellung eine Woche. |
 | Sieht meine Website das Cookie? | Nein. Xibalba entfernt es, bevor es eine Anfrage weiterreicht. |
-| Werden Daten an Dritte übertragen? | Nein. Die Seiten von Xibalba laden nichts von anderen Servern: keine Schriften, keine Skripte, keine Bilder. Xibalba selbst nimmt keine Verbindung nach außen auf, außer zu Ihrer Website. |
+| Werden Daten an Dritte übertragen? | Nein. Die Seiten von Xibalba laden nichts von anderen Servern: keine Schriften, keine Skripte, keine Bilder. Ohne Crawler-Regeln nimmt Xibalba selbst keine Verbindung nach außen auf, außer zu Ihrer Website. |
+| Und mit Crawler-Regeln? | Dann gibt es zwei Arten ausgehender Verbindungen. (1) Xibalba lädt die veröffentlichten Adresslisten bei den Betreibern der Crawler (OpenAI, Anthropic, Perplexity, Google, DuckDuckGo, Common Crawl). Übertragen wird dabei die Adresse Ihres Servers und die Kennung `Xibalba/<Version>`, nichts über Ihre Besucher. (2) Für Anfragen, die sich als Bingbot oder Applebot ausgeben, fragt Xibalba den DNS-Dienst Ihres Servers nach dem Namen zur anfragenden Adresse. Diese Adresse erreicht damit Ihren DNS-Dienst. Adressen gewöhnlicher Besucher sind nicht betroffen. Abschalten: `crawlers.refresh: false` beendet (1); (2) entfällt, wenn keine Regel Suchmaschinen-Crawler prüft. |
 | Was ist mit der Zeile „Geschützt durch Xibalba“? | Sie enthält zwei gewöhnliche Links zu GitHub. Beim Anzeigen der Seite wird nichts von dort geladen. Erst wenn ein Besucher einen der Links anklickt, ruft sein Browser GitHub auf; die Seite, von der er kommt, wird dabei nicht mitgeteilt. Mit Sponsor-Lizenz lässt sich die Zeile abschalten. |
 | Wird die Lizenz bei jemandem abgefragt? | Nein. Die Prüfung geschieht ausschließlich auf Ihrem Rechner. |
 | Was erhält meine Website zusätzlich? | Die Adresse des Besuchers in den Kopfzeilen `X-Forwarded-For` und `X-Real-IP`, wie bei jedem vorgeschalteten Webserver. Was Ihre Website damit tut, liegt bei Ihnen. |
@@ -909,6 +1041,8 @@ Die Prüfseite weist den Besucher selbst auf das Cookie hin (Text
 | Besucher werden bei jedem Seitenaufruf erneut geprüft | Der Browser nimmt das Cookie nicht an oder sendet es nicht zurück | Prüfen, ob ein Cache vor Xibalba die Prüfseite speichert. Prüfen, ob Ihr Webserver `X-Forwarded-Proto` sendet und in `trusted_proxies` steht. Wechselt die Adresse der Besucher ständig, `bind_network: false` erwägen. |
 | Ein Formular verliert nach der Prüfung die Eingaben | Das Ziel des Formulars wird geprüft, die Seite mit dem Formular nicht | Auch die Formularseite prüfen lassen (Abschnitt 7). |
 | Eine Schnittstelle oder Überwachung erhält plötzlich 403 | Sie fällt unter eine `challenge`- oder `deny`-Regel | In `/decisions` nachsehen, welche Regel zählt. `allow`-Regel darüber setzen. |
+| `crawlers` zeigt `degraded`, `list_error` in `/crawlers` | Der Server erreicht die Adresslisten der Betreiber nicht (Firewall, Proxy, kein Internetzugang) | Ausgehendes HTTPS zu den in `detail` genannten Adressen freigeben. Bis dahin gelten die betroffenen Crawler nicht als echt. |
+| Eine echte Suchmaschine wird geprüft oder gesperrt | Ihre Adressliste fehlt, oder die DNS-Rückfrage ist noch nicht beantwortet | `/crawlers` ansehen: `addresses` und `requests.pending`. Erste Anfrage von einer neuen Adresse ist bei DNS-Prüfung immer „ungeklärt“. |
 | Eine Regel greift nicht | Eine Regel weiter oben entscheidet zuerst, oder die Bedingung trifft nicht zu | In `/decisions` sehen Sie, welche Regel stattdessen zählt. Mit `curl -A "…"` gezielt nachstellen. |
 | Eine Regel blockiert zu viel | `prefix` oder `contains` trifft mehr als gedacht | Genauer fassen (siehe „Pfade lassen sich nicht umgehen“ in Abschnitt 6). Erst im Probelauf testen. |
 | Unsicher, was eine Änderung bewirkt | | `rules.dry_run: true`, Zähler beobachten, dann scharf schalten. |
@@ -928,9 +1062,9 @@ HTTP/1.1 403 Forbidden
 Damit Sie wissen, woran Sie sind:
 
 - **Kein HTTPS in Xibalba selbst.** Ein Webserver davor ist nötig.
-- **Keine gepflegten Bot-Listen.** Sie schreiben Ihre Regeln selbst. Fertige,
-  geprüfte Listen („Trainings-Crawler blockieren, KI-Suche erlauben“) sind der
-  nächste Entwicklungsschritt.
+- **Die Crawler-Liste ist nicht vollständig** (23 Crawler von zehn
+  Betreibern) und noch nicht gegen die echten Adresslisten der Betreiber
+  erprobt. Crawler von Meta und Amazon sind nicht prüfbar.
 - **Keine Weboberfläche.** Einstellungen stehen in der Datei, Zähler ruft man
   mit `curl` ab.
 - **Keine dauerhafte Statistik.** Die Zähler beginnen bei jedem Start bei null.
@@ -950,6 +1084,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 |---|---|---|
 | [CONFIGURATION.md](../CONFIGURATION.md) | jede Einstellung mit Voreinstellung und erlaubten Werten | Englisch |
 | [RULES.md](../RULES.md) | alles, was Regeln können | Englisch |
+| [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |
 | [SPONSORS.md](../SPONSORS.md) | was frei ist, was die Sponsor-Lizenz freischaltet, wie sie geprüft wird | Englisch |
 | [`xibalba.example.yaml`](../../xibalba.example.yaml) | Vorlage der Konfigurationsdatei mit allen Einstellungen | Englisch |
