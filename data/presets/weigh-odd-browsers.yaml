@@ -1,0 +1,28 @@
+# Add to the score of requests that say they are a browser but do not behave
+# like one. This preset decides nothing by itself: set rules.thresholds to say
+# from which score a request is checked or denied.
+rules:
+  # Every browser says which languages its user reads.
+  - name: preset.weigh-odd-browsers.no-language
+    match:
+      user_agent: {contains: "Mozilla"}
+      header:
+        Accept-Language: {present: false}
+    action: weigh
+    weight: 10
+
+  # Every browser says which kinds of content it accepts.
+  - name: preset.weigh-odd-browsers.no-accept
+    match:
+      user_agent: {contains: "Mozilla"}
+      header:
+        Accept: {present: false}
+    action: weigh
+    weight: 10
+
+  # A browser that runs without a window, as automation tools start it.
+  - name: preset.weigh-odd-browsers.headless
+    match:
+      user_agent: {contains: "HeadlessChrome"}
+    action: weigh
+    weight: 20

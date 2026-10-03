@@ -8,6 +8,8 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Preset `weigh-odd-browsers`: score for requests that say they are a
+  browser but lack what every browser sends.
 - Presets `challenge-browsers` (check everything that says it is a
   browser), `keep-internet-working`, `allow-feeds` and `allow-git-clients`.
 - Request limits (`limits`). Up to four limits per client, each with a

@@ -42,17 +42,14 @@ func TestPresets(t *testing.T) {
 			t.Errorf("%s has no rules", name)
 		}
 		for _, r := range spec.Rules {
-			if !strings.HasPrefix(r.Name, "preset.") {
-				t.Errorf("%s: rule %q does not start with \"preset.\"", name, r.Name)
+			if r.Name != "preset."+name && !strings.HasPrefix(r.Name, "preset."+name+".") {
+				t.Errorf("%s: rule %q is not named after its preset", name, r.Name)
 			}
 		}
 	}
 	cfg, err := Parse("xibalba.yaml", []byte(base+"rules:\n  presets: ["+strings.Join(names, ", ")+"]\n"))
 	if err != nil {
 		t.Fatalf("all presets together: %v", err)
-	}
-	if len(cfg.Rules.Spec().Rules) != len(names) {
-		t.Errorf("%d presets hold %d rules; a preset is one rule", len(names), len(cfg.Rules.Spec().Rules))
 	}
 	if engine, _ := rules.Compile(cfg.Rules.Spec()); engine == nil || !engine.UsesCrawlers() {
 		t.Error("the presets do not use crawler conditions")

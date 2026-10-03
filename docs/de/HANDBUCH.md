@@ -523,6 +523,7 @@ und danach, was prüft oder sperrt.
 | `keep-internet-working` | lässt jeden `/.well-known/`, `/robots.txt` und `/favicon.ico` lesen |
 | `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (Adressen auf `.rss`, `.atom`, `.xml` oder `/feed`, `/rss`, `/atom`) |
 | `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen, die git selbst nutzt) |
+| `weigh-odd-browsers` | vergibt Punkte an Anfragen, die sich als Browser ausgeben, denen aber fehlt, was jeder Browser sendet (keine Sprachangabe: +10, keine `Accept`-Angabe: +10, fensterloser Automatik-Browser: +20). Entscheidet selbst nichts; braucht `rules.thresholds` |
 | `challenge-browsers` | prüft alles, was sich als Browser ausgibt (Kennung enthält „Mozilla“ oder „Opera“): jeden Browser und jeden Crawler, der sich als Browser tarnt. Programme, die sagen, was sie sind (curl, git, Feed-Leser), bleiben unberührt |
 
 Dazu kommen die sechs Regelgruppen für Crawler aus dem nächsten Abschnitt.
@@ -543,6 +544,20 @@ rules:
     - allow-ai-search
     - allow-ai-user-fetch
     - challenge-browsers
+```
+
+**Die sanftere Variante** lässt gewöhnliche Browser in Ruhe und prüft nur
+die auffälligen. Dazu `weigh-odd-browsers` statt `challenge-browsers`
+verwenden und Schwellen setzen:
+
+```yaml
+rules:
+  thresholds:
+    - {weight: 10, action: challenge}
+    - {weight: 30, action: deny}
+  presets:
+    - keep-internet-working
+    - weigh-odd-browsers
 ```
 
 Beachten Sie: Mit `challenge-browsers` wird jeder Besucher einmal pro Woche

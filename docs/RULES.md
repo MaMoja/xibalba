@@ -242,6 +242,7 @@ that decides wins. So list what lets through before what checks or denies.
 | `allow-search-engines` | Lets verified search engine crawlers through. |
 | `allow-ai-search` | Lets verified AI search crawlers through. |
 | `allow-ai-user-fetch` | Lets verified fetchers through that load a page because a person asked an assistant. |
+| `weigh-odd-browsers` | Adds to the score of requests that say they are a browser but lack what every browser sends: no `Accept-Language` (+10), no `Accept` (+10), or a browser started without a window by an automation tool (+20). Decides nothing by itself; needs `rules.thresholds`. |
 | `challenge-browsers` | Checks everything whose user agent says "Mozilla" or "Opera": every browser, and every crawler that pretends to be one. Programs that say what they are (curl, git, feed readers) are not affected. |
 
 The crawler presets are explained in [CRAWLERS.md](CRAWLERS.md#presets).
@@ -264,6 +265,23 @@ rules:
     - challenge-browsers
 ```
 
+A gentler variant leaves ordinary browsers alone and checks only the odd
+ones. Use `weigh-odd-browsers` instead of `challenge-browsers`, with
+thresholds:
+
+```yaml
+rules:
+  thresholds:
+    - {weight: 10, action: challenge}
+    - {weight: 30, action: deny}
+  presets:
+    - keep-internet-working
+    - weigh-odd-browsers
+```
+
+A crawler that copies a browser's headers completely is not caught by this;
+`challenge-browsers` and [request limits](LIMITS.md) are.
+
 Things to know:
 
 - `challenge-browsers` checks every visitor once a week (see
@@ -274,7 +292,7 @@ Things to know:
 - `allow-feeds` and `allow-git-clients` open the addresses they name to
   everyone, including crawlers. That is the price of letting programs in
   that cannot be verified.
-- Each preset is one rule named `preset.<name>` and is counted in
+- The rules of a preset are named `preset.<name>` and are counted in
   `/decisions`. The files are in [`data/presets`](../data/presets).
 
 ## Trying a rule set safely

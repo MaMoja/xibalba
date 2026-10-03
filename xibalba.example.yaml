@@ -62,6 +62,9 @@ rules:
   #   allow-ai-user-fetch     let verified fetchers through that load a page
   #                           because a person asked an AI assistant about it
   #
+  #   weigh-odd-browsers      add to the score of requests that say they are
+  #                           a browser but do not behave like one; needs
+  #                           thresholds
   #   challenge-browsers      check everything that says it is a browser;
   #                           list it last
   #
