@@ -197,6 +197,7 @@ configuration xibalba.yaml: 1 problem
 | [Architecture](docs/ARCHITECTURE.md) | How the program is divided and how failures are contained |
 | [Development](docs/DEVELOPMENT.md) | Building, testing and adding a component |
 | [Specification](docs/SPEC.md) | What Xibalba is meant to do |
+| [Parity](docs/PARITY.md) | What Anubis offers and where Xibalba stands |
 | [Roadmap](docs/ROADMAP.md) | What is built and what comes next |
 | [Decisions](docs/DECISIONS.md) | Why things are the way they are |
 

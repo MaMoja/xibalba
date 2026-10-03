@@ -114,6 +114,8 @@ decision (2026-10-03): all of this comes before statistics.
 - Hosted variant
 - CMS plugins
 - ASN-based lists and reputation feeds
+- From the comparison in `docs/PARITY.md`: server load as a condition; a solved task usable only once; memory-hard proof of work; check that a style sheet was loaded; token the web server in front can verify; path prefix; unix socket and TLS options towards the website; headers telling the website which rule decided; log file with rotation; more languages
+- Go through the list "Tests to take from Anubis' published security history" in `docs/PARITY.md`
 - Serving a robots.txt generated from the crawler classes
 - Tool that turns a robots.txt into rules; tool that turns an IP block list into a rule file
 - Optional file of addresses that hit a trap link, for fail2ban; off by default, with a size limit (stores addresses: needs the privacy treatment of CLAUDE.md section 4)
