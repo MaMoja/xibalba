@@ -32,6 +32,15 @@ Behaviour may be matched; code and text may not be copied.
 - robots.txt handling and well-known paths passed through.
 - Docker image and packages.
 
+Added on 2026-10-03 from excerpts of the Anubis documentation supplied by the owner:
+
+- By default Anubis challenges every request whose user agent contains "Mozilla", except `/.well-known`, `robots.txt`, `favicon.ico` and feeds. Xibalba challenges nothing until told to.
+- Honeypot: a link only a faulty parser follows, leading into generated worthless pages; clients seen there gain weight; their addresses can be written to a file for fail2ban.
+- GeoIP conditions with MaxMind GeoLite databases (from version 1.28).
+- Tools: `robots2policy` (robots.txt to rules), `iplist2rule` (IP block list to rules).
+- Ready-made rule files for non-browser clients such as container registry clients.
+- A commercial unbranded edition.
+
 ## Part B: what Xibalba adds
 
 - **Web interface.** Requests allowed, challenged and denied over time, by rule,

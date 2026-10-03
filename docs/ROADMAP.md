@@ -99,4 +99,9 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - Trap links that only a crawler follows (hidden from people, forbidden in robots.txt)
 - Plausibility checks on browser headers (a "Chrome" that sends no Chrome headers), as weights
 - Serving a robots.txt generated from the crawler classes
-- Checking the Anubis documentation for features missing here (it could not be read from the development environment)
+- Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds (Anubis' default behaviour, per its documentation as supplied by the owner on 2026-10-03)
+- Ready-made exceptions for programs that are not browsers: git clients, container registry clients, feed readers
+- Tool that turns a robots.txt into rules; tool that turns an IP block list into a rule file
+- Optional file of addresses that hit a trap link, for fail2ban; off by default, with a size limit (stores addresses: needs the privacy treatment of CLAUDE.md section 4)
+- Maze of worthless pages for crawlers that follow trap links ("dataset poisoning" in Anubis): owner to decide whether this fits a product for public authorities
+- Recognising headless browsers by their behaviour
