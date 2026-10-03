@@ -2,10 +2,10 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/MaMoja/xibalba/internal/buildinfo.Version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: build run test bench browser-check lint cross check clean help
+.PHONY: build run test bench browser-check webserver-check lint cross check clean help
 
 help: ## Show this help
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
 
 build: ## Build bin/xibalba for this machine
 	CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/xibalba ./cmd/xibalba
@@ -21,6 +21,9 @@ bench: ## Run the benchmarks
 
 browser-check: build ## Check the visitor pages in a real browser (needs Playwright; AXE=path/to/axe.min.js adds accessibility)
 	python3 test/browser/check.py --binary bin/xibalba $(if $(AXE),--axe $(AXE))
+
+webserver-check: build ## Run Xibalba behind real nginx and Caddy with the example configurations (needs both installed)
+	python3 test/webserver/check.py --binary bin/xibalba
 
 lint: ## Check formatting and run go vet (and golangci-lint if installed)
 	@unformatted=$$(gofmt -l .); if [ -n "$$unformatted" ]; then echo "not gofmt-formatted:"; echo "$$unformatted"; exit 1; fi

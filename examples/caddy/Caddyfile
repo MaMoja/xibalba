@@ -1,0 +1,17 @@
+# Xibalba behind Caddy.
+#
+# Caddy obtains the certificate and passes every request to Xibalba, which
+# listens on 127.0.0.1:8080. Change the site name. Caddy tells Xibalba the
+# visitor's address and that the visitor came over HTTPS by itself, and
+# passes websockets through; nothing more is needed.
+#
+# In xibalba.yaml, tell Xibalba to believe this Caddy:
+#
+#   server:
+#     trusted_proxies: ["127.0.0.1"]
+#
+# Tested with Caddy 2.6 by test/webserver/check.py.
+
+www.example.org {
+	reverse_proxy 127.0.0.1:8080
+}

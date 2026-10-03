@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Tested example configurations for nginx (`examples/nginx/xibalba.conf`)
+  and Caddy (`examples/caddy/Caddyfile`), and `make webserver-check`, which
+  runs Xibalba behind both.
+
 - Security check (challenge). A client that a rule sends to the check gets a
   page whose script solves a proof of work; visitors without JavaScript can
   wait and press a button instead. A correct answer earns a signed pass

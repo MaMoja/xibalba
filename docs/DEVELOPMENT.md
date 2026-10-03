@@ -17,6 +17,7 @@
 | `make cross` | Build for linux/amd64 and linux/arm64 into `dist/` |
 | `make bench` | Run the benchmarks (rule engine) |
 | `make browser-check` | Check the visitor pages in a real browser (needs Playwright; see below) |
+| `make webserver-check` | Run Xibalba behind real nginx and Caddy with the example configurations |
 | `make check` | `lint`, `test` and `cross`: everything CI runs |
 | `make clean` | Remove build output |
 
@@ -59,6 +60,22 @@ make browser-check AXE=node_modules/axe-core/axe.min.js
 ```
 
 Run it after every change to `internal/pages` or `internal/challenge`.
+
+## Web server check
+
+`test/webserver/check.py` starts a test website, Xibalba, and then nginx and
+Caddy with the files from `examples/nginx` and `examples/caddy`. Through
+HTTPS it checks that pages pass, that the website and the rules see the
+visitor's real address even when the client sends a made-up
+`X-Forwarded-For`, that the challenge works and its cookie is marked
+`Secure`, that the block page arrives unchanged, and that an upgraded
+connection passes both ways. Only site name, port and certificate paths of
+the example files are changed for the test.
+
+It needs `nginx`, `caddy` and `openssl` (`apt install nginx caddy`); a web
+server that is not installed is skipped. Run it after any change to
+`internal/clientip`, `internal/proxy` or the example files. The handbook
+shows these files; a test keeps its copies equal to them.
 
 ## Documentation rules
 

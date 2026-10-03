@@ -150,7 +150,10 @@ internal/proxy/       forward to the website, answer when it is unreachable
 internal/buildinfo/   version of the running build
 test/integration/     tests that run the real binary
 test/browser/         checks of the visitor pages in a real browser (not in CI)
+test/webserver/       checks behind real nginx and Caddy (not in CI)
 examples/rules/       example rule files, kept valid by a test
+examples/nginx/       tested nginx configuration; the handbook shows it
+examples/caddy/       tested Caddy configuration; the handbook shows it
 docs/                 spec, roadmap, decisions, architecture, configuration, rules, challenge, development
 docs/de/              operator handbook in German
 ```

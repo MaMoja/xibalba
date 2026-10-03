@@ -111,3 +111,42 @@ func indent(text, prefix string) string {
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
+
+// The handbook shows the nginx and Caddy configurations that are shipped in
+// examples/ and tested by test/webserver/check.py. Every line it shows must
+// be a line of the tested file, so the handbook cannot drift from what works.
+func TestWebServerExamplesInTheHandbookMatchTheTestedFiles(t *testing.T) {
+	root := filepath.Join("..", "..")
+	handbook, err := os.ReadFile(filepath.Join(root, "docs", "de", "HANDBUCH.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for language, file := range map[string]string{
+		"nginx": filepath.Join("examples", "nginx", "xibalba.conf"),
+		"caddy": filepath.Join("examples", "caddy", "Caddyfile"),
+	} {
+		tested, err := os.ReadFile(filepath.Join(root, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := map[string]bool{}
+		for _, line := range strings.Split(string(tested), "\n") {
+			lines[strings.Join(strings.Fields(line), " ")] = true
+		}
+		blocks := regexp.MustCompile("(?s)```"+language+"\n(.*?)```").FindAllStringSubmatch(string(handbook), -1)
+		if len(blocks) == 0 {
+			t.Errorf("the handbook shows no %s example", language)
+		}
+		for _, block := range blocks {
+			for _, line := range strings.Split(block[1], "\n") {
+				normal := strings.Join(strings.Fields(line), " ")
+				if normal == "" || strings.HasPrefix(normal, "#") {
+					continue
+				}
+				if !lines[normal] {
+					t.Errorf("the handbook's %s example has the line %q, which is not in the tested file %s", language, normal, file)
+				}
+			}
+		}
+	}
+}

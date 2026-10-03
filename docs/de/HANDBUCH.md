@@ -205,35 +205,62 @@ Xibalba auf Port 8080 weiter. Er muss Xibalba dabei die echte Adresse des
 Besuchers mitteilen (`X-Forwarded-For`) und ob die Verbindung verschlüsselt
 war (`X-Forwarded-Proto`).
 
-Die folgenden Beispiele zeigen die übliche Form. Sie sind in der
-Entwicklungsumgebung nicht getestet; prüfen Sie sie gegen die Dokumentation
-Ihres Webservers.
+Für nginx und Caddy liegen fertige Dateien mit Erläuterungen bei:
+[`examples/nginx/xibalba.conf`](../../examples/nginx/xibalba.conf) und
+[`examples/caddy/Caddyfile`](../../examples/caddy/Caddyfile). Beide sind mit
+einem echten nginx 1.24 und einem echten Caddy 2.6 geprüft: Seiten, echte
+Besucheradresse, Sicherheitsprüfung mit Cookie, Blockseite und Websockets.
+Anzupassen sind nur der Name der Website und bei nginx die Pfade des
+Zertifikats.
 
 nginx:
 
 ```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 443 ssl;
     server_name www.example.org;
-    # ssl_certificate und ssl_certificate_key wie bisher
+
+    ssl_certificate     /etc/ssl/certs/www.example.org.pem;
+    ssl_certificate_key /etc/ssl/private/www.example.org.key;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
     }
 }
 ```
+
+Die drei `proxy_set_header`-Zeilen in der Mitte sind die wichtigen: der Name
+der Website, die Adresse des Besuchers und die Angabe, dass die Verbindung
+verschlüsselt war. Die letzten beiden Zeilen und der `map`-Block werden für
+Websockets gebraucht.
 
 Caddy:
 
 ```caddy
 www.example.org {
-    reverse_proxy 127.0.0.1:8080
+	reverse_proxy 127.0.0.1:8080
 }
 ```
+
+Caddy besorgt das Zertifikat selbst und teilt Xibalba Adresse und
+Verschlüsselung von sich aus mit.
+
+Bei beiden gilt: Sendet ein Besucher selbst eine erfundene Angabe
+`X-Forwarded-For`, ändert das nichts. Xibalba verwendet die Adresse, die Ihr
+Webserver gesehen hat. Auch das ist geprüft.
 
 ### Schritt 5: Xibalba sagen, welchem Webserver es glauben darf
 
@@ -248,7 +275,7 @@ server:
 
 | Ihre Situation | Eintrag |
 |---|---|
-| Webserver auf demselben Rechner | `["127.0.0.1", "::1"]` |
+| Webserver auf demselben Rechner | `["127.0.0.1", "::1"]` (ohne IPv6 auf dem Rechner genügt `["127.0.0.1"]`) |
 | Load Balancer im internen Netz | dessen Adresse oder Netz, z. B. `["10.0.0.0/8"]` |
 | Besucher erreichen Xibalba direkt | `[]` (leer lassen) |
 

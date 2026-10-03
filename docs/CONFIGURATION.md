@@ -72,6 +72,9 @@ The public side: where visitors, or the web server in front of Xibalba, connect.
 
 Xibalba does not terminate TLS yet. Put it behind the web server or load
 balancer that holds your certificate, and list that machine in `trusted_proxies`.
+Tested configurations for nginx and Caddy are in
+[`examples/nginx/xibalba.conf`](../examples/nginx/xibalba.conf) and
+[`examples/caddy/Caddyfile`](../examples/caddy/Caddyfile).
 
 Uploads, downloads, streams and websockets pass through without an overall
 time limit.
