@@ -58,6 +58,7 @@ type website struct {
 	mu   sync.Mutex
 	last http.Header
 	host string
+	hits int
 }
 
 func newWebsite(t *testing.T) *website {
@@ -66,12 +67,19 @@ func newWebsite(t *testing.T) *website {
 	w.Server = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		w.mu.Lock()
 		w.last, w.host = r.Header.Clone(), r.Host
+		w.hits++
 		w.mu.Unlock()
 		rw.Header().Set("X-From-Website", "yes")
 		_, _ = fmt.Fprintf(rw, "website says hello to %s", r.URL.Path)
 	}))
 	t.Cleanup(w.Close)
 	return w
+}
+
+func (w *website) hitCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.hits
 }
 
 func (w *website) lastHeader(name string) string {
@@ -218,7 +226,7 @@ func TestProxiesToTheWebsite(t *testing.T) {
 	if code != http.StatusOK || report.State != "ok" {
 		t.Errorf("health = %d %+v, want everything ok", code, report)
 	}
-	for _, name := range []string{"ops", "public", "upstream"} {
+	for _, name := range []string{"ops", "public", "rules", "upstream"} {
 		if report.Components[name].State != "ok" {
 			t.Errorf("component %q = %+v, want ok", name, report.Components[name])
 		}
@@ -342,5 +350,221 @@ func TestInvalidConfigIsRejectedWithLineNumbers(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "line 2, log.level") {
 		t.Errorf("error should point at the line and setting:\n%s", logs.String())
+	}
+}
+
+// testRules is a small rule set used by the tests below. "rules:" must be the
+// only top-level key in it.
+const testRules = `rules:
+  thresholds:
+    - {weight: 10, action: challenge}
+  list:
+    - name: allow-office
+      match:
+        ip: ["192.0.2.0/24"]
+      action: allow
+    - name: block-example-bot
+      match:
+        user_agent: {contains: "ExampleBot"}
+      action: deny
+    - name: block-admin
+      match:
+        path: {prefix: "/admin"}
+      action: deny
+    - name: weigh-no-language
+      match:
+        header:
+          Accept-Language: {present: false}
+      action: weigh
+      weight: 10
+`
+
+type decisions struct {
+	DryRun  bool              `json:"dry_run"`
+	Totals  map[string]uint64 `json:"totals"`
+	Sources []struct {
+		Source    string `json:"source"`
+		Action    string `json:"action"`
+		Reference string `json:"reference"`
+		Count     uint64 `json:"count"`
+	} `json:"sources"`
+}
+
+func getDecisions(t *testing.T, inst *instance) decisions {
+	t.Helper()
+	_, body := get(t, inst.ops+"/decisions", nil)
+	var d decisions
+	if err := json.Unmarshal([]byte(body), &d); err != nil {
+		t.Fatalf("/decisions is not JSON: %v\n%s", err, body)
+	}
+	return d
+}
+
+func (d decisions) count(source string) uint64 {
+	for _, s := range d.Sources {
+		if s.Source == source {
+			return s.Count
+		}
+	}
+	return 0
+}
+
+func (d decisions) reference(source string) string {
+	for _, s := range d.Sources {
+		if s.Source == source {
+			return s.Reference
+		}
+	}
+	return ""
+}
+
+var language = map[string]string{"Accept-Language": "en"}
+
+func TestRulesBlockAndCount(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, testRules)
+
+	// An ordinary visitor reaches the website.
+	if resp, body := get(t, inst.public+"/", language); resp.StatusCode != 200 || !strings.Contains(body, "website says hello") {
+		t.Errorf("ordinary visitor: %d %q", resp.StatusCode, body)
+	}
+
+	// A denied client gets the block page and never reaches the website.
+	before := site.hitCount()
+	resp, body := get(t, inst.public+"/", map[string]string{"User-Agent": "Mozilla/5.0 (compatible; ExampleBot/1.0)", "Accept-Language": "en"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("denied client: status = %d, want 403", resp.StatusCode)
+	}
+	if site.hitCount() != before {
+		t.Error("a denied request reached the website")
+	}
+	if !strings.Contains(body, "This request was blocked") || resp.Header.Get("Content-Security-Policy") == "" {
+		t.Errorf("denied client did not get the block page:\n%s", body)
+	}
+
+	// Differently spelled paths are blocked too.
+	for _, path := range []string{"/admin", "/ADMIN/users", "//admin", "/x/../admin", "/%61dmin", "/public/..;/admin"} {
+		if resp, _ := get(t, inst.public+path, language); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("path %s: status = %d, want 403", path, resp.StatusCode)
+		}
+	}
+
+	// A forged address must not turn the client into an "office" client.
+	if resp, _ := get(t, inst.public+"/admin", map[string]string{"X-Forwarded-For": "192.0.2.10", "Accept-Language": "en"}); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("forged X-Forwarded-For got past the allow rule: status = %d", resp.StatusCode)
+	}
+
+	d := getDecisions(t, inst)
+	if d.DryRun {
+		t.Error("dry_run reported although it is off")
+	}
+	if got := d.count("rule:block-example-bot"); got != 1 {
+		t.Errorf("block-example-bot count = %d, want 1", got)
+	}
+	if got := d.count("rule:block-admin"); got != 7 {
+		t.Errorf("block-admin count = %d, want 7", got)
+	}
+	if got := d.count("rule:allow-office"); got != 0 {
+		t.Errorf("allow-office count = %d, want 0", got)
+	}
+	if d.Totals["allow"] != 1 || d.Totals["deny"] != 8 {
+		t.Errorf("totals = %+v, want 1 allowed and 8 denied", d.Totals)
+	}
+
+	// The reference on the block page leads to the rule.
+	if ref := d.reference("rule:block-example-bot"); ref == "" || !strings.Contains(body, ref) {
+		t.Errorf("the block page does not show the reference %q of the deciding rule", ref)
+	}
+}
+
+func TestBlockPageFollowsTheVisitorsLanguage(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, testRules)
+
+	_, german := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "de-DE,de;q=0.9"})
+	_, english := get(t, inst.public+"/admin", map[string]string{"Accept-Language": "en-GB"})
+	if !strings.Contains(german, "<h1>Diese Anfrage wurde blockiert</h1>") {
+		t.Errorf("German visitor did not get the German page:\n%s", german)
+	}
+	if !strings.Contains(english, "<h1>This request was blocked</h1>") {
+		t.Errorf("English visitor did not get the English page:\n%s", english)
+	}
+}
+
+func TestTrustedProxyAddressReachesTheRules(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "server:\n  listen: PUBLIC\n  trusted_proxies: [\"127.0.0.1\"]\n"+testRules)
+
+	resp, _ := get(t, inst.public+"/admin", map[string]string{"X-Forwarded-For": "192.0.2.10", "Accept-Language": "en"})
+	if resp.StatusCode != 200 {
+		t.Errorf("office client behind the trusted proxy: status = %d, want 200", resp.StatusCode)
+	}
+	if got := getDecisions(t, inst).count("rule:allow-office"); got != 1 {
+		t.Errorf("allow-office count = %d, want 1", got)
+	}
+}
+
+func TestDryRunBlocksNothing(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, strings.Replace(testRules, "rules:\n", "rules:\n  dry_run: true\n", 1))
+
+	for _, path := range []string{"/", "/admin", "/admin/users"} {
+		if resp, _ := get(t, inst.public+path, language); resp.StatusCode != 200 {
+			t.Errorf("%s: status = %d, want 200 in dry run", path, resp.StatusCode)
+		}
+	}
+	d := getDecisions(t, inst)
+	if !d.DryRun || d.Totals["deny"] != 2 || site.hitCount() != 3 {
+		t.Errorf("dry run: %+v, website hits = %d; want 2 would-be denials counted, 3 requests passed", d, site.hitCount())
+	}
+	if !strings.Contains(inst.logs.String(), "dry run") {
+		t.Errorf("the log does not say that dry run is on:\n%s", inst.logs.String())
+	}
+}
+
+func TestChallengeIsCountedAndPassedOnForNow(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, testRules)
+
+	// No Accept-Language: weight 10 reaches the challenge threshold.
+	if resp, _ := get(t, inst.public+"/", nil); resp.StatusCode != 200 {
+		t.Errorf("status = %d, want 200 until the challenge exists", resp.StatusCode)
+	}
+	if got := getDecisions(t, inst).count("threshold:10"); got != 1 {
+		t.Errorf("threshold:10 count = %d, want 1", got)
+	}
+	if !strings.Contains(inst.logs.String(), "challenge is not available") {
+		t.Errorf("the log does not warn that the challenge is missing:\n%s", inst.logs.String())
+	}
+}
+
+func TestImportedRuleFile(t *testing.T) {
+	site := newWebsite(t)
+	dir := t.TempDir()
+	rulesPath := filepath.Join(dir, "extra.yaml")
+	extra := "rules:\n  - name: block-private\n    match:\n      path: {prefix: \"/private\"}\n    action: deny\n"
+	if err := os.WriteFile(rulesPath, []byte(extra), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inst := start(t, site.URL, fmt.Sprintf("rules:\n  files: [%q]\n", rulesPath))
+
+	if resp, _ := get(t, inst.public+"/private/x", language); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 from the imported rule", resp.StatusCode)
+	}
+	if resp, _ := get(t, inst.public+"/public", language); resp.StatusCode != 200 {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestInvalidRuleIsRejectedWithLineNumbers(t *testing.T) {
+	config := "upstream:\n  url: http://127.0.0.1:1\nrules:\n  list:\n    - name: broken\n      match:\n        path: {regex: \"(unclosed\"}\n      action: deny\n"
+	cmd, logs := run(t, config)
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("xibalba started with an invalid rule")
+	}
+	for _, want := range []string{"line 7, rules.list[0].match.path.regex", "not valid", "fix:"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("error should contain %q:\n%s", want, logs.String())
+		}
 	}
 }

@@ -20,7 +20,8 @@ Behaviour may be matched; code and text may not be copied.
 
 - Reverse proxy in front of one or more upstream sites.
 - Verdict mode for nginx, Caddy and Traefik (the web server asks, Xibalba answers allow or deny).
-- Rule engine: match on user agent, path, headers, IP ranges, and free expressions that combine them.
+- Rule engine: match on user agent, path, host, method, headers and IP ranges, combined with `all`, `any` and `not`. (As far as we know Anubis offers a text expression language for this; Xibalba uses structured conditions, see DECISIONS.md.)
+- A denied request gets an honest "blocked" page with status 403. (According to its documentation Anubis answers denied scrapers with a response that looks like success; Xibalba does not pretend.)
 - Actions per rule: allow, deny, challenge, add weight. Thresholds map total weight to an action.
 - Importable rule sets.
 - Challenge types: proof of work with adjustable difficulty, and a variant that works without JavaScript.

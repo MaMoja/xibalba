@@ -82,6 +82,7 @@ shutdown_timeout: 30s
 			DialTimeout:           2 * time.Second,
 			ResponseHeaderTimeout: 15 * time.Second,
 		},
+		Rules:           defaultRules(),
 		Ops:             Ops{Listen: "[::1]:9191"},
 		ShutdownTimeout: 30 * time.Second,
 	}

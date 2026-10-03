@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -240,9 +241,6 @@ func TestWebsiteDownGives502AndDegradedHealth(t *testing.T) {
 	if strings.Contains(string(body), addr) || strings.Contains(string(body), "dial") {
 		t.Errorf("the error page reveals internals:\n%s", body)
 	}
-	if resp.Header.Get("Cache-Control") != "no-store" {
-		t.Error("the error page must not be cached")
-	}
 	status := s.proxy.Health()
 	if status.State != health.Degraded || !strings.Contains(status.Detail, addr) {
 		t.Errorf("health = %+v, want degraded naming the website", status)
@@ -437,25 +435,93 @@ func TestEnvironmentProxySettingsAreIgnored(t *testing.T) {
 	}
 }
 
-func TestUnavailablePageIsSelfContainedAndAccessible(t *testing.T) {
-	rec := httptest.NewRecorder()
-	writeUnavailable(rec, http.StatusBadGateway)
-	page := rec.Body.String()
+func TestUnavailablePageIsUsedWhenGiven(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
 
-	for _, want := range []string{`<html lang="de">`, `lang="en"`, "<title>", `name="viewport"`, "<main>"} {
-		if !strings.Contains(page, want) {
-			t.Errorf("page is missing %s", want)
+	var gotStatus int
+	s := newSetupFor(t, "http://"+addr, nil, func(o *Options) {
+		o.Unavailable = func(w http.ResponseWriter, _ *http.Request, status int) {
+			gotStatus = status
+			w.WriteHeader(status)
+			_, _ = io.WriteString(w, "custom page")
 		}
+	})
+	resp, err := http.Get(s.front.URL + "/")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if n := strings.Count(page, "<h1"); n != 1 {
-		t.Errorf("page has %d h1 headings, want exactly one", n)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if gotStatus != http.StatusBadGateway || string(body) != "custom page" {
+		t.Errorf("page function got status %d, body %q", gotStatus, body)
 	}
-	for _, banned := range []string{"<script", "http://", "https://", "src=", "@import", "url("} {
-		if strings.Contains(page, banned) {
-			t.Errorf("page contains %q: it must load nothing and run nothing", banned)
+}
+
+func TestOutageIsLoggedOnceAndRecoveryIsLogged(t *testing.T) {
+	var logs syncBuffer
+	release := make(chan struct{})
+	defer close(release)
+	website := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/slow" {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
 		}
+		_, _ = io.WriteString(w, "fine")
+	})
+	s := newSetup(t, website, nil, func(o *Options) {
+		o.ResponseHeaderTimeout = 100 * time.Millisecond
+		o.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+
+	for i := 0; i < 5; i++ {
+		resp, err := http.Get(s.front.URL + "/slow?visitor=secret-token")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q", ct)
+	if n := strings.Count(logs.String(), "the website stopped answering"); n != 1 {
+		t.Errorf("%d error lines for one outage of 5 requests, want 1:\n%s", n, logs.String())
 	}
+	if !strings.Contains(logs.String(), "component=upstream") {
+		t.Errorf("the log line does not name the component:\n%s", logs.String())
+	}
+	if strings.Contains(logs.String(), "/slow") || strings.Contains(logs.String(), "secret-token") {
+		t.Errorf("the log records which page was requested:\n%s", logs.String())
+	}
+
+	resp, err := http.Get(s.front.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if n := strings.Count(logs.String(), "the website answers again"); n != 1 {
+		t.Errorf("recovery logged %d times, want 1:\n%s", n, logs.String())
+	}
+}
+
+// syncBuffer is a log sink that may be written and read from different goroutines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

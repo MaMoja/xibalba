@@ -21,5 +21,7 @@ jobs:
         run: make lint
       - name: Test
         run: make test
+      - name: Benchmark
+        run: make bench
       - name: Cross-compile
         run: make cross

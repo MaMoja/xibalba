@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="{{.Primary.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.Primary.Title}}</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main>
+<h1>{{.Primary.Title}}</h1>
+<p>{{.Primary.Text}}</p>
+{{- if .Reference}}
+<p>{{.Primary.ReferenceLabel}} <code>{{.Reference}}</code></p>
+{{- end}}
+{{- range .Others}}
+<details lang="{{.Lang}}">
+<summary>{{.Name}}</summary>
+<h2>{{.Title}}</h2>
+<p>{{.Text}}</p>
+{{- if $.Reference}}
+<p>{{.ReferenceLabel}} <code>{{$.Reference}}</code></p>
+{{- end}}
+</details>
+{{- end}}
+</main>
+</body>
+</html>

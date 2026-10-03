@@ -2,6 +2,44 @@
 
 Newest first. One entry per decision: what, why, who decided.
 
+## 2026-10-03
+
+- **Combined conditions are structured (`all`, `any`, `not`), not a text
+  expression language.** Agent's choice. They are checked field by field with
+  line-accurate errors, a rule editor in the web interface can show them as a
+  tree, and no expression parser or third-party interpreter enters the request
+  path. A text language is on the "Later" list if this proves too limited.
+- **Text tests ignore case by default.** Agent's choice. A rule that says
+  `GPTBot` and silently misses `gptbot` is the worse mistake; `case_sensitive:
+  true` opts out.
+- **Paths are normalised before rules are tested.** Agent's choice. Decoding,
+  backslashes, path parameters, repeated slashes and dot segments are
+  resolved, so a rule cannot be dodged by spelling. It only widens matches;
+  the website receives the path unchanged.
+- **Rules on forwarding headers are rejected.** Agent's choice. They would
+  look like address rules while testing client-written text. `ip` is the only
+  condition Xibalba establishes itself.
+- **Regular expressions are RE2 only.** Agent's choice (Go's standard
+  library). Evaluation time is linear in the input, so no request can make a
+  rule slow.
+- **The block-page reference identifies the rule, not the visitor.** Agent's
+  choice. It is derived from the rule's name, so support is possible without
+  logging who was blocked.
+- **Decisions are not logged per request.** Agent's choice. Counters only;
+  the debug log names the rule but no address, path or user agent.
+- **`deny` answers honestly with 403.** Agent's choice, in line with the
+  target group. No fake success pages.
+- **Own rules before imported rules.** Agent's choice. `rules.list` is
+  evaluated before `rules.files`, so the site owner's exceptions win.
+- **`challenge` is accepted before it exists and passes requests on.**
+  Agent's choice, temporary. Rule sets can be written and counted in advance;
+  Xibalba warns at start-up. Enforcement arrives with M3.
+- **Visitor pages offer the second language in a `<details>` element.**
+  Agent's choice. It is a language switch that needs no JavaScript, no
+  cookie and no change to the URL.
+- **Website outages are logged once per outage.** Agent's choice. A log line
+  per failed request would flood the log exactly when it is needed.
+
 ## 2026-10-02
 
 - **Name: Xibalba.** Owner's choice. In Maya tradition the underworld whose
@@ -48,6 +86,9 @@ Newest first. One entry per decision: what, why, who decided.
   server that holds the certificate; own TLS is on the "Later" list.
 
 ## Open (owner to decide)
+
+- Wording of the "request blocked" page (German and English), in
+  `internal/pages/assets/locales`.
 
 - Copyright holder named in `LICENSE` (currently "The Xibalba Authors").
 - Whether the challenge page shows a "Protected by Xibalba" line.

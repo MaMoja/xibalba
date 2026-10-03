@@ -33,6 +33,9 @@ type Options struct {
 	DialTimeout time.Duration
 	// ResponseHeaderTimeout bounds the wait for the website's response headers.
 	ResponseHeaderTimeout time.Duration
+	// Unavailable writes the page a visitor sees when the website cannot
+	// be reached. If nil, a plain-text status line is sent.
+	Unavailable func(w http.ResponseWriter, r *http.Request, status int)
 	// Log receives the proxy's messages.
 	Log *slog.Logger
 }
@@ -127,7 +130,9 @@ func (p *Proxy) rewrite(pr *httputil.ProxyRequest) {
 // onResponse runs for every response from the website, whatever its status.
 // Getting any response means the website is reachable.
 func (p *Proxy) onResponse(*http.Response) error {
-	p.setLastErr("")
+	if previous := p.setLastErr(""); previous != "" {
+		p.log.Info("the website answers again")
+	}
 	return nil
 }
 
@@ -136,7 +141,7 @@ func (p *Proxy) onError(w http.ResponseWriter, r *http.Request, err error) {
 	// The visitor closed the connection. Nothing is wrong with the website
 	// and nobody is left to answer.
 	if errors.Is(err, context.Canceled) && r.Context().Err() != nil {
-		p.log.Debug("client went away before the website answered", "method", r.Method, "path", r.URL.Path)
+		p.log.Debug("client went away before the website answered")
 		return
 	}
 
@@ -145,22 +150,35 @@ func (p *Proxy) onError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 		status = http.StatusGatewayTimeout
 	}
-	p.setLastErr(err.Error())
-	p.log.Error("request to the website failed",
-		"error", err.Error(), "method", r.Method, "path", r.URL.Path, "status", status)
-	writeUnavailable(w, status)
+	// One error line when the website stops answering, not one per request:
+	// during an outage under load the log must stay readable. Which request
+	// failed is not recorded.
+	if previous := p.setLastErr(err.Error()); previous == "" {
+		p.log.Error("the website stopped answering", "error", err.Error(), "status", status)
+	} else {
+		p.log.Debug("request to the website failed", "error", err.Error(), "status", status)
+	}
+	if p.opts.Unavailable != nil {
+		p.opts.Unavailable(w, r, status)
+		return
+	}
+	http.Error(w, http.StatusText(status), status)
 }
 
-func (p *Proxy) setLastErr(msg string) {
+// setLastErr records the outcome of the most recent request to the website
+// ("" for success) and returns the outcome before it.
+func (p *Proxy) setLastErr(msg string) (previous string) {
 	p.mu.RLock()
-	same := p.lastErr == msg
+	previous = p.lastErr
 	p.mu.RUnlock()
-	if same {
-		return // the common case: still healthy, no write lock needed
+	if previous == msg {
+		return previous // the common case: still healthy, no write lock needed
 	}
 	p.mu.Lock()
+	previous = p.lastErr
 	p.lastErr = msg
 	p.mu.Unlock()
+	return previous
 }
 
 // Health reports whether the website answered the most recent request. An
@@ -176,43 +194,4 @@ func (p *Proxy) Health() health.Status {
 		State:  health.Degraded,
 		Detail: fmt.Sprintf("the last request to %s failed: %s", p.opts.Upstream.Host, p.lastErr),
 	}
-}
-
-// unavailablePage is what a visitor sees when the website cannot be reached.
-// It is self-contained (no scripts, no external resources), readable by
-// screen readers, bilingual, and reveals nothing about the internal set-up.
-const unavailablePage = `<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Website nicht erreichbar · Website unavailable</title>
-<style>
-body{margin:0;font:1.0625rem/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;background:#fff;color:#1a1a1a}
-main{max-width:36rem;margin:0 auto;padding:4rem 1.25rem}
-h1,h2{font-size:1.5rem;line-height:1.3;margin:0 0 .5rem}
-p{margin:0 0 2rem}
-@media (prefers-color-scheme:dark){body{background:#151515;color:#ededed}}
-</style>
-</head>
-<body>
-<main>
-<h1>Die Website ist gerade nicht erreichbar</h1>
-<p>Bitte versuchen Sie es in einigen Minuten erneut.</p>
-<div lang="en">
-<h2>The website is currently unavailable</h2>
-<p>Please try again in a few minutes.</p>
-</div>
-</main>
-</body>
-</html>
-`
-
-func writeUnavailable(w http.ResponseWriter, status int) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(unavailablePage))
 }

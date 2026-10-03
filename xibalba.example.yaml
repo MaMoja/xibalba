@@ -32,6 +32,32 @@ server:
   # How long an unused keep-alive connection stays open.
   idle_timeout: 90s
 
+# What happens to each request. Rules are explained in docs/RULES.md.
+# With the values below nothing is blocked: every request is allowed.
+rules:
+  # true: evaluate and count every decision, but let every request through.
+  # Use it to see what a rule set would do before switching it on.
+  dry_run: false
+  # What happens when no rule decides: allow, deny or challenge.
+  default_action: allow
+  # What happens to a request if evaluating it fails inside Xibalba:
+  # allow keeps the website reachable, deny blocks until the problem is fixed.
+  on_error: allow
+  # Scores at which a request is challenged or denied, for example
+  # [{weight: 10, action: challenge}, {weight: 20, action: deny}].
+  thresholds: []
+  # Rule files to import, relative to this file. They are evaluated after
+  # the rules in list, in the order given.
+  files: []
+  # Rules written here are evaluated first, from top to bottom. Example:
+  #
+  #   list:
+  #     - name: block-example-bot
+  #       match:
+  #         user_agent: {contains: "ExampleBot"}
+  #       action: deny
+  list: []
+
 # What Xibalba writes to its log (standard error).
 log:
   # Lowest severity that is written: debug, info, warn, error.

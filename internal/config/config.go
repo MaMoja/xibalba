@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,8 @@ type Config struct {
 	Server Server `yaml:"server"`
 	// Upstream is the website Xibalba protects.
 	Upstream Upstream `yaml:"upstream"`
+	// Rules decide what happens to each request.
+	Rules Rules `yaml:"rules"`
 	// Ops is the internal listener for health checks and, later, metrics.
 	Ops Ops `yaml:"ops"`
 	// ShutdownTimeout is how long running requests get to finish on shutdown.
@@ -130,6 +133,7 @@ func Default() Config {
 			DialTimeout:           5 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
 		},
+		Rules:           defaultRules(),
 		Ops:             Ops{Listen: "127.0.0.1:9090"},
 		ShutdownTimeout: 10 * time.Second,
 	}
@@ -152,8 +156,9 @@ func Load(path string) (Config, error) {
 	return Parse(path, data)
 }
 
-// Parse validates configuration data. name is used in error messages only.
-// Settings that are left out keep their defaults.
+// Parse validates configuration data. name is used in error messages, and its
+// directory is where relative rule file names are looked up. Settings that
+// are left out keep their defaults.
 func Parse(name string, data []byte) (Config, error) {
 	cfg := Default()
 
@@ -167,7 +172,9 @@ func Parse(name string, data []byte) (Config, error) {
 	}
 
 	lines := lineIndex(data)
-	if problems := cfg.validate(lines); len(problems) > 0 {
+	problems := cfg.validate(lines)
+	problems = append(problems, cfg.Rules.load(filepath.Dir(name), lines)...)
+	if len(problems) > 0 {
 		return Config{}, &Error{File: name, Problems: problems}
 	}
 	return cfg, nil
@@ -198,7 +205,7 @@ func hasContent(data []byte) bool {
 func (c Config) validate(lines map[string]int) []Problem {
 	var problems []Problem
 	add := func(path, message, hint string) {
-		problems = append(problems, Problem{Path: path, Line: lines[path], Message: message, Hint: hint})
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	}
 
 	if !contains(LogLevels, c.Log.Level) {
@@ -372,6 +379,9 @@ func walk(n ast.Node, prefix string, idx map[string]int) {
 
 // Problem is one thing that is wrong with the configuration.
 type Problem struct {
+	// File is the imported file the problem is in. Empty for the
+	// configuration file itself.
+	File string
 	// Path is the setting, for example "log.level". Empty for file-level problems.
 	Path string
 	// Line is the line of the setting in the file, or 0 if it is not in the file.
@@ -382,7 +392,8 @@ type Problem struct {
 	Hint string
 }
 
-// Error reports every problem found in one configuration file.
+// Error reports every problem found in one configuration file and the files
+// it imports.
 type Error struct {
 	File     string
 	Problems []Problem
@@ -397,6 +408,9 @@ func (e *Error) Error() string {
 	fmt.Fprintf(&b, "configuration %s: %d %s", e.File, len(e.Problems), noun)
 	for _, p := range e.Problems {
 		b.WriteString("\n  - ")
+		if p.File != "" {
+			fmt.Fprintf(&b, "in %s, ", p.File)
+		}
 		switch {
 		case p.Path != "" && p.Line > 0:
 			fmt.Fprintf(&b, "line %d, %s: ", p.Line, p.Path)

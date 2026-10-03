@@ -52,7 +52,9 @@ The website Xibalba protects.
 When the website cannot be reached, the visitor gets a short page in German
 and English saying the website is currently unavailable, with status `502`
 (not reachable) or `504` (too slow). The page shows no internal address. The
-cause is written to the log under `component=upstream` and shown in `/healthz`.
+cause is shown in `/healthz` and written to the log under `component=upstream`:
+once when the website stops answering and once when it answers again, not
+once per request.
 
 A status code from the website itself, including `500`, is passed through
 unchanged and does not count as a failure of the upstream.
@@ -100,6 +102,24 @@ What the website receives:
 | `X-Real-IP` | The client address Xibalba resolved. A value sent by the client is never passed on. |
 | `Forwarded` | Removed. |
 
+### `rules`
+
+What happens to each request. How rules are written is explained in
+[RULES.md](RULES.md); this table lists the settings around them.
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `rules.dry_run` | `false` | `true`, `false` | `true` evaluates and counts every decision but lets every request through. |
+| `rules.default_action` | `allow` | `allow`, `deny`, `challenge` | What happens when no rule decides and no threshold is reached. |
+| `rules.on_error` | `allow` | `allow`, `deny` | What happens to a request if evaluating it fails inside Xibalba. `allow` keeps the website reachable; `deny` answers `503` until the problem is fixed. |
+| `rules.thresholds` | `[]` | List of `{weight, action}`; weight 1 to 1000, action `challenge` or `deny` | Scores at which a request is challenged or denied. |
+| `rules.files` | `[]` | List of paths, relative to the configuration file | Rule files to import. Evaluated after `rules.list`, in the order given. |
+| `rules.list` | `[]` | List of rules | Rules written in the configuration file. Evaluated first, top to bottom. |
+
+With the defaults nothing is blocked. The action `challenge` is accepted but
+the challenge is **planned**: until it is built, requests that would be
+challenged are counted and let through, and Xibalba says so in the log at start-up.
+
 ### `log`
 
 | Setting | Default | Allowed values | Meaning |
@@ -128,6 +148,7 @@ Endpoints:
 |---|---|
 | `GET /healthz` | JSON health report. Status `200` while Xibalba can serve, `503` when a component of Xibalba is down. |
 | `GET /version` | JSON with the version, commit and Go version of the running build. |
+| `GET /decisions` | JSON with how often each rule, threshold and the default decided since start. Holds no address, path or user agent. Example in [RULES.md](RULES.md#trying-a-rule-set-safely). |
 
 Example health report:
 
@@ -137,6 +158,7 @@ Example health report:
   "components": {
     "ops": { "state": "ok" },
     "public": { "state": "ok" },
+    "rules": { "state": "ok" },
     "upstream": {
       "state": "degraded",
       "detail": "the last request to 127.0.0.1:3000 failed: dial tcp 127.0.0.1:3000: connect: connection refused"
@@ -153,6 +175,7 @@ top-level state is the worst state of any component. A component that is not
 |---|---|---|
 | `ops` | The operations listener | It stopped listening (`down`). |
 | `public` | The public listener | It stopped listening (`down`). |
+| `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |
 
 An unreachable website is `degraded`, not `down`, and `/healthz` stays at
@@ -176,4 +199,5 @@ An unreachable website is `degraded`, not `down`, and `/healthz` stays at
 
 [`xibalba.example.yaml`](../xibalba.example.yaml) lists every setting with its
 default (and a typical value for `upstream.url`). A test keeps that file in
-step with the code.
+step with the code. [`examples/rules/basic.yaml`](../examples/rules/basic.yaml)
+is a commented rule file to copy from.

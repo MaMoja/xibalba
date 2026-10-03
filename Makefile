@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/MaMoja/xibalba/internal/buildinfo.Version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: build run test lint cross check clean help
+.PHONY: build run test bench lint cross check clean help
 
 help: ## Show this help
 	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-8s %s\n", $$1, $$2}'
@@ -15,6 +15,9 @@ run: build ## Build and run with the example configuration
 
 test: ## Run all tests with the race detector
 	go test -race ./...
+
+bench: ## Run the benchmarks
+	go test -run '^$$' -bench . -benchmem ./...
 
 lint: ## Check formatting and run go vet (and golangci-lint if installed)
 	@unformatted=$$(gofmt -l .); if [ -n "$$unformatted" ]; then echo "not gofmt-formatted:"; echo "$$unformatted"; exit 1; fi

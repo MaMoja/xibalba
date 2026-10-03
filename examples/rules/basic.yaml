@@ -1,0 +1,65 @@
+# Example rule file for Xibalba. Import it from the configuration file:
+#
+#   rules:
+#     files:
+#       - examples/rules/basic.yaml
+#
+# The names, paths and networks below are placeholders. Replace them with your
+# own. Every rule is explained in docs/RULES.md.
+
+rules:
+  # Requests from your own network are always let through. Only the client
+  # address is established by Xibalba itself, so this is the one kind of
+  # allow rule that cannot be forged.
+  - name: allow-office
+    match:
+      ip: ["192.0.2.0/24", "2001:db8:1234::/48"]
+    action: allow
+
+  # A crawler that announces itself and is not wanted.
+  - name: block-example-bot
+    match:
+      user_agent: {contains: "ExampleBot"}
+    action: deny
+
+  # A crawler that is wanted, but only when it really comes from its
+  # operator's network. Anyone can send its name; the address cannot be faked.
+  - name: block-fake-goodbot
+    match:
+      user_agent: {contains: "GoodBot"}
+      not:
+        ip: ["198.51.100.0/24"]
+    action: deny
+
+  # Expensive pages: every client has to pass the challenge first.
+  - name: challenge-search
+    match:
+      path: {prefix: "/search"}
+    action: challenge
+
+  # Signs that a request does not come from a person's browser. Each adds to
+  # the request's score; the thresholds in the configuration file decide what
+  # a given score means.
+  - name: weigh-no-language
+    match:
+      header:
+        Accept-Language: {present: false}
+    action: weigh
+    weight: 5
+
+  - name: weigh-scripted-client
+    match:
+      any:
+        - user_agent: {prefix: "curl/"}
+        - user_agent: {contains: "python-requests"}
+        - user_agent: {regex: "^Go-http-client/"}
+    action: weigh
+    weight: 10
+
+  # Large downloads requested by something that scored as scripted.
+  - name: weigh-archive-download
+    match:
+      method: ["GET"]
+      path: {regex: "\\.(zip|tar\\.gz|iso)$"}
+    action: weigh
+    weight: 5

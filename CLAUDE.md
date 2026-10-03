@@ -138,10 +138,14 @@ internal/lifecycle/   start, stop and supervise components
 internal/health/      per-component health report
 internal/httpserver/  HTTP listener with safe defaults
 internal/clientip/    real client address behind trusted proxies
+internal/rules/       compile a rule set, decide about a request
+internal/gate/        enforce decisions on live requests, count them
+internal/pages/       pages shown to visitors; texts in assets/locales
 internal/proxy/       forward to the website, answer when it is unreachable
 internal/buildinfo/   version of the running build
 test/integration/     tests that run the real binary
-docs/                 spec, roadmap, decisions, architecture, configuration, development
+examples/rules/       example rule files, kept valid by a test
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, development
 ```
 
 Planned packages are listed in `docs/ARCHITECTURE.md`.

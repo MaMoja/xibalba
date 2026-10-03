@@ -19,11 +19,14 @@ import (
 	"github.com/MaMoja/xibalba/internal/buildinfo"
 	"github.com/MaMoja/xibalba/internal/clientip"
 	"github.com/MaMoja/xibalba/internal/config"
+	"github.com/MaMoja/xibalba/internal/gate"
 	"github.com/MaMoja/xibalba/internal/health"
 	"github.com/MaMoja/xibalba/internal/httpserver"
 	"github.com/MaMoja/xibalba/internal/lifecycle"
 	"github.com/MaMoja/xibalba/internal/logging"
+	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/proxy"
+	"github.com/MaMoja/xibalba/internal/rules"
 )
 
 // Exit codes.
@@ -87,9 +90,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	registry.Register(ops.Name(), ops.Health)
 	supervisor.Add(ops)
 
+	// The pages Xibalba itself shows to visitors.
+	page, err := pages.New()
+	if err != nil {
+		log.Error("start-up failed", "error", "visitor pages: "+err.Error())
+		return exitFailed
+	}
+
+	// The rule set was checked when the configuration was loaded, so
+	// compiling it here cannot report problems; if it does, refuse to start.
+	engine, problems := rules.Compile(cfg.Rules.Spec())
+	if len(problems) > 0 {
+		log.Error("start-up failed", "error", fmt.Sprintf("the rule set does not compile: %+v", problems))
+		return exitFailed
+	}
+
 	// Public side. A request passes the stages in this order:
-	//   client identity -> (rules and challenge: later milestones) -> website
+	//   client identity -> rules -> (challenge: milestone M3) -> website
 	upstream := proxy.New(proxy.Options{
+		Unavailable:           page.Unavailable,
 		Upstream:              cfg.Upstream.Target(),
 		PreserveHost:          cfg.Upstream.PreserveHost,
 		DialTimeout:           cfg.Upstream.DialTimeout,
@@ -99,11 +118,23 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	defer upstream.Close()
 	registry.Register("upstream", upstream.Health)
 
+	decisions := gate.New(gate.Options{
+		Engine:      engine,
+		DryRun:      cfg.Rules.DryRun,
+		FailOpen:    cfg.Rules.OnError == "allow",
+		Next:        upstream,
+		Blocked:     page.Blocked,
+		Unavailable: page.Unavailable,
+		Log:         log,
+	})
+	registry.Register("rules", decisions.Health)
+	opsMux.Handle("GET /decisions", decisions.Handler())
+
 	resolver := clientip.New(cfg.Server.TrustedPrefixes())
 	public := httpserver.New(httpserver.Options{
 		Name:              "public",
 		Addr:              cfg.Server.Listen,
-		Handler:           clientip.Middleware(resolver, upstream),
+		Handler:           clientip.Middleware(resolver, decisions),
 		Log:               log,
 		OnFailure:         supervisor.Reporter("public"),
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
@@ -126,7 +157,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		"ops", ops.Addr(),
 		"upstream", cfg.Upstream.Target().Redacted(),
 		"trusted_proxies", len(cfg.Server.TrustedProxies),
+		"rules", engine.Len(),
+		"dry_run", cfg.Rules.DryRun,
 	)
+	if cfg.Rules.DryRun {
+		log.Warn("dry run: decisions are counted but nothing is blocked", "component", "rules")
+	}
+	if engine.Uses(rules.Challenge) {
+		log.Warn("the challenge is not available in this version: requests that would be challenged are counted and let through",
+			"component", "rules")
+	}
 
 	code := exitOK
 	select {

@@ -16,13 +16,15 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [x] Integration test harness with a fake upstream
 - [x] Neutral error page when the website is unreachable; upstream health
 
-## M2: Rule engine
-- [ ] Dry-run mode (everything passes, decisions are only counted). Moved from M1: there are no decisions to count before the rule engine exists.
-- [ ] Rule model: matchers (user agent, path, header, IP range), actions (allow, deny, challenge, weigh)
-- [ ] Weight thresholds
-- [ ] Expression matcher for combined conditions
-- [ ] Rule set import, validation with line-accurate errors
-- [ ] Benchmark and hostile-input tests
+## M2: Rule engine (done)
+- [x] Dry-run mode (everything passes, decisions are only counted)
+- [x] Rule model: matchers (user agent, path, host, method, header, IP range), actions (allow, deny, challenge, weigh)
+- [x] Weight thresholds
+- [x] Combined conditions with `all`, `any` and `not` (instead of a text expression language, see DECISIONS.md)
+- [x] Rule set import, validation with line-accurate errors
+- [x] Benchmark and hostile-input tests
+- [x] Enforcement in the request path, accessible block page, decision counters at `/decisions`
+- [ ] Enforcing `challenge`: comes with M3. Until then such requests are counted and let through.
 
 ## M3: Challenge
 - [ ] Signed token and pass cookie with expiry
@@ -67,6 +69,10 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [ ] Privacy documentation (what is stored, for how long)
 
 ## Later
+- A path test that means "this directory and everything under it", so `/admin` does not also match `/administrator`
+- A text expression language for rules, if `all`/`any`/`not` turn out not to be enough
+- Configurable status code and text for the block page
+- Reloading rules without a restart
 - TLS termination on the public listener
 - Limits on request body size and on slow request bodies
 - Several upstreams, selected by host name

@@ -19,8 +19,9 @@ on your own server.
 
 > [!IMPORTANT]
 > Xibalba is in early development. Today it runs in front of a website and
-> passes every request through; the bot handling is being built. The table
-> below says exactly what exists.
+> allows or blocks requests by rules you write. The challenge, the maintained
+> crawler lists and the web interface are being built. The table below says
+> exactly what exists.
 
 ## What it will do
 
@@ -58,8 +59,10 @@ flowchart LR
 | Start-up, shutdown and failure isolation | Built |
 | Reverse proxy with websocket and streaming support | Built |
 | Real client address behind trusted proxies, spoofed headers ignored | Built |
-| Rule engine | Next |
-| Challenge page | Planned |
+| Rule engine: user agent, path, host, method, header and address conditions, weights and thresholds | Built |
+| Importable rule files, dry-run mode, decision counters | Built |
+| Accessible block page in German and English | Built |
+| Challenge page | Next |
 | Crawler classes and identity checks | Planned |
 | Statistics and web interface | Planned |
 
@@ -129,6 +132,35 @@ report says which part has the problem, while Xibalba itself keeps running:
 }
 ```
 
+### Block something
+
+Add a rule to `xibalba.yaml` and restart:
+
+```yaml
+rules:
+  list:
+    - name: block-example-bot
+      match:
+        user_agent: {contains: "ExampleBot"}
+      action: deny
+```
+
+```sh
+curl -i -A "ExampleBot/1.0" http://127.0.0.1:8080/
+```
+
+```text
+HTTP/1.1 403 Forbidden
+```
+
+The visitor gets a plain page in their language with a short reference that
+identifies the rule. `curl http://127.0.0.1:9090/decisions` shows how often
+each rule decided, without recording who was blocked. To see what a rule set
+would do before it blocks anyone, set `rules.dry_run: true`.
+[docs/RULES.md](docs/RULES.md) explains everything rules can do.
+
+### Check a configuration
+
 Check a configuration file without starting anything:
 
 ```sh
@@ -148,6 +180,7 @@ configuration xibalba.yaml: 1 problem
 | Document | What it covers |
 |---|---|
 | [Configuration](docs/CONFIGURATION.md) | Every setting, its default and its allowed values |
+| [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
 | [Architecture](docs/ARCHITECTURE.md) | How the program is divided and how failures are contained |
 | [Development](docs/DEVELOPMENT.md) | Building, testing and adding a component |
 | [Specification](docs/SPEC.md) | What Xibalba is meant to do |
