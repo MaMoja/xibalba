@@ -68,7 +68,8 @@ Each milestone ends with something that runs and is tested. Do them in order.
 
 ## M8: Deployment
 - [ ] Verdict mode for nginx, Caddy, Traefik
-- [ ] Rate limiting action
+- [ ] Rate limiting: limits per address or network and time window, switchable, with a list of exempt addresses (owner's request, 2026-10-03)
+- [ ] Country condition in rules (block or allow by country), with a country database the operator supplies and updates; licence of the database to be checked (owner's request, 2026-10-03)
 - [ ] Docker image, systemd unit, .deb package
 - [ ] Shared storage backend for multiple instances
 
@@ -94,3 +95,8 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - Hosted variant
 - CMS plugins
 - ASN-based lists and reputation feeds
+- Detecting patterns: one client fetching very many different pages, or the same page again and again
+- Trap links that only a crawler follows (hidden from people, forbidden in robots.txt)
+- Plausibility checks on browser headers (a "Chrome" that sends no Chrome headers), as weights
+- Serving a robots.txt generated from the crawler classes
+- Checking the Anubis documentation for features missing here (it could not be read from the development environment)
