@@ -533,6 +533,14 @@ und danach, was prüft oder sperrt.
 
 Dazu kommen die sechs Regelgruppen für Crawler aus dem nächsten Abschnitt.
 
+> **Bekannte Schwäche, noch nicht behoben (Sicherheitsprüfung vom
+> 4.10.2026):** `keep-internet-working`, `allow-feeds` und
+> `allow-git-clients` lassen Anfragen anhand des Pfads durch. Bei manchen
+> Webservern kann ein geschickt gebauter Pfad dazu führen, dass auch andere
+> Seiten ungeprüft und ungezählt durchkommen. Verlassen Sie sich bis zur
+> Behebung nicht auf diese Gruppen, wenn dahinter etwas zwingend geprüft
+> bleiben muss.
+
 **Ein vollständiger Schutz in einem Block:** Erwünschte Crawler und einfache
 Programme kommen durch, unerwünschte Crawler werden gesperrt, und was sich
 als Browser ausgibt, muss es beweisen.
@@ -769,6 +777,14 @@ rules:
 
 Damit wird ein Anschluss, der dem versteckten Link folgt, für 24 Stunden
 gesperrt.
+
+> **Bekannte Schwäche, noch nicht behoben (Sicherheitsprüfung vom
+> 4.10.2026):** Jeder Abruf der Fallen-Adresse zählt, auch einer, den eine
+> fremde Website im Browser eines Besuchers auslöst (ein eingebettetes Bild
+> genügt). Mit `block-trapped` wäre dieser Besucher dann gesperrt. Setzen
+> Sie `block-trapped` bis zur Behebung nicht auf einer öffentlichen Website
+> ein; vergeben Sie stattdessen Punkte mit `trapped: true` und lassen Sie
+> prüfen, damit ein Mensch trotzdem hereinkommt.
 
 | Einstellung | Bedeutung |
 |---|---|

@@ -250,6 +250,13 @@ that decides wins. So list what lets through before what checks or denies.
 
 The crawler presets are explained in [CRAWLERS.md](CRAWLERS.md#presets).
 
+> **Known weakness, not fixed yet (security review of 2026-10-04).** The
+> presets `keep-internet-working`, `allow-feeds` and `allow-git-clients` let
+> requests through by their path. On some web servers a crafted path can make
+> them let through other pages as well, unchecked and uncounted. Until this is
+> fixed, do not rely on them in front of anything that must stay behind the
+> check; `block-trapped` has a weakness of its own, see [TRAP.md](TRAP.md).
+
 A complete protection in one block: wanted crawlers and plain programs pass,
 unwanted crawlers are denied, and whatever claims to be a browser has to
 prove it.

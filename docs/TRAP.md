@@ -7,6 +7,13 @@ program of that kind, and is remembered.
 
 The trap is off by default.
 
+> **Known weakness, not fixed yet (security review of 2026-10-04).** Any
+> request to the trap's addresses counts, also one that another website makes
+> a visitor's browser send (an image tag is enough). With `block-trapped`,
+> that visitor's address is then denied. Until this is fixed, do not use
+> `block-trapped` with `deny` on a public site; use the `weigh` variant below
+> with a check, so that a person can still get in.
+
 ## Switching it on
 
 ```yaml

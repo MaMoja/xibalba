@@ -29,7 +29,11 @@ func (c Code) String() string {
 }
 
 // ParseCode reads a two-letter country code, in either case.
-func ParseCode(s string) (Code, bool) {
+func ParseCode(s string) (Code, bool) { return parseCode([]byte(s)) }
+
+// parseCode is ParseCode for text that is still in the file. The length is
+// checked before anything is copied: the text comes from an untrusted file.
+func parseCode(s []byte) (Code, bool) {
 	if len(s) != 2 {
 		return Code{}, false
 	}
@@ -229,12 +233,12 @@ func (db *DB) country(off int) (Code, error) {
 	}
 	if found {
 		if s, err := d.str(value); err == nil {
-			if code, ok := ParseCode(string(s)); ok {
+			if code, ok := parseCode(s); ok {
 				return code, nil
 			}
 		} else if iso, found, err := d.get(value, "iso_code", &work); err == nil && found {
 			if s, err := d.str(iso); err == nil {
-				if code, ok := ParseCode(string(s)); ok {
+				if code, ok := parseCode(s); ok {
 					return code, nil
 				}
 			}
@@ -242,7 +246,7 @@ func (db *DB) country(off int) (Code, error) {
 	}
 	if value, found, err := d.get(off, "country_code", &work); err == nil && found {
 		if s, err := d.str(value); err == nil {
-			if code, ok := ParseCode(string(s)); ok {
+			if code, ok := parseCode(s); ok {
 				return code, nil
 			}
 		}
