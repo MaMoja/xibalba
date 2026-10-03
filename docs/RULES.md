@@ -71,6 +71,7 @@ All conditions written in one `match` must hold.
 | `header` | Any other header, by name | A text test or `present` per header |
 | `ip` | The client's address | A list of addresses and networks |
 | `crawler` | Which known crawler the request claims to be, and whether that is true | `class`, `name`, `verified`; see [CRAWLERS.md](CRAWLERS.md) |
+| `country` | The country the client's address is registered in | A list of two-letter codes such as `["DE", "AT"]`; needs a database, see [COUNTRIES.md](COUNTRIES.md) |
 | `trapped` | Whether the client recently followed the hidden trap link | `true` or `false`; see [TRAP.md](TRAP.md) |
 | `all` | Groups of conditions that must all hold | A list of `match` blocks |
 | `any` | Groups of conditions of which one must hold | A list of `match` blocks |
@@ -144,7 +145,7 @@ write `regex: "^/admin(/|$)"`.
 
 ## What can be trusted
 
-**Only `ip`, `trapped` and a verified `crawler` are established by Xibalba.** The user
+**Only `ip`, `country`, `trapped` and a verified `crawler` are established by Xibalba.** The user
 agent and every header are whatever the client chooses to send.
 
 - A `deny` rule on a user agent stops crawlers that announce themselves

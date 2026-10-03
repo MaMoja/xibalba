@@ -61,7 +61,8 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Trap link that only a careless crawler follows; rule condition `trapped`, preset `block-trapped`
 - [x] Maze of worthless pages behind the trap link, as an option, off by default
 - [ ] Patterns: one client fetching very many different pages, or the same page again and again
-- [ ] Country condition in rules, with a country database the operator supplies; licence of the database to be checked
+- [x] Country condition in rules, with a country database the operator supplies or the free DB-IP database downloaded on request
+- [ ] Confirm the DB-IP download against the live server (not reachable from the development environment)
 - [ ] Security review of the milestone by a second agent
 
 ## M6: Statistics

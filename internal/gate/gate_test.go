@@ -529,3 +529,40 @@ func TestTrappedClientsReachTheRules(t *testing.T) {
 		t.Errorf("another client got %d", rec.Code)
 	}
 }
+
+func TestCountryReachesTheRules(t *testing.T) {
+	e, problems := rules.Compile(rules.Spec{DefaultAction: rules.Allow, Countries: true,
+		Rules: []rules.RuleSpec{{Name: "abroad", Action: rules.Deny, Match: rules.MatchSpec{Country: []string{"FR"}}}}})
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	h := newHarness(t, func(o *Options) {
+		o.Engine = e
+		o.Country = func(client netip.Addr) ([2]byte, bool) {
+			if client == netip.MustParseAddr("203.0.113.66") {
+				return [2]byte{'F', 'R'}, true
+			}
+			return [2]byte{}, true
+		}
+	})
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != http.StatusForbidden {
+		t.Errorf("a client from the denied country got %d", rec.Code)
+	}
+	if rec := h.do(call{target: "/", remote: "203.0.113.67:1"}); rec.Code != 200 {
+		t.Errorf("a client of unknown country got %d", rec.Code)
+	}
+
+	// While no database is loaded, the rule is skipped: nobody is denied.
+	loaded := false
+	h = newHarness(t, func(o *Options) {
+		o.Engine = e
+		o.Country = func(netip.Addr) ([2]byte, bool) { return [2]byte{'F', 'R'}, loaded }
+	})
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != 200 {
+		t.Errorf("without a database: %d", rec.Code)
+	}
+	loaded = true
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != http.StatusForbidden {
+		t.Errorf("with the database back: %d", rec.Code)
+	}
+}

@@ -20,6 +20,10 @@ documentation only, described in our own words), and where Xibalba stands.
 | Health endpoint | |
 | Removing the branding for sponsors | |
 | nginx and Caddy guides | |
+| Checking everything that says it is a browser, with exceptions for well-known paths, robots.txt, favicon, feeds, git | Presets, opt-in; Anubis does it by default |
+| Score for implausible browsers | Preset `weigh-odd-browsers` |
+| Trap link and maze | Maze off by default, made of meaningless syllables |
+| Country conditions from a local database file | Also reads DB-IP's free database and can download it |
 
 ## Xibalba does it differently on purpose
 
@@ -36,11 +40,11 @@ documentation only, described in our own words), and where Xibalba stands.
 
 | Feature in Anubis | Planned in |
 |---|---|
-| Default behaviour "weigh everything that looks like a browser, then check by score" with exceptions for well-known paths, robots.txt, favicon | M5 |
-| Ready-made exceptions: git clients, container registry clients, small browsers, uptime monitors, Google's user-triggered fetchers | M5 |
-| Weights for implausible browser headers (old Chrome without client hints and similar) | M5 |
-| Trap link and maze of worthless pages; clients seen there gain weight; optional address file for fail2ban | M5 (maze off by default) |
-| Country and network-operator (ASN) conditions from local MaxMind GeoLite2 files, optional automatic update | M5 (country), Later (ASN) |
+| Ready-made exceptions for container registry clients, small browsers, uptime monitors, Google's user-triggered fetchers (git and feeds exist) | M5 |
+| Different strictness of the check by score (Xibalba has one check for all) | Later |
+| Weights for browser headers that depend on HTTPS (client hints) | M5 |
+| Address file of trapped clients for fail2ban | Later |
+| Network-operator (ASN) conditions | Later |
 | Server load as a condition (stricter when the machine is busy) | Later |
 | A solved task cannot be used twice | Later: needs stored state; today a solution can be reused until it expires, by clients of the same network and browser |
 | Check that the client really loaded a style sheet | Later |

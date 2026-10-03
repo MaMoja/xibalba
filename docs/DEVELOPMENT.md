@@ -95,6 +95,7 @@ Documentation is part of the change, not a follow-up.
 | What rules can do | `internal/rules`, `docs/RULES.md`, `examples/rules/basic.yaml` |
 | A text visitors see | Every file in `internal/pages/assets/locales`, and the text-name table in `docs/CONFIGURATION.md` |
 | A crawler definition or preset | `data/crawlers` or `data/presets` (use the `add-crawler` skill), the tables in `docs/CRAWLERS.md` and `docs/de/HANDBUCH.md` |
+| The country database reader | Run its test against MaxMind's published test databases: clone `github.com/maxmind/MaxMind-DB` and set `XIBALBA_MMDB_TESTDATA` to the directory |
 | A package or its job | Package comment, `docs/ARCHITECTURE.md` |
 | A user-visible behaviour | `README.md` status table, `CHANGELOG.md` |
 | A technical choice | `docs/DECISIONS.md` |

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/MaMoja/xibalba/internal/geo/geotest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -100,6 +101,13 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 			}
 			if strings.Contains(config, "sponsor.license") {
 				if err := os.WriteFile(filepath.Join(dir, "sponsor.license"), []byte(sponsor.issue(t, "2099-01-01")), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Examples with country rules name a database; give them one.
+			if strings.Contains(config, "countries.mmdb") {
+				database := geotest.Build(map[string]string{"192.0.2.0/24": "DE"}, geotest.Options{})
+				if err := os.WriteFile(filepath.Join(dir, "countries.mmdb"), database, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}

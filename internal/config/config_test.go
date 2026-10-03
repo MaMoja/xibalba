@@ -28,6 +28,7 @@ func settings(cfg Config) Config {
 	cfg.Crawlers.Definitions = nil
 	cfg.Rules.Catalog = nil
 	cfg.Rules.TrapOn = false
+	cfg.Rules.CountriesOn = false
 	return cfg
 }
 
@@ -95,6 +96,7 @@ shutdown_timeout: 30s
 		Crawlers:        defaultCrawlers(),
 		Limits:          defaultLimits(),
 		Trap:            defaultTrap(),
+		Countries:       defaultCountries(),
 		Challenge:       Default().Challenge,
 		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},

@@ -15,7 +15,11 @@ type Engine struct {
 	sources       []Source
 	usesCrawlers  bool
 	usesTrap      bool
+	usesCountry   bool
 }
+
+// UsesCountries reports whether any rule has a country condition.
+func (e *Engine) UsesCountries() bool { return e.usesCountry }
 
 // UsesTrap reports whether any rule has a trapped condition.
 func (e *Engine) UsesTrap() bool { return e.usesTrap }
@@ -29,6 +33,8 @@ type compiledRule struct {
 	action Action
 	weight int
 	source int // index into Engine.sources; -1 for weigh rules
+	// needsCountry: the rule has a country condition somewhere.
+	needsCountry bool
 }
 
 type threshold struct {
@@ -41,6 +47,9 @@ func (e *Engine) Evaluate(req *Request) Decision {
 	score := 0
 	for i := range e.rules {
 		rule := &e.rules[i]
+		if rule.needsCountry && req.NoCountryData {
+			continue
+		}
 		if !rule.match.match(req) {
 			continue
 		}
@@ -218,6 +227,21 @@ func (p ipIn) match(r *Request) bool {
 	}
 	for _, prefix := range p {
 		if prefix.Contains(r.Client) {
+			return true
+		}
+	}
+	return false
+}
+
+// countryIn tests the country the client's address is registered in.
+type countryIn [][2]byte
+
+func (list countryIn) match(r *Request) bool {
+	if r.Country == ([2]byte{}) {
+		return false
+	}
+	for _, code := range list {
+		if code == r.Country {
 			return true
 		}
 	}

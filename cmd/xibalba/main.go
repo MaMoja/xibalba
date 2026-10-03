@@ -25,6 +25,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/config"
 	"github.com/MaMoja/xibalba/internal/crawlers"
 	"github.com/MaMoja/xibalba/internal/gate"
+	"github.com/MaMoja/xibalba/internal/geo"
 	"github.com/MaMoja/xibalba/internal/health"
 	"github.com/MaMoja/xibalba/internal/httpserver"
 	"github.com/MaMoja/xibalba/internal/license"
@@ -289,6 +290,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	// Countries. The database is only loaded, and only downloaded, if a
+	// rule asks for a country.
+	var country func(netip.Addr) ([2]byte, bool)
+	if engine.UsesCountries() {
+		locator := geo.New(geo.Options{
+			Path:        cfg.Countries.Path,
+			Download:    cfg.Countries.Download,
+			DownloadURL: cfg.Countries.DownloadURL,
+			UserAgent:   "Xibalba/" + buildinfo.Get().Version + " (+https://github.com/MaMoja/xibalba)",
+			Log:         log,
+		})
+		registry.Register(locator.Name(), locator.Health)
+		supervisor.Add(locator)
+		country = func(client netip.Addr) ([2]byte, bool) { return locator.Country(client), locator.Loaded() }
+	}
+
 	var trapped func(netip.Addr) bool
 	own := check.Handler()
 	if snare != nil {
@@ -298,6 +315,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	decisions := gate.New(gate.Options{
 		Trapped:     trapped,
+		Country:     country,
 		Engine:      engine,
 		Identify:    identify,
 		Limit:       limitFn,

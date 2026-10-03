@@ -36,6 +36,9 @@ flowchart TD
     main --> crawlers
     main --> limit
     main --> trap
+    main --> geo
+    config --> geo
+    geo --> health
     trap --> clientip
     config --> limit
     config --> crawlers
@@ -84,6 +87,7 @@ the same code that later uses them.
 | `internal/crawlers` | Know the crawlers of the web and tell a genuine one from an impostor |
 | `data` | Hold the crawler definitions and presets that are built into the binary |
 | `internal/limit` | Count requests per client and say when a client is over a limit |
+| `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
@@ -134,6 +138,7 @@ cannot recover from.
 | DNS does not answer | The reverse DNS check decides nothing and is retried after a minute. Crawlers verified that way are "unknown" meanwhile. | `pending` in `/crawlers` |
 | More clients are active than the limit table holds | Older entries make way; their counts start again. Requests are served as usual. | `clients` in `/limits` stays at `limits.max_clients` |
 | More clients were caught in the trap than its table holds | Older entries make way and are no longer treated as caught. | `clients` in `/trap` |
+| The country database is missing, damaged or cannot be downloaded | The database already loaded stays in use. If none is loaded, rules with a `country` condition are skipped; everything else works. A damaged file given in the configuration without downloading stops the start, like any wrong setting. | One warning with `component=countries`; `countries` is `degraded` in `/healthz` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |

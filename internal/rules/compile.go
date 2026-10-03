@@ -28,7 +28,7 @@ var headersSetByXibalba = map[string]bool{
 // Compile checks spec and turns it into an Engine. If it finds mistakes it
 // returns all of them and no engine.
 func Compile(spec Spec) (*Engine, []Problem) {
-	c := &compiler{catalog: spec.Crawlers, trap: spec.Trap}
+	c := &compiler{catalog: spec.Crawlers, trap: spec.Trap, countries: spec.Countries}
 	e := &Engine{}
 
 	if !decides(spec.DefaultAction) {
@@ -83,7 +83,9 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		// A rule that lets requests through, or makes them look better.
 		c.favours = rs.Action == Allow || (rs.Action == Weigh && rs.Weight < 0)
 		c.negated = false
+		before := c.countryConditions
 		rule.match = c.match(rs.Match, "match", 1, true)
+		rule.needsCountry = c.countryConditions > before
 
 		if decides(rs.Action) {
 			rule.source = e.addSource("rule:"+rs.Name, rs.Action)
@@ -128,6 +130,7 @@ func Compile(spec Spec) (*Engine, []Problem) {
 	}
 	e.usesCrawlers = c.usesCrawlers
 	e.usesTrap = c.usesTrap
+	e.usesCountry = c.usesCountry
 	return e, nil
 }
 
@@ -143,12 +146,16 @@ type compiler struct {
 	rule     int
 	problems []Problem
 
-	catalog      *Catalog
-	trap         bool // the trap is switched on
-	usesTrap     bool
-	favours      bool // the rule being compiled allows, or lowers the score
-	negated      bool // the conditions being compiled are inside an odd number of "not"
-	usesCrawlers bool
+	catalog     *Catalog
+	trap        bool // the trap is switched on
+	usesTrap    bool
+	countries   bool // a country database is configured
+	usesCountry bool
+	// countryConditions counts the country conditions compiled so far.
+	countryConditions int
+	favours           bool // the rule being compiled allows, or lowers the score
+	negated           bool // the conditions being compiled are inside an odd number of "not"
+	usesCrawlers      bool
 }
 
 func (c *compiler) add(field, message, hint string) {
@@ -270,6 +277,12 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 		}
 	}
 
+	if spec.Country != nil {
+		if m, ok := c.country(spec.Country, field+".country"); ok {
+			parts = append(parts, m)
+		}
+	}
+
 	if spec.Trapped != nil {
 		if c.trap {
 			parts = append(parts, trappedIs(*spec.Trapped))
@@ -296,7 +309,7 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	// Saying "no conditions" on top of that would send the reader looking for
 	// a second mistake that does not exist.
 	declared := spec.Method != nil || spec.Host != nil || spec.Path != nil || spec.UserAgent != nil ||
-		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.Trapped != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
+		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.Trapped != nil || spec.Country != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
 
 	switch len(parts) {
 	case 0:
@@ -315,6 +328,45 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	default:
 		return parts
 	}
+}
+
+// country compiles a country condition.
+func (c *compiler) country(list []string, field string) (matcher, bool) {
+	if !c.countries {
+		c.add(field, "no country database is configured, so this condition could never hold",
+			"set countries.database to a database file; see docs/COUNTRIES.md")
+		return nil, false
+	}
+	if len(list) == 0 || len(list) > MaxConditions {
+		c.add(field, fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(list), MaxConditions),
+			`list country codes such as ["DE", "AT", "CH"]`)
+		return nil, false
+	}
+	ok := true
+	codes := make(countryIn, 0, len(list))
+	for i, entry := range list {
+		up := strings.ToUpper(strings.TrimSpace(entry))
+		at := fmt.Sprintf("%s[%d]", field, i)
+		switch {
+		case len(up) != 2 || up[0] < 'A' || up[0] > 'Z' || up[1] < 'A' || up[1] > 'Z':
+			c.add(at, fmt.Sprintf("%q is not a country code", entry), `use the two-letter code of ISO 3166-1, such as "DE" for Germany`)
+			ok = false
+		case up == "UK":
+			c.add(at, `"UK" is not the code of the United Kingdom`, `use "GB"`)
+			ok = false
+		case up == "EU":
+			c.add(at, `"EU" is not a country`, "list the countries you mean")
+			ok = false
+		default:
+			codes = append(codes, [2]byte{up[0], up[1]})
+		}
+	}
+	if !ok {
+		return nil, false
+	}
+	c.usesCountry = true
+	c.countryConditions++
+	return codes, true
 }
 
 // crawler compiles a crawler condition.

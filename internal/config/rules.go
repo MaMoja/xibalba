@@ -56,6 +56,9 @@ type Rules struct {
 	// TrapOn says whether the trap is switched on. It is filled when the
 	// configuration is loaded and is not a setting.
 	TrapOn bool `yaml:"-"`
+	// CountriesOn says whether a country database is configured. It is
+	// filled when the configuration is loaded and is not a setting.
+	CountriesOn bool `yaml:"-"`
 
 	// Imported holds the rules read from Files, in the order of Files. It is
 	// filled when the configuration is loaded and is not a setting.
@@ -99,7 +102,7 @@ func (r Rules) Spec() rules.Spec {
 	for _, file := range r.Imported {
 		all = append(all, file.Rules...)
 	}
-	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn}
+	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn}
 }
 
 // PresetNames returns the names of the presets that ship with Xibalba, sorted.

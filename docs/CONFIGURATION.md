@@ -136,6 +136,18 @@ Without one, Xibalba makes no outgoing connection.
 | `crawlers.cache_dir` | empty | Path of an existing directory, relative to the configuration file | Keeps the downloaded lists across restarts. Empty: memory only. Must be writable for Xibalba's user and for nobody else. |
 | `crawlers.files` | `[]` | List of paths, relative to the configuration file; at most 64 | Your own crawler definition files. A crawler defined there replaces the built-in one of the same name. |
 
+### `countries`
+
+The country database for the rule condition `country`; explained in
+[COUNTRIES.md](COUNTRIES.md). The database is loaded, and downloaded, only if
+a rule has a `country` condition.
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `countries.database` | empty | Path of a `.mmdb` file, relative to the configuration file | The country database. Empty: countries are not known, and a `country` condition is reported as a mistake. The file must exist and be usable, unless `countries.download` is `true`. A newer file is picked up within a minute. |
+| `countries.download` | `false` | `true`, `false` | Download the database when the file is missing or a month old. Needs `countries.database`. |
+| `countries.download_url` | DB-IP's free country database | `https://` address; `{year}` and `{month}` are filled in | Where to download from. The answer may be compressed with gzip. Read the provider's licence terms. |
+
 ### `trap`
 
 The hidden link that catches crawlers; explained in [TRAP.md](TRAP.md).
@@ -318,6 +330,7 @@ top-level state is the worst state of any component. A component that is not
 | `ops` | The operations listener | It stopped listening (`down`). |
 | `public` | The public listener | It stopped listening (`down`). |
 | `crawlers` | Crawler verification. Listed only if a rule or preset has a `crawler` condition. | An address list is missing, out of date or too old (`degraded`). The detail names the list and the reason. The crawlers concerned are not counted as genuine until it is back. |
+| `countries` | The country database. Listed only if a rule has a `country` condition. | No database is loaded, the last file or download was unusable, or the data is over 100 days old (`degraded`). Without a database, rules with a `country` condition are skipped. |
 | `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |

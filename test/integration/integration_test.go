@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MaMoja/xibalba/internal/geo/geotest"
 	"github.com/MaMoja/xibalba/internal/license"
 )
 
@@ -1412,5 +1413,62 @@ func TestMazeAndTrapAreOffByDefault(t *testing.T) {
 	resp, page := get(t, maze.public+"/.xibalba/trap/abc", language)
 	if resp.StatusCode != 200 || strings.Count(page, `href="/.xibalba/trap/`) != 5 || !strings.Contains(resp.Header.Get("X-Robots-Tag"), "noindex") {
 		t.Errorf("maze: %d\n%.400s", resp.StatusCode, page)
+	}
+}
+
+// --- countries --------------------------------------------------------------
+
+func TestCountryRules(t *testing.T) {
+	dir := t.TempDir()
+	database := filepath.Join(dir, "countries.mmdb")
+	build := func(networks map[string]string) {
+		t.Helper()
+		tmp := database + ".new"
+		if err := os.WriteFile(tmp, geotest.Build(networks, geotest.Options{}), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, database); err != nil {
+			t.Fatal(err)
+		}
+	}
+	build(map[string]string{"192.0.2.0/24": "DE", "198.51.100.0/24": "FR", "2001:db8::/32": "FR"})
+
+	site := newWebsite(t)
+	inst := start(t, site.URL, `server:
+  listen: PUBLIC
+  trusted_proxies: ["127.0.0.1"]
+countries:
+  database: "`+database+`"
+rules:
+  list:
+    - name: block-abroad
+      match:
+        country: [FR, XX]
+      action: deny
+`)
+	browser := "Mozilla/5.0 Firefox/130.0"
+	for addr, want := range map[string]int{"192.0.2.9": 200, "198.51.100.9": 403, "2001:db8::9": 403, "203.0.113.9": 200} {
+		if resp, _ := get(t, inst.public+"/", from(addr, browser)); resp.StatusCode != want {
+			t.Errorf("%s: status %d, want %d", addr, resp.StatusCode, want)
+		}
+	}
+	if _, report := health(t, inst); report.Components["countries"].State != "ok" {
+		t.Errorf("health = %+v", report)
+	}
+	if !strings.Contains(inst.logs.String(), "country database loaded") {
+		t.Errorf("the log does not say that the database was loaded:\n%s", inst.logs.String())
+	}
+}
+
+// Without a rule that asks for a country the database is not even opened.
+func TestCountryDatabaseIsIdleWithoutCountryRules(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "countries.mmdb")
+	if err := os.WriteFile(database, geotest.Build(map[string]string{"192.0.2.0/24": "DE"}, geotest.Options{}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	site := newWebsite(t)
+	inst := start(t, site.URL, "countries:\n  database: \""+database+"\"\n")
+	if _, report := health(t, inst); report.Components["countries"].State != "" {
+		t.Errorf("the countries component runs without a country rule: %+v", report)
 	}
 }

@@ -72,7 +72,7 @@ flowchart LR
 | Request limits per client with a list of exempt addresses | Built |
 | Presets: check everything that says it is a browser; exceptions for feeds, git, robots.txt; score for odd browsers | Built |
 | Trap link for crawlers, optional maze (off by default) | Built |
-| Country blocking | Next |
+| Country conditions in rules, with a database you supply or the free one downloaded for you | Built |
 | Statistics and web interface | Planned |
 
 The order and the details are in the [roadmap](docs/ROADMAP.md).
@@ -194,6 +194,7 @@ configuration xibalba.yaml: 1 problem
 | [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
 | [Crawlers](docs/CRAWLERS.md) | Crawler classes, presets, how identity is verified, the crawlers Xibalba knows |
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
+| [Countries](docs/COUNTRIES.md) | Rules by country: which database, licences, keeping it current |
 | [Trap](docs/TRAP.md) | The hidden link that catches crawlers, and the optional maze |
 | [Challenge](docs/CHALLENGE.md) | The security check: how it works, its settings, what to consider |
 | [Sponsors](docs/SPONSORS.md) | What is free, what the sponsor license adds, how it is checked |

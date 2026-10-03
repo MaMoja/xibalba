@@ -77,6 +77,9 @@ type Spec struct {
 	// Crawlers lists the crawler classes and names that crawler conditions
 	// may refer to. Without it a crawler condition is a mistake.
 	Crawlers *Catalog
+	// Countries says that a country database is configured. Without it a
+	// country condition is a mistake, because it could never hold.
+	Countries bool
 	// Trap says that the trap is switched on. Without it a trapped
 	// condition is a mistake, because it could never hold.
 	Trap bool
@@ -131,6 +134,10 @@ type MatchSpec struct {
 	// Crawler tests which known crawler the request claims to be and whether
 	// that claim was verified.
 	Crawler *CrawlerSpec `yaml:"crawler"`
+	// Country lists country codes (ISO 3166-1, two letters); the client's
+	// address must be registered in one of them. An address whose country
+	// is not known is in none.
+	Country []string `yaml:"country"`
 	// Trapped tests whether the client recently followed the hidden trap
 	// link (true) or did not (false).
 	Trapped *bool `yaml:"trapped"`
@@ -217,6 +224,16 @@ type Request struct {
 	// Client is the client address resolved by internal/clientip. If it is
 	// not valid, no ip condition matches.
 	Client netip.Addr
+	// Country is the country the client's address is registered in, as
+	// two upper-case letters, established by internal/geo. The zero value
+	// means: not known.
+	Country [2]byte
+	// NoCountryData reports that no country database is loaded right now.
+	// Rules with a country condition are then skipped altogether: without
+	// data, "in Germany" and "not in Germany" are equally unknown, and a
+	// rule such as "deny everyone outside Germany" must not shut out
+	// everybody because a file is missing.
+	NoCountryData bool
 	// Trapped reports that the client recently followed the hidden trap
 	// link, established by internal/trap.
 	Trapped bool

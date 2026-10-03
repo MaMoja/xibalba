@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Countries (`countries`). Rule condition `country` with two-letter codes,
+  from a database file in `.mmdb` format that the site owner supplies
+  (DB-IP IP to Country Lite, MaxMind GeoLite2 Country). A replaced file is
+  picked up without a restart. Optional download of DB-IP's free database
+  (`countries.download`, off by default). While no database is loaded, rules
+  with a country condition are skipped.
 - Trap (`trap`). A link hidden in Xibalba's own pages, inert for people and
   assistive technology, catches crawlers that follow every address in a
   page. Rule condition `trapped` and preset `block-trapped` act on it. The

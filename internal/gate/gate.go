@@ -61,6 +61,10 @@ type Options struct {
 	// Identify says which crawler a request claims to be. If nil, crawler
 	// conditions never match.
 	Identify func(userAgent string, client netip.Addr) rules.Crawler
+	// Country says which country a client's address is registered in, and
+	// whether a country database is loaded at all. If nil, or while no
+	// database is loaded, rules with a country condition are skipped.
+	Country func(client netip.Addr) (code [2]byte, loaded bool)
 	// Trapped says whether a client recently followed the hidden trap
 	// link. If nil, trapped conditions see "no".
 	Trapped func(client netip.Addr) bool
@@ -207,6 +211,12 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 		UserAgent: r.Header.Get("User-Agent"),
 		Header:    r.Header,
 		Client:    info.Client,
+	}
+	req.NoCountryData = true
+	if g.opts.Country != nil {
+		var loaded bool
+		req.Country, loaded = g.opts.Country(req.Client)
+		req.NoCountryData = !loaded
 	}
 	if g.opts.Trapped != nil {
 		req.Trapped = g.opts.Trapped(req.Client)

@@ -339,6 +339,8 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | Feed-Leser, git, `robots.txt` trotz Prüfung durchlassen | `rules.presets` mit `allow-feeds`, `allow-git-clients`, `keep-internet-working` | Abschnitt 6, „Fertige Regelgruppen“ |
 | Crawler fangen, die jedem Link folgen | `trap.enabled: true` und `rules.presets: [block-trapped]` | Abschnitt 6, „Die Falle“ |
 | gefangene Crawler in einen Irrgarten schicken | `trap.maze: true` | Abschnitt 6, „Die Falle“ |
+| Länder sperren oder nur bestimmte Länder ungeprüft durchlassen | `countries.database` und eine Regel mit `country: […]` | Abschnitt 6, „Länder“ |
+| die Länder-Datenbank automatisch aktuell halten | `countries.download: true` | Abschnitt 6, „Länder“ |
 | KI-Trainings-Crawler sperren | `rules.presets: [block-ai-training]` | Abschnitt 6, „Crawler erkennen und prüfen“ |
 | Suchmaschinen und KI-Suche durchlassen, aber nur die echten | `rules.presets` mit `allow-search-engines`, `allow-ai-search`, `allow-ai-user-fetch` | Abschnitt 6 |
 | Nachahmer sperren, die sich als Googlebot ausgeben | `rules.presets: [block-fake-crawlers]` | Abschnitt 6 |
@@ -793,6 +795,73 @@ die Falle gingen und wie viele Anschlüsse gerade gemerkt sind, ohne Adressen.
 
 Alle Einzelheiten: [TRAP.md](../TRAP.md) (englisch).
 
+### Länder
+
+Mit einer Länder-Datenbank können Regeln prüfen, in welchem Land die Adresse
+eines Anfragenden registriert ist:
+
+```yaml
+countries:
+  database: countries.mmdb
+rules:
+  list:
+    - name: check-everyone-abroad
+      match:
+        not:
+          country: [DE, AT, CH]
+      action: challenge
+```
+
+Das prüft jeden, dessen Adresse nicht in Deutschland, Österreich oder der
+Schweiz registriert ist. Mit `action: deny` und einer Länderliste ohne `not`
+sperren Sie einzelne Länder.
+
+**Die Datenbank bringen Sie mit.** Xibalba liefert keine mit. Zwei kostenlose
+Länder-Datenbanken passen:
+
+| | DB-IP „IP to Country Lite“ | MaxMind „GeoLite2 Country“ |
+|---|---|---|
+| Konto nötig | nein | ja |
+| Lizenz | Creative Commons Namensnennung 4.0; DB-IP verlangt einen Link „IP Geolocation by DB-IP“ | eigene Lizenzbedingungen von MaxMind |
+| Xibalba lädt sie selbst | ja, mit `countries.download: true` | nein; nutzen Sie das Aktualisierungsprogramm von MaxMind |
+
+Die Lizenzbedingungen erfüllen Sie als Betreiber; lesen Sie sie vor dem
+Einsatz auf der Seite des Anbieters.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `countries.database` | die Datenbank-Datei (`.mmdb`), relativ zur Konfigurationsdatei |
+| `countries.download` | `true`: Xibalba lädt die Datenbank, wenn die Datei fehlt oder einen Monat alt ist (Voreinstellung `false`) |
+| `countries.download_url` | woher geladen wird (Voreinstellung: die kostenlose Datenbank von DB-IP) |
+
+**Aktuell halten:** Adressen wechseln den Besitzer; eine alte Datenbank
+stimmt an vielen Stellen nicht mehr. Ersetzen Sie die Datei monatlich (neue
+Datei unter anderem Namen ablegen, dann umbenennen) oder schalten Sie
+`countries.download` ein. Eine neue Datei bemerkt Xibalba innerhalb einer
+Minute, ohne Neustart. `/healthz` meldet unter `countries`, wenn die Daten
+fehlen oder älter als 100 Tage sind.
+
+**Was Sie wissen sollten**
+
+- Das Vereinigte Königreich hat den Code `GB`, nicht `UK`.
+- **Unbekannte Adressen gehören zu keinem Land.** Private Adressen
+  (10.x, 192.168.x) und Adressen, die in der Datenbank fehlen, haben kein
+  Land. „Alle außer DE“ trifft sie also. Setzen Sie für Ihr eigenes Netz eine
+  `allow`-Regel mit `ip` davor.
+- **Ohne geladene Datenbank werden Länder-Regeln ganz übersprungen.** Eine
+  Regel „alle außer Deutschland sperren“ sperrt also nicht alle aus, nur weil
+  eine Datei fehlt.
+- **Das Land ist der Ort der Registrierung, nicht der Person.** VPN,
+  Mobilfunk, Firmennetze und Mietserver stellen Menschen und Programme in
+  „andere“ Länder. Bevorzugen Sie deshalb `challenge` oder Punkte statt
+  `deny`: Ein Mensch hinter einer ausländischen Adresse kommt dann trotzdem
+  herein.
+- **Noch nicht gegen den echten Abruf erprobt.** Der Server von DB-IP war aus
+  der Entwicklungsumgebung nicht erreichbar. Sehen Sie nach dem ersten Start
+  in `/healthz` und im Protokoll nach (`country database loaded`).
+
+Alle Einzelheiten: [COUNTRIES.md](../COUNTRIES.md) (englisch).
+
 ### Pfade lassen sich nicht umgehen
 
 Eine Regel auf `/admin` greift auch bei `//admin`, `/x/../admin`, `/%61dmin`
@@ -1063,6 +1132,7 @@ eingeschränkt, `down` heißt ausgefallen. Bei einem Problem steht unter
 | `rules` | Auswertung der Regeln | eine Anfrage nicht ausgewertet werden konnte |
 | `ops` | der Betriebsport selbst | er nicht mehr lauscht |
 | `crawlers` | Prüfung der Crawler; erscheint nur, wenn eine Regel Crawler verwendet | eine Adressliste fehlt oder veraltet ist (`degraded`); die betroffenen Crawler gelten dann nicht als echt, alles andere läuft weiter |
+| `countries` | die Länder-Datenbank; erscheint nur, wenn eine Regel Länder verwendet | keine Datenbank geladen ist, die letzte Datei oder der letzte Abruf unbrauchbar war oder die Daten älter als 100 Tage sind (`degraded`); Länder-Regeln werden ohne Datenbank übersprungen |
 | `license` | die Sponsor-Lizenz; erscheint nur, wenn `license.file` gesetzt ist | sie abgelaufen ist (`degraded`); Xibalba läuft weiter |
 
 Ist Ihre Website nicht erreichbar, bleibt Xibalba in Betrieb: Besucher
@@ -1181,6 +1251,7 @@ Rechtsberatung.
 | Protokolliert Xibalba, wer was aufruft? | Nein. Es gibt kein Zugriffsprotokoll. Auch die ausführlichste Protokollstufe (`debug`) nennt bei einer Entscheidung nur die Regel, nicht Adresse, Pfad oder Kennung. Eine Ausnahme: Tritt bei der Bearbeitung einer Anfrage ein Programmfehler auf, wird zur Fehlersuche der Pfad dieser einen Anfrage protokolliert, nicht aber die Adresse. |
 | Und bei eingeschalteter Begrenzung der Anfragen? | Dann merkt sich Xibalba die Adressen der Anfragenden im Arbeitsspeicher, um zählen zu können. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. Ein Anschluss, der nichts mehr sendet, wird nach dem Doppelten des längsten eingestellten Zeitraums vergessen: bei einer Grenze je Minute nach zwei Minuten, bei einer Grenze je Tag nach spätestens zwei Tagen. Ein Neustart vergisst alles. Adressen der Ausnahmeliste werden gar nicht gespeichert. |
 | Und bei eingeschalteter Falle? | Xibalba merkt sich im Arbeitsspeicher die Adressen der Anschlüsse, die dem versteckten Link gefolgt sind, für die Dauer von `trap.remember` (Voreinstellung 24 Stunden). Wer dem Link nicht folgt, wird nicht erfasst. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. |
+| Und bei Länder-Regeln? | Das Land wird auf Ihrem Server aus der Datenbank-Datei gelesen; keine Besucheradresse verlässt dafür den Server. Nur wenn Sie `countries.download` einschalten, ruft Xibalba einmal im Monat die Datenbank beim Anbieter ab; dieser sieht dabei die Adresse Ihres Servers. |
 | Was wird gezählt? | Wie oft jede Regel entschieden hat. Ohne Bezug zu Personen, nur im Arbeitsspeicher, bis zum nächsten Neustart. |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |
 | Was steht in dem Cookie? | Ein Ablaufzeitpunkt und ein Prüfwert, der es an Netz und Browserkennung bindet. Der Prüfwert ist ein Hash mit geheimem Schlüssel; Adresse und Kennung lassen sich daraus nicht zurückgewinnen. Keine Kennung der Person, nichts über aufgerufene Seiten. |
@@ -1214,6 +1285,7 @@ Die Prüfseite weist den Besucher selbst auf das Cookie hin (Text
 | `crawlers` zeigt `degraded`, `list_error` in `/crawlers` | Der Server erreicht die Adresslisten der Betreiber nicht (Firewall, Proxy, kein Internetzugang) | Ausgehendes HTTPS zu den in `detail` genannten Adressen freigeben. Bis dahin gelten die betroffenen Crawler nicht als echt. |
 | Eine echte Suchmaschine wird geprüft oder gesperrt | Ihre Adressliste fehlt, oder die DNS-Rückfrage ist noch nicht beantwortet | `/crawlers` ansehen: `addresses` und `requests.pending`. Erste Anfrage von einer neuen Adresse ist bei DNS-Prüfung immer „ungeklärt“. |
 | Besucher sehen „Zu viele Anfragen“ | Eine `deny`-Grenze ist zu niedrig, oder viele Personen teilen sich eine Adresse | Grenze erhöhen, auf `challenge` umstellen oder die Adresse in `limits.exempt` aufnehmen. `/limits` zeigt, welche Grenze greift. |
+| `countries` zeigt `degraded` | Die Länder-Datenbank fehlt, ist beschädigt, veraltet oder konnte nicht geladen werden | `detail` nennt den Grund. Datei ersetzen oder ausgehendes HTTPS zum Anbieter freigeben. Bis dahin werden Länder-Regeln übersprungen. |
 | Eine Regel greift nicht | Eine Regel weiter oben entscheidet zuerst, oder die Bedingung trifft nicht zu | In `/decisions` sehen Sie, welche Regel stattdessen zählt. Mit `curl -A "…"` gezielt nachstellen. |
 | Eine Regel blockiert zu viel | `prefix` oder `contains` trifft mehr als gedacht | Genauer fassen (siehe „Pfade lassen sich nicht umgehen“ in Abschnitt 6). Erst im Probelauf testen. |
 | Unsicher, was eine Änderung bewirkt | | `rules.dry_run: true`, Zähler beobachten, dann scharf schalten. |
@@ -1242,8 +1314,9 @@ Damit Sie wissen, woran Sie sind:
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
 - **Keine fertigen Pakete.** Xibalba wird aus dem Quelltext gebaut.
 - **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).
-- **Keine Ländersperren** (geplant, als Nächstes in Arbeit mit weiteren
-  Erkennungsverfahren für getarnte Bots).
+- **Keine Länder-Datenbank mitgeliefert;** der Abruf der kostenlosen
+  Datenbank ist noch nicht gegen den echten Server erprobt.
+- **Keine Sperre nach Netzbetreiber (ASN).**
 - **Die Ausnahmeliste der Begrenzung** wird nur in der Datei gepflegt, noch
   nicht in einer Oberfläche.
 - **Meldungen des Programms sind englisch.**
@@ -1259,6 +1332,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | [CONFIGURATION.md](../CONFIGURATION.md) | jede Einstellung mit Voreinstellung und erlaubten Werten | Englisch |
 | [RULES.md](../RULES.md) | alles, was Regeln können | Englisch |
 | [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
+| [COUNTRIES.md](../COUNTRIES.md) | Länder-Regeln, Datenbanken und ihre Lizenzen | Englisch |
 | [TRAP.md](../TRAP.md) | die Falle und der Irrgarten im Detail | Englisch |
 | [LIMITS.md](../LIMITS.md) | Begrenzung der Anfragen im Detail | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |

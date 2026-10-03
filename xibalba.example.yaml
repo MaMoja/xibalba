@@ -105,6 +105,20 @@ crawlers:
   # defined there replaces the built-in one of the same name.
   files: []
 
+# Countries. With a country database, rules can test which country a client's
+# address is registered in (condition "country"). Xibalba ships no database:
+# you choose one and keep it current, or let Xibalba download the free one of
+# DB-IP. Read docs/COUNTRIES.md first: the free databases have licence terms.
+countries:
+  # The database file (.mmdb), relative to this file. Empty: no countries.
+  # Works with DB-IP "IP to Country Lite" and MaxMind "GeoLite2 Country".
+  # A newer file put in its place is picked up without a restart.
+  database: ""
+  # Download the database when the file is missing or a month old.
+  download: false
+  # Where to download from. {year} and {month} are filled in.
+  download_url: "https://download.db-ip.com/free/dbip-country-lite-{year}-{month}.mmdb.gz"
+
 # The trap: a link hidden in the pages Xibalba shows (the security check, the
 # block page). No person can see or reach it; a program that collects every
 # address in a page follows it. Whoever does is remembered, and the rule

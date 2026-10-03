@@ -196,3 +196,90 @@ func TestTrappedCondition(t *testing.T) {
 		t.Errorf("problems = %+v", problems)
 	}
 }
+
+func TestCountryCondition(t *testing.T) {
+	from := func(code string) *Request {
+		r := request("GET", "h", "/", "x", "192.0.2.1")
+		if code != "" {
+			r.Country = [2]byte{code[0], code[1]}
+		}
+		return r
+	}
+	e := mustCompile(t, Spec{DefaultAction: Allow, Countries: true, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Country: []string{"de", " AT "}}, Action: Deny},
+	}})
+	if !e.UsesCountries() {
+		t.Error("UsesCountries() = false")
+	}
+	for code, want := range map[string]Action{"DE": Deny, "AT": Deny, "CH": Allow, "": Allow} {
+		if got := e.Evaluate(from(code)).Action; got != want {
+			t.Errorf("country %q: %s, want %s", code, got, want)
+		}
+	}
+
+	// "Everyone except": an address whose country is not known is outside too.
+	e = mustCompile(t, Spec{DefaultAction: Allow, Countries: true, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Not: &MatchSpec{Country: []string{"DE"}}}, Action: Challenge},
+	}})
+	for code, want := range map[string]Action{"DE": Allow, "FR": Challenge, "": Challenge} {
+		if got := e.Evaluate(from(code)).Action; got != want {
+			t.Errorf("not DE, country %q: %s, want %s", code, got, want)
+		}
+	}
+	german := from("DE")
+	if n := testing.AllocsPerRun(100, func() { e.Evaluate(german) }); n != 0 {
+		t.Errorf("Evaluate allocates %v times", n)
+	}
+}
+
+func TestCountryConditionProblems(t *testing.T) {
+	tests := []struct {
+		name      string
+		list      []string
+		countries bool
+		at, msg   string
+	}{
+		{"no database", []string{"DE"}, false, "match.country", "no country database"},
+		{"empty list", []string{}, true, "match.country", "0 entries"},
+		{"a name instead of a code", []string{"Germany"}, true, "match.country[0]", "not a country code"},
+		{"three letters", []string{"DE", "DEU"}, true, "match.country[1]", "not a country code"},
+		{"digits", []string{"D1"}, true, "match.country[0]", "not a country code"},
+		{"UK", []string{"uk"}, true, "match.country[0]", "not the code of the United Kingdom"},
+		{"EU", []string{"EU"}, true, "match.country[0]", "not a country"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, problems := Compile(Spec{DefaultAction: Allow, Countries: tt.countries,
+				Rules: []RuleSpec{{Name: "r", Match: MatchSpec{Country: tt.list}, Action: Deny}}})
+			if len(problems) != 1 || problems[0].Field != tt.at || !strings.Contains(problems[0].Message, tt.msg) || problems[0].Hint == "" {
+				t.Errorf("problems = %+v", problems)
+			}
+		})
+	}
+}
+
+// Without data, a rule about countries decides nothing: neither "in" nor
+// "not in" may be taken as true.
+func TestRulesWithCountryAreSkippedWithoutData(t *testing.T) {
+	e := mustCompile(t, Spec{DefaultAction: Allow, Countries: true, Rules: []RuleSpec{
+		{Name: "outside", Match: MatchSpec{Not: &MatchSpec{Country: []string{"DE"}}}, Action: Deny},
+		{Name: "nested", Match: MatchSpec{Any: []MatchSpec{{Path: prefix("/x")}, {Country: []string{"DE"}}}}, Action: Deny},
+		{Name: "plain", Match: MatchSpec{Path: prefix("/admin")}, Action: Deny},
+	}})
+	r := request("GET", "h", "/x", "ua", "192.0.2.1")
+	r.NoCountryData = true
+	if got := e.Evaluate(r); got.Action != Allow {
+		t.Errorf("without country data: %s by %s", got.Action, e.Sources()[got.Source].ID)
+	}
+	// Rules without a country condition still apply.
+	r = request("GET", "h", "/admin", "ua", "192.0.2.1")
+	r.NoCountryData = true
+	if e.Evaluate(r).Action != Deny {
+		t.Error("a rule without a country condition was skipped too")
+	}
+	// With data, an address of unknown country is outside Germany.
+	r = request("GET", "h", "/", "ua", "192.0.2.1")
+	if e.Evaluate(r).Action != Deny {
+		t.Error("with data, an unknown country is not outside")
+	}
+}

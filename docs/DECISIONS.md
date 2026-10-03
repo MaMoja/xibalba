@@ -7,6 +7,23 @@ Newest first. One entry per decision: what, why, who decided.
 - **Limits and detection (new milestone M5) come before statistics.** Owner.
 - **The maze of worthless pages for crawlers will be an option, off by
   default.** Owner.
+- **Own reader for the country database format instead of a library.**
+  Agent. The format is published; the reader needs one value (the country
+  code), is 300 lines, and is checked against the test databases MaxMind
+  publishes with the format description (run with `XIBALBA_MMDB_TESTDATA`).
+  No new dependency, and a reader that treats the file as untrusted and does
+  not allocate per lookup.
+- **No database is shipped; the site owner supplies it.** Agent, as agreed
+  with the owner. Xibalba stays small, the data does not age with the
+  program, and the licence of the data is met by whoever uses it. Reads
+  DB-IP's and MaxMind's country databases alike.
+- **Optional download of DB-IP's free database, off by default.** Owner
+  wanted the user to choose. DB-IP's download page states Creative Commons
+  Attribution 4.0 and no account (checked 2026-10-03). MaxMind needs an
+  account, so its file is fetched with MaxMind's own tool.
+- **While no country database is loaded, rules with a country condition are
+  skipped.** Agent. "Deny everyone outside Germany" must not deny everybody
+  because a file is missing.
 - **Trap link inside a `template` element.** Agent. Its content is inert in
   every browser: not rendered, not in the accessibility tree, not focusable.
   The page stays accessible, and nothing has to be hidden with styles that a
@@ -235,6 +252,9 @@ Newest first. One entry per decision: what, why, who decided.
 - How long licenses are issued for (the tool takes any expiry date).
 
 
+- Attribution for DB-IP: its terms ask for a link on pages that use the
+  results. Should Xibalba offer a setting that shows this link on its pages,
+  or is a note in the documentation enough? Today: documentation only.
 - Should a fresh installation start with crawler presets switched on (the
   spec says training "default deny", search "default allow")? Today nothing is
   on until the site owner lists presets.
