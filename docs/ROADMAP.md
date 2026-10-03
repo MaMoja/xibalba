@@ -74,7 +74,16 @@ Each milestone ends with something that runs and is tested. Do them in order.
 - [ ] Shared storage backend for multiple instances
 
 ## M9: Ready for customers
-- [ ] Admin documentation in German and English
+- [ ] Admin documentation in German and English, as a documentation site with the breadth of the Anubis documentation and better (owner's request, 2026-10-03):
+  - [ ] Design: how the check works, with diagrams
+  - [ ] Guides per environment: nginx and Caddy (exist), Apache, HAProxy, Traefik, Docker Compose, Kubernetes, behind Cloudflare, Windows
+  - [ ] Guides per application: WordPress, pages that load parts of themselves (HTMX and similar), Git hosting (Gitea/Forgejo), container registries
+  - [ ] Advice for sites with their own Content-Security-Policy
+  - [ ] For visitors: "Why do I see this check?", questions and answers, browser extensions known to break the check
+  - [ ] Questions and answers for operators
+- [ ] Imprint (Impressum) and privacy notice links on the visitor pages, set in the configuration (Anubis has this; German operators need it)
+- [ ] Link previews (Open Graph): let preview fetchers see title and description of a protected page
+- [ ] Allowed redirect domains for setups with several host names
 - [ ] Security review by a second agent that has not seen the code being written
 - [ ] Load test on a Raspberry Pi and on a small VPS
 - [ ] Privacy documentation (what is stored, for how long)
