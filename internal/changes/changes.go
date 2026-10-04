@@ -33,6 +33,10 @@ const (
 	// MaxLifetime is the longest time an entry can be set to last.
 	MaxLifetime = 366 * 24 * time.Hour
 	maxFile     = 1 << 20
+	// MaxRules is the largest text of own rules, in bytes.
+	MaxRules = 32 << 10
+	// MaxVersions is how many earlier versions are kept to go back to.
+	MaxVersions = 10
 )
 
 // Actions an entry can have.
@@ -63,6 +67,24 @@ type State struct {
 	Presets map[string]bool `json:"presets,omitempty"`
 	// Addresses are the listed addresses and networks.
 	Addresses []Entry `json:"addresses,omitempty"`
+	// Rules is the text of the rules written in the web interface, in the
+	// form of a rule file. They come before the rules of the configuration.
+	Rules string `json:"rules,omitempty"`
+	// History holds earlier versions of Presets and Rules, newest first.
+	// Addresses are not part of a version: an address taken off the list
+	// must not live on in the history.
+	History []Version `json:"history,omitempty"`
+}
+
+// Version is what Presets and Rules were before a change.
+type Version struct {
+	// At is when this version was replaced.
+	At time.Time `json:"at"`
+	// What names the change that replaced it: "preset_on:<name>",
+	// "preset_off:<name>", "rules" or "restore".
+	What    string          `json:"what"`
+	Presets map[string]bool `json:"presets,omitempty"`
+	Rules   string          `json:"rules,omitempty"`
 }
 
 // A Problem is a change that cannot be accepted. Key names the reason for
@@ -120,6 +142,17 @@ func (s State) Check(presets []string) error {
 	for name := range s.Presets {
 		if !known[name] {
 			return problem("preset_unknown", "%q is not a preset", name)
+		}
+	}
+	if len(s.Rules) > MaxRules || !utf8.ValidString(s.Rules) {
+		return problem("rules_too_long", "the rules are longer than %d KiB or not valid text", MaxRules>>10)
+	}
+	if len(s.History) > MaxVersions {
+		return problem("history_invalid", "more than %d earlier versions are kept", MaxVersions)
+	}
+	for _, v := range s.History {
+		if len(v.Rules) > MaxRules || len(v.What) > 100 {
+			return problem("history_invalid", "an earlier version is not valid")
 		}
 	}
 	if len(s.Addresses) > MaxAddresses {
@@ -181,10 +214,12 @@ func (s State) WithoutExpired(now time.Time) State {
 }
 
 // Empty reports whether nothing was changed.
-func (s State) Empty() bool { return len(s.Presets) == 0 && len(s.Addresses) == 0 }
+func (s State) Empty() bool {
+	return len(s.Presets) == 0 && len(s.Addresses) == 0 && s.Rules == "" && len(s.History) == 0
+}
 
 func (s State) clone() State {
-	out := State{Addresses: append([]Entry(nil), s.Addresses...)}
+	out := State{Addresses: append([]Entry(nil), s.Addresses...), Rules: s.Rules, History: append([]Version(nil), s.History...)}
 	if len(s.Presets) > 0 {
 		out.Presets = make(map[string]bool, len(s.Presets))
 		for k, v := range s.Presets {
@@ -329,7 +364,24 @@ func (s *Store) schedule() {
 
 // commit checks, applies and saves next, and makes it the current state.
 // The caller holds the lock.
-func (s *Store) commit(next State) error {
+func (s *Store) commit(next State) error { return s.commitAs(next, "") }
+
+// commitAs is commit for a change of presets or rules: what names the
+// change, and what was in force before is kept as a version to go back to.
+func (s *Store) commitAs(next State, what string) error {
+	if what != "" {
+		before := Version{At: s.opts.Now().UTC().Truncate(time.Second), What: what, Rules: s.state.Rules}
+		if len(s.state.Presets) > 0 {
+			before.Presets = make(map[string]bool, len(s.state.Presets))
+			for k, v := range s.state.Presets {
+				before.Presets[k] = v
+			}
+		}
+		next.History = append([]Version{before}, next.History...)
+		if len(next.History) > MaxVersions {
+			next.History = next.History[:MaxVersions]
+		}
+	}
 	next = next.WithoutExpired(s.opts.Now())
 	if err := next.Check(s.opts.Presets); err != nil {
 		return err
@@ -355,8 +407,49 @@ func (s *Store) SetPreset(name string, on bool) error {
 	if next.Presets == nil {
 		next.Presets = map[string]bool{}
 	}
+	if was, changed := next.Presets[name]; changed && was == on {
+		return nil // nothing to do, and no version to keep
+	}
 	next.Presets[name] = on
-	return s.commit(next)
+	what := "preset_off:" + name
+	if on {
+		what = "preset_on:" + name
+	}
+	return s.commitAs(next, what)
+}
+
+// SetRules replaces the rules written in the web interface.
+func (s *Store) SetRules(text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	text = strings.ReplaceAll(text, "\r\n", "\n") // browsers send forms with CRLF
+	if text == s.state.Rules {
+		return nil
+	}
+	next := s.state.clone()
+	next.Rules = text
+	return s.commitAs(next, "rules")
+}
+
+// Restore puts Presets and Rules back to an earlier version; number 0 is
+// the newest. What is replaced becomes a version itself, so going back can
+// be undone.
+func (s *Store) Restore(number int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if number < 0 || number >= len(s.state.History) {
+		return problem("version_unknown", "this version is no longer kept")
+	}
+	version := s.state.History[number]
+	next := s.state.clone()
+	next.Rules, next.Presets = version.Rules, nil
+	if len(version.Presets) > 0 {
+		next.Presets = make(map[string]bool, len(version.Presets))
+		for k, v := range version.Presets {
+			next.Presets[k] = v
+		}
+	}
+	return s.commitAs(next, "restore")
 }
 
 // Add lists an address or network. lifetime zero means no end.

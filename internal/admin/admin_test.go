@@ -380,6 +380,8 @@ type fakeSettings struct {
 	addresses []Address
 	calls     []string
 	fail      error
+	rules     string
+	versions  []Version
 }
 
 func (f *fakeSettings) Presets() []Preset    { return f.presets }
@@ -528,5 +530,97 @@ func TestEveryPresetIsExplained(t *testing.T) {
 				t.Errorf("%s: no text for preset %s", lang, name)
 			}
 		}
+	}
+}
+
+func (f *fakeSettings) Rules() string { return f.rules }
+func (f *fakeSettings) SetRules(text string) error {
+	f.calls = append(f.calls, "rules "+text)
+	return f.fail
+}
+func (f *fakeSettings) Test(text string, probe Probe) (Verdict, error) {
+	f.calls = append(f.calls, fmt.Sprintf("test %q %+v", text, probe))
+	return Verdict{Action: "deny", Source: "rule:block-shop", Weight: 3}, f.fail
+}
+func (f *fakeSettings) Versions() []Version { return f.versions }
+func (f *fakeSettings) Restore(number int) error {
+	f.calls = append(f.calls, fmt.Sprintf("restore %d", number))
+	return f.fail
+}
+
+type manyReasons []string
+
+func (m manyReasons) Error() string   { return strings.Join(m, "; ") }
+func (m manyReasons) Lines() []string { return m }
+
+func TestRuleEditorTestBoxAndVersions(t *testing.T) {
+	fake := &fakeSettings{rules: "rules: []\n", versions: []Version{
+		{At: time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC), What: "preset_on:block-ai-training"},
+		{At: time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC), What: "rules"},
+	}}
+	w := newWorld(t, func(o *Options) { o.Settings = fake })
+	cookie := cookieOf(w.signIn(password, nil))
+	auth := map[string]string{"Cookie": cookie}
+	body := w.do("GET", "/settings", "", auth).Body.String()
+	form := "form=" + url.QueryEscape(formValue.FindStringSubmatch(body)[1])
+	for _, want := range []string{"rules: []", "Rule group block-ai-training switched on", "Own rules changed", "04.10.2026 10:00"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+
+	// Not without our form, not from elsewhere, not without a login.
+	draft := "&rules=" + url.QueryEscape("rules:\r\n  - name: x\r\n")
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"no form value": w.do("POST", "/settings/rules", "do=save"+draft, auth),
+		"another site":  w.do("POST", "/settings/rules", form+"&do=save"+draft, map[string]string{"Cookie": cookie, "Origin": "https://evil.example"}),
+		"no login":      w.do("POST", "/settings/rules", form+"&do=save"+draft, nil),
+		"restore":       w.do("POST", "/settings/restore", "number=0", auth),
+	} {
+		if rec.Code == http.StatusOK || (rec.Code == http.StatusSeeOther && rec.Header().Get("Location") != "/login") || len(fake.calls) != 0 {
+			t.Errorf("%s: %d, calls %v", name, rec.Code, fake.calls)
+		}
+	}
+
+	// Trying does not save; the draft and the request stay on the page.
+	probe := "&method=POST&address=" + url.QueryEscape("/shop?a=1") + "&client=192.0.2.9&user_agent=TestBot&headers=" + url.QueryEscape("Accept-Language: de\r\nX-A: \"><b>")
+	rec := w.do("POST", "/settings/rules", form+"&do=test"+draft+probe, auth)
+	page := rec.Body.String()
+	if rec.Code != 200 || len(fake.calls) != 1 || !strings.HasPrefix(fake.calls[0], `test "rules:\n  - name: x\n" {Method:POST Address:/shop?a=1 UserAgent:TestBot Client:192.0.2.9`) {
+		t.Fatalf("test: %d, calls %v", rec.Code, fake.calls)
+	}
+	for _, want := range []string{"Result: blocked", "decided by block-shop, score 3", "- name: x", `value="/shop?a=1"`, `value="192.0.2.9"`, "&gt;&lt;b&gt;", `<option selected>POST</option>`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("after a test the page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, `"><b>`) {
+		t.Error("a header of the probe reached the page as markup")
+	}
+
+	// Saving, and a rule set that is refused with several reasons.
+	fake.calls = nil
+	if rec := w.do("POST", "/settings/rules", form+"&do=save"+draft, auth); rec.Code != http.StatusSeeOther || fake.calls[0] != "rules rules:\n  - name: x\n" {
+		t.Errorf("save: %d, calls %v", rec.Code, fake.calls)
+	}
+	fake.fail = manyReasons{"line 2, rules[0].action: an action is missing", `line 2: "<i>" is odd`}
+	rec = w.do("POST", "/settings/rules", form+"&do=save"+draft, auth)
+	page = rec.Body.String()
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(page, "<li>line 2, rules[0].action: an action is missing</li>") ||
+		!strings.Contains(page, "&lt;i&gt;") || !strings.Contains(page, "- name: x") {
+		t.Errorf("refused save: %d", rec.Code)
+	}
+
+	// Going back.
+	fake.fail, fake.calls = nil, nil
+	if rec := w.do("POST", "/settings/restore", form+"&number=1", auth); rec.Code != http.StatusSeeOther || fake.calls[0] != "restore 1" {
+		t.Errorf("restore: %d, calls %v", rec.Code, fake.calls)
+	}
+	if rec := w.do("POST", "/settings/restore", form+"&number=abc", auth); rec.Code != http.StatusUnprocessableEntity || len(fake.calls) != 1 {
+		t.Errorf("restore with a non-number: %d", rec.Code)
+	}
+	// A body far beyond what a rule text can be is not read.
+	if rec := w.do("POST", "/settings/rules", form+"&do=save&rules="+strings.Repeat("a", 400<<10), auth); rec.Code == http.StatusSeeOther {
+		t.Error("a 400 KiB rule text was accepted")
 	}
 }

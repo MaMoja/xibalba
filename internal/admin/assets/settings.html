@@ -18,7 +18,7 @@
 </header>
 <main>
 <h1>{{.T.settings}}</h1>
-{{if .Problem}}<p class="notice" role="alert">{{.Problem}}</p>{{end}}
+{{if .Problem}}<div class="notice" role="alert"><p>{{.Problem}}</p>{{if .Lines}}<ul>{{range .Lines}}<li>{{.}}</li>{{end}}</ul>{{end}}</div>{{end}}
 {{if .Saved}}<p class="notice" role="status">{{.T.saved}}</p>{{end}}
 
 <h2>{{.T.presets_title}}</h2>
@@ -70,6 +70,51 @@
 <p class="dim" id="notehint">{{.T.note_hint}}</p></div>
 <div><button type="submit">{{.T.add}}</button></div>
 </form>
+
+<h2 id="rules">{{.T.rules_title}}</h2>
+<p>{{.T.rules_hint}}</p>
+<form class="rules" method="post" action="/settings/rules#rules">
+<input type="hidden" name="form" value="{{.Form}}">
+<label for="rulestext">{{.T.rules_label}}</label>
+<textarea id="rulestext" name="rules" rows="14" spellcheck="false" autocomplete="off" autocapitalize="off">{{.Rules}}</textarea>
+<p><button type="submit" name="do" value="save">{{.T.save_rules}}</button></p>
+
+<h3>{{.T.test_title}}</h3>
+<p>{{.T.test_hint}}</p>
+{{if .Verdict}}<p class="notice verdict {{.Verdict.Class}}" role="status"><strong>{{.T.result}}: {{.Verdict.Action}}</strong>, {{.VerdictText}}</p>{{end}}
+<div class="fields">
+<div><label for="method">{{.T.test_method}}</label>
+<select id="method" name="method">{{range .Methods}}<option{{if eq . $.Probe.Method}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+<div><label for="address">{{.T.test_address}}</label>
+<input id="address" name="address" value="{{.Probe.Address}}" maxlength="2000" autocomplete="off" aria-describedby="addresshint">
+<p class="dim" id="addresshint">{{.T.test_address_hint}}</p></div>
+<div><label for="client">{{.T.test_client}}</label>
+<input id="client" name="client" value="{{.Probe.Client}}" maxlength="64" autocomplete="off" aria-describedby="clienthint">
+<p class="dim" id="clienthint">{{.T.test_client_hint}}</p></div>
+<div><label for="user_agent">{{.T.test_agent}}</label>
+<input id="user_agent" name="user_agent" value="{{.Probe.UserAgent}}" maxlength="500" autocomplete="off" aria-describedby="agenthint">
+<p class="dim" id="agenthint">{{.T.test_agent_hint}}</p></div>
+<div><label for="headers">{{.T.test_headers}}</label>
+<textarea id="headers" name="headers" rows="2" spellcheck="false" autocomplete="off" aria-describedby="headershint">{{.Probe.Headers}}</textarea>
+<p class="dim" id="headershint">{{.T.test_headers_hint}}</p></div>
+<div><button type="submit" name="do" value="test">{{.T.test_do}}</button></div>
+</div>
+</form>
+
+<h2>{{.T.versions_title}}</h2>
+<p>{{.T.versions_hint}}</p>
+{{if .Versions}}<div class="scroll" tabindex="0" role="group" aria-label="{{.T.scroll_label}}"><table class="stack">
+<thead><tr><th scope="col">{{.T.version_when}}</th><th scope="col">{{.T.version_by}}</th><th scope="col"></th></tr></thead>
+<tbody>{{range .Versions}}<tr>
+<th scope="row">{{.At}}</th>
+<td>{{.What}}</td>
+<td><form method="post" action="/settings/restore">
+<input type="hidden" name="form" value="{{$.Form}}">
+<input type="hidden" name="number" value="{{.Number}}">
+<button type="submit" class="small" aria-label="{{$.T.go_back}}: {{.At}}">{{$.T.go_back}}</button>
+</form></td>
+</tr>{{end}}</tbody>
+</table></div>{{else}}<p>{{.T.no_versions}}</p>{{end}}
 </main>
 </body>
 </html>

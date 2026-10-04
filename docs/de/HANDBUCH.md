@@ -378,6 +378,22 @@ Mit `admin.allow_changes: true` erscheint zusätzlich die Seite
 - Adressen oder Netze eintragen, die durchgelassen oder blockiert werden,
   mit Notiz und Ablauf (1 Stunde bis 1 Jahr oder ohne Ende; ab Werk 30 Tage).
 
+Dazu kommen auf derselben Seite:
+
+- **Eigene Regeln:** ein Textfeld mit Regeln in der Form einer Regeldatei
+  (Abschnitt 6). „Prüfen und speichern“ prüft sie zusammen mit allem
+  anderen; ist etwas falsch, wird nichts gespeichert, und die Seite nennt
+  die Zeile. Diese Regeln kommen nach der Adressliste und vor den Regeln der
+  Konfigurationsdatei und den Regelgruppen.
+- **Eine Anfrage ausprobieren:** Sie beschreiben eine Anfrage (Methode,
+  Adresse auf Ihrer Website, IP-Adresse, User-Agent) und sehen, was die
+  Regeln im Textfeld damit täten und welche Regel entscheidet, ob
+  gespeichert oder nicht. Dabei wird nichts geändert und nichts gesendet.
+- **Frühere Stände:** Jede Änderung an Regelgruppen oder eigenen Regeln
+  bewahrt auf, was vorher galt, bis zu zehn Stände. Mit „Zu diesem Stand
+  zurück“ gilt der frühere Stand sofort wieder. Die Adressliste gehört nicht
+  dazu.
+
 Eine Änderung gilt sofort, ohne Neustart. Sie steht in einer eigenen Datei
 (`admin.changes.json` neben der Konfigurationsdatei); **die
 Konfigurationsdatei selbst wird nie verändert.** Was in dieser Datei steht,

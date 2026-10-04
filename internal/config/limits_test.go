@@ -308,3 +308,49 @@ func TestListedBlockBeatsListedAllow(t *testing.T) {
 		t.Errorf("an expired entry: %+v, %v", cfg.Admin.Changes, err)
 	}
 }
+
+func TestRulesWrittenInTheWebInterface(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base+"rules:\n  presets: [challenge-browsers]\n  list:\n    - name: from-file\n      match: {path: {prefix: \"/\"}}\n      action: deny\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	own := "# my rules\nrules:\n  - name: let-status\n    match:\n      path: {equals: \"/status\"}\n    action: allow\n"
+	state := changes.State{Rules: own, Addresses: []changes.Entry{{Network: "192.0.2.7", Action: changes.Deny}}}
+	engine, problems := cfg.Compile(state, now)
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	// Order: the address list, then own rules, then the configuration.
+	for _, tt := range []struct{ addr, path, want string }{
+		{"192.0.2.7", "/status", "rule:web-interface.deny"},
+		{"192.0.2.8", "/status", "rule:let-status"},
+		{"192.0.2.8", "/other", "rule:from-file"},
+	} {
+		d := engine.Evaluate(&rules.Request{Method: "GET", Path: tt.path, Client: netip.MustParseAddr(tt.addr)})
+		if got := engine.Sources()[d.Source].ID; got != tt.want {
+			t.Errorf("%s %s: decided by %s, want %s", tt.addr, tt.path, got, tt.want)
+		}
+	}
+
+	for name, tt := range map[string]struct{ rules, want string }{
+		"problem with its line":  {"rules:\n  - name: a\n    match: {path: {prefix: \"/x\"}}\n    action: fly\n", "line 4, rules[0].action"},
+		"not YAML":               {"rules:\n  - name: [\n", "the rules are not valid"},
+		"unknown key":            {"regeln: []\n", "the rules are not valid"},
+		"name already used":      {"rules:\n  - name: from-file\n    match: {path: {prefix: \"/x\"}}\n    action: allow\n", "already used"},
+		"reserved name":          {"rules:\n  - name: web-interface.deny\n    match: {path: {prefix: \"/x\"}}\n    action: allow\n", "kept for Xibalba's own rules"},
+		"preset's name":          {"rules:\n  - name: preset.mine\n    match: {path: {prefix: \"/x\"}}\n    action: allow\n", "kept for Xibalba's own rules"},
+		"exempt without address": {"rules:\n  - name: a\n    match: {path: {prefix: \"/x\"}}\n    action: allow\n    exempt_from_limits: true\n", "line"},
+	} {
+		engine, problems := cfg.Compile(changes.State{Rules: tt.rules}, now)
+		if engine != nil || len(problems) == 0 || !strings.Contains(strings.Join(problems, "\n"), tt.want) {
+			t.Errorf("%s: %v", name, problems)
+		}
+	}
+	// Empty text and comments only mean: no own rules.
+	for _, text := range []string{"", "\n\n", "# nothing yet\n"} {
+		if _, problems := cfg.Compile(changes.State{Rules: text}, now); len(problems) != 0 {
+			t.Errorf("%q: %v", text, problems)
+		}
+	}
+}

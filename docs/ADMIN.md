@@ -143,7 +143,7 @@ The component is `admin` in `/healthz` and in the log.
 ## Changing settings in the browser
 
 By default the web interface only shows. With `admin.allow_changes` it can
-also change two things, and a change takes effect at once, without a restart:
+also change things, and a change takes effect at once, without a restart:
 
 ```yaml
 admin:
@@ -182,6 +182,48 @@ choose otherwise), and a note for yourself. Things to know:
   a rule in the configuration file.
 - You cannot lock yourself out of the web interface: it has its own
   listener and is not behind the rules.
+
+**Your own rules.** A text field holds rules in the form of a rule file
+(see [Rules](RULES.md)): one key `rules` with a list.
+
+```yaml
+rules:
+  # Das Intranet nur aus dem Haus
+  - name: nur-intern
+    match:
+      path: {prefix: "/intern"}
+      not:
+        ip: ["192.0.2.0/24"]
+    action: deny
+```
+
+- "Check and save" checks the rules together with everything else. If
+  something is wrong, nothing is saved and the page lists what to correct,
+  with the line.
+- Rules written here come after the address list and **before** the rules
+  of the configuration file and the presets.
+- Names that start with `web-interface.` or `preset.` are kept for
+  Xibalba's own rules. At most 32 KiB of text.
+- An empty field means no own rules.
+
+**Trying a request.** Below the text field you describe a request: method,
+address on your website, the client's IP address, user agent, and further
+headers if a rule looks at them. "Try it" shows what the rules in the field
+would do with it, saved or not, and which rule decides:
+
+```text
+Result: blocked, decided by nur-intern, score 0
+```
+
+Nothing is changed and no request is sent anywhere. Request limits are not
+part of the answer: they depend on what a client did before. A try with a
+crawler's name shows up in the crawler counts.
+
+**Earlier versions.** Every change of presets or own rules keeps what was
+in force before, up to ten versions, each with the time and the change that
+replaced it. "Go back to this" puts that version in force at once; going
+back can itself be undone. The address list is not part of a version: an
+address you removed must not live on in a history.
 
 ### Where the changes are kept
 
@@ -242,8 +284,3 @@ never from a link and never from another website.
 The addresses you list are stored in the changes file until you remove them
 or their time is over, at which point they are deleted from the file. They are your own, deliberate entries, like an
 address in a rule. Give entries an end date where you can.
-
-## Planned
-
-A rule editor with a test box, and versions of the configuration with a way
-back, are planned for a later version.

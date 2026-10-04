@@ -194,7 +194,6 @@ Planned packages and their seams:
 
 | Package | Its one job | Interface it exposes |
 |---|---|---|
-| `internal/admin` (rule editor, versions) | Edit rules with a test box; versions of the configuration | planned |
 
 Two rules apply to every stage:
 

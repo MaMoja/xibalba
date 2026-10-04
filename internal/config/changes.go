@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -92,6 +93,14 @@ func presetRules(name string) ([]rules.RuleSpec, []byte, error) {
 // RuleSpec returns the rule set in force at now: the configuration file
 // with the changes made in the web interface on top.
 func (c *Config) RuleSpec(state changes.State, now time.Time) (rules.Spec, error) {
+	spec, _, _, err := c.ruleSpec(state, now)
+	return spec, err
+}
+
+// ruleSpec is RuleSpec that also says where the rules written in the web
+// interface lie in the result (from index first, count of them) so that a
+// problem in one of them can be reported with its line.
+func (c *Config) ruleSpec(state changes.State, now time.Time) (spec rules.Spec, first, count int, err error) {
 	var all []rules.RuleSpec
 	allow, deny := state.Active(now)
 	// Blocked comes first: where a blocked address lies inside a network
@@ -104,11 +113,22 @@ func (c *Config) RuleSpec(state changes.State, now time.Time) (rules.Spec, error
 		// and, like limits.exempt, not counted by the request limits.
 		all = append(all, rules.RuleSpec{Name: ListAllowRule, Match: rules.MatchSpec{IP: allow}, Action: rules.Allow, ExemptFromLimits: true})
 	}
+	// Rules written in the web interface come before those of the
+	// configuration, so that what is changed there has an effect.
+	first = len(all)
+	if hasContent([]byte(state.Rules)) {
+		var doc ruleFileDoc
+		if err := yaml.UnmarshalWithOptions([]byte(state.Rules), &doc, yaml.Strict()); err != nil {
+			return spec, 0, 0, errors.New(strings.TrimSpace(yaml.FormatError(err, false, true)))
+		}
+		count = len(doc.Rules)
+		all = append(all, doc.Rules...)
+	}
 	all = append(all, c.Rules.List...)
 	for _, name := range c.Rules.EffectivePresets(state) {
 		preset, _, err := presetRules(name)
 		if err != nil {
-			return rules.Spec{}, fmt.Errorf("the preset %q cannot be read", name)
+			return spec, 0, 0, fmt.Errorf("the preset %q cannot be read", name)
 		}
 		all = append(all, preset...)
 	}
@@ -116,7 +136,43 @@ func (c *Config) RuleSpec(state changes.State, now time.Time) (rules.Spec, error
 		all = append(all, file.Rules...)
 	}
 	r := c.Rules
-	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn}, nil
+	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn}, first, count, nil
+}
+
+// Compile builds the rule set in force at now. If it does not work, it
+// returns what is wrong, one line per problem; a problem in a rule written
+// in the web interface names the line of that text.
+func (c *Config) Compile(state changes.State, now time.Time) (*rules.Engine, []string) {
+	spec, first, count, err := c.ruleSpec(state, now)
+	if err != nil {
+		return nil, []string{"the rules are not valid: " + err.Error()}
+	}
+	var out []string
+	for i, rule := range spec.Rules[first : first+count] {
+		if strings.HasPrefix(rule.Name, "web-interface.") || strings.HasPrefix(rule.Name, "preset.") {
+			out = append(out, fmt.Sprintf(`rule number %d: the name %q is kept for Xibalba's own rules; choose a name that does not start with "web-interface." or "preset."`, i+1, rule.Name))
+		}
+	}
+	engine, problems := rules.Compile(spec)
+	lines := lineIndex([]byte(state.Rules))
+	for _, p := range problems {
+		text := p.Message
+		if p.Hint != "" {
+			text += " (" + p.Hint + ")"
+		}
+		if p.Rule >= first && p.Rule < first+count {
+			path := fmt.Sprintf("rules[%d]", p.Rule-first)
+			if p.Field != "" {
+				path += "." + p.Field
+			}
+			text = fmt.Sprintf("line %d, %s: %s", nearestLine(lines, path), path, text)
+		}
+		out = append(out, text)
+	}
+	if len(out) > 0 {
+		return nil, out
+	}
+	return engine, nil
 }
 
 // checkChanges reads the changes file and makes sure the configuration with
@@ -157,14 +213,8 @@ func (c *Config) checkChanges(dir string, add func(path, message, hint string)) 
 	if state.Empty() {
 		return
 	}
-	spec, err := c.RuleSpec(state, time.Now())
-	if err == nil {
-		if _, problems := rules.Compile(spec); len(problems) > 0 {
-			err = fmt.Errorf("%s", problems[0].Message)
-		}
-	}
-	if err != nil {
-		add("admin.changes_file", fmt.Sprintf("with the changes in %q the rule set does not work: %v", a.ChangesFile, err), hint)
+	if _, problems := c.Compile(state, time.Now()); len(problems) > 0 {
+		add("admin.changes_file", fmt.Sprintf("with the changes in %q the rule set does not work: %s", a.ChangesFile, problems[0]), hint)
 		return
 	}
 	a.Changes = state

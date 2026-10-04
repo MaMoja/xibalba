@@ -2074,6 +2074,40 @@ func TestChangesInTheWebInterface(t *testing.T) {
 	if code := visit("GPTBot/1.0"); code != http.StatusForbidden {
 		t.Errorf("GPTBot after the restart: %d", code)
 	}
+
+	// Own rules: tried without saving, saved, in force at once, and taken back.
+	own := "rules:\n  - name: block-secret\n    match:\n      path: {prefix: \"/geheim\"}\n    action: deny\n"
+	fetch := func(path string) int {
+		resp, _ := get(t, "http://"+public+path, map[string]string{"User-Agent": "curl/8", "Accept-Language": "en"})
+		return resp.StatusCode
+	}
+	code, page := send("POST", "/settings/rules", url.Values{"form": {form}, "do": {"test"}, "rules": {own},
+		"method": {"GET"}, "address": {"/geheim/akte"}, "client": {"203.0.113.9"}, "user_agent": {"curl/8"}})
+	if code != 200 || !strings.Contains(page, "decided by block-secret") {
+		t.Errorf("trying the draft: %d", code)
+	}
+	if got := fetch("/geheim/akte"); got != 200 {
+		t.Errorf("trying a draft put it in force: %d", got)
+	}
+	code, page = send("POST", "/settings/rules", url.Values{"form": {form}, "do": {"save"}, "rules": {"rules:\n  - name: bad\n    action: fly\n"}})
+	if code != http.StatusUnprocessableEntity || !strings.Contains(page, "line 3") {
+		t.Errorf("saving rules that do not work: %d", code)
+	}
+	if code, _ := send("POST", "/settings/rules", url.Values{"form": {form}, "do": {"save"}, "rules": {own}}); code != http.StatusSeeOther {
+		t.Fatalf("saving the rules: %d", code)
+	}
+	if got := fetch("/geheim/akte"); got != http.StatusForbidden {
+		t.Errorf("after saving the rule: %d", got)
+	}
+	if code, _ := send("POST", "/settings/restore", url.Values{"form": {form}, "number": {"0"}}); code != http.StatusSeeOther {
+		t.Fatalf("going back: %d", code)
+	}
+	if got := fetch("/geheim/akte"); got != 200 {
+		t.Errorf("after going back: %d", got)
+	}
+	if code := visit("GPTBot/1.0"); code != http.StatusForbidden {
+		t.Errorf("going back one step also undid the preset: %d", code)
+	}
 	if text := logs.String(); strings.Contains(text, "127.0.0.1\"") && strings.Contains(text, "addresses=127") {
 		t.Errorf("the log names a listed address:\n%s", text)
 	}

@@ -291,6 +291,13 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 	}()
 
 	info, _ := clientip.FromContext(r.Context())
+	req := g.request(r, info.Client)
+	set = g.set.Load()
+	return set.engine.Evaluate(&req), req.Client, set, true
+}
+
+// request gathers what the rules may ask about a request from client.
+func (g *Gate) request(r *http.Request, client netip.Addr) rules.Request {
 	req := rules.Request{
 		Method:      strings.ToUpper(r.Method),
 		Host:        rules.NormalizeHost(r.Host),
@@ -299,7 +306,7 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 		Query:       r.URL.RawQuery,
 		UserAgent:   r.Header.Get("User-Agent"),
 		Header:      r.Header,
-		Client:      info.Client,
+		Client:      client,
 	}
 	req.NoCountryData = true
 	if g.opts.Country != nil {
@@ -313,8 +320,24 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 	if g.opts.Identify != nil {
 		req.Crawler = g.opts.Identify(req.UserAgent, req.Client)
 	}
-	set = g.set.Load()
-	return set.engine.Evaluate(&req), req.Client, set, true
+	return req
+}
+
+// Explain says what would happen to r if it came from client, under engine
+// (nil: the rule set in force). Nothing is counted and nothing is carried
+// out; request limits are not looked at. ok is false if evaluating failed.
+func (g *Gate) Explain(r *http.Request, client netip.Addr, engine Evaluator) (action rules.Action, source string, weight int, ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	if engine == nil {
+		engine = g.set.Load().engine
+	}
+	req := g.request(r, client)
+	decision := engine.Evaluate(&req)
+	return decision.Action, engine.Sources()[decision.Source].ID, decision.Weight, true
 }
 
 func (g *Gate) recordFailure(msg string) {

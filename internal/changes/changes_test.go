@@ -283,3 +283,70 @@ func TestNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestRulesAndVersions(t *testing.T) {
+	s, w := newStore(t, State{})
+	step := func() { w.now = w.now.Add(time.Minute) }
+	if err := s.SetPreset("block-ai-training", true); err != nil {
+		t.Fatal(err)
+	}
+	step()
+	if err := s.SetRules("rules:\r\n  - name: a\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	step()
+	if err := s.SetRules("rules:\n  - name: a\n"); err != nil || len(s.State().History) != 2 {
+		t.Fatalf("saving the same text again made a version: %v, %d", err, len(s.State().History))
+	}
+	if err := s.SetPreset("block-ai-training", true); err != nil || len(s.State().History) != 2 {
+		t.Fatalf("switching on what is on made a version: %v", err)
+	}
+	// Addresses are not part of a version.
+	if err := s.Add("192.0.2.7", Deny, "", 0); err != nil || len(s.State().History) != 2 {
+		t.Fatalf("an address made a version: %v", err)
+	}
+	h := s.State().History
+	if h[0].What != "rules" || h[0].Rules != "" || !h[0].Presets["block-ai-training"] || h[1].What != "preset_on:block-ai-training" || len(h[1].Presets) != 0 {
+		t.Fatalf("history = %+v", h)
+	}
+	raw, _ := os.ReadFile(w.path)
+	if strings.Count(string(raw), "192.0.2.7") != 1 {
+		t.Errorf("the address is in the file more than once:\n%s", raw)
+	}
+
+	// Back to before the rules: rules gone, preset still on, address untouched.
+	step()
+	if err := s.Restore(0); err != nil {
+		t.Fatal(err)
+	}
+	now := s.State()
+	if now.Rules != "" || !now.Presets["block-ai-training"] || len(now.Addresses) != 1 || now.History[0].What != "restore" || now.History[0].Rules == "" {
+		t.Errorf("after going back: %+v", now)
+	}
+	// Going back can be undone.
+	if err := s.Restore(0); err != nil || s.State().Rules == "" {
+		t.Errorf("undoing: %v, %+v", err, s.State())
+	}
+	if err := s.Restore(99); key(err) != "version_unknown" {
+		t.Errorf("an unknown version: %v", err)
+	}
+	if err := s.Restore(-1); key(err) != "version_unknown" {
+		t.Errorf("a negative version: %v", err)
+	}
+
+	// Only so many versions are kept, and rules have a size.
+	for i := 0; i < MaxVersions+5; i++ {
+		if err := s.SetRules("rules: [] # " + itoa(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(s.State().History); n != MaxVersions {
+		t.Errorf("%d versions kept", n)
+	}
+	if err := s.SetRules(strings.Repeat("#", MaxRules+1)); key(err) != "rules_too_long" {
+		t.Errorf("oversized rules: %v", err)
+	}
+	if loaded, err := Load(w.path); err != nil || loaded.Check([]string{"block-ai-training"}) != nil {
+		t.Errorf("the saved file does not load: %v", err)
+	}
+}

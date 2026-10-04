@@ -44,6 +44,14 @@ form.add{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));g
 form.add p{margin:.25rem 0 0}
 form.add div:last-child{align-self:end}
 header nav ul{margin:0}
+h3{font-size:1rem;margin:1.5rem 0 .5rem}
+textarea{font:.9375rem/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;width:100%;padding:.55rem .7rem;border:2px solid var(--dim);border-radius:.3rem;background:var(--bg);color:var(--fg);resize:vertical;tab-size:2}
+textarea:focus-visible{outline:3px solid currentColor;outline-offset:2px}
+form.rules .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:1rem;align-items:start;padding:1rem;background:var(--card);border-radius:.4rem}
+form.rules .fields p{margin:.25rem 0 0}
+.notice ul{margin:.5rem 0 0;padding-left:1.25rem}
+.notice p{margin:0}
+.verdict.allow{border-left-color:var(--allow)}.verdict.challenge{border-left-color:var(--check)}.verdict.deny{border-left-color:var(--deny)}
 header button{padding:.3rem .9rem;background:var(--bg);color:var(--fg)}
 @media (max-width:40rem){table.stack thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}table.stack tr{display:block;padding:.6rem 0;border-bottom:1px solid var(--line)}table.stack th,table.stack td{display:block;border:0;padding:.15rem 0}table.stack td:empty{display:none}}
 @media (prefers-color-scheme:dark){:root{--bg:#151515;--fg:#ededed;--dim:#b3b3b3;--line:#444;--card:#242424;--allow:#7da7d4;--check:#e0a63a;--deny:#e5766f}}

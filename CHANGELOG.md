@@ -21,6 +21,9 @@ All notable changes are listed here. The format follows
   are let through or blocked, with note and end date. Changes take effect
   without a restart and are kept in their own file (`admin.changes_file`);
   the configuration file is never rewritten.
+- In the same place: your own rules in a text field, checked before they
+  are saved; a box to try a request against the rules without saving; and
+  up to ten earlier versions of presets and rules to go back to.
 - Web interface (`admin`), optional and off by default: a login and an
   overview of requests let through, checked and blocked over time, the
   rules, the crawlers and the state of every part. No script, nothing

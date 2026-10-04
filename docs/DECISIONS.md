@@ -4,6 +4,19 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **The rule editor is a text field with the rule file format, not a form
+  builder.** A builder for nested conditions (`all`, `any`, `not`) would be
+  the largest piece of the interface and need script. The text field reuses
+  the format, the validator and the line-accurate messages that exist, and
+  the box to try a request gives the feedback a builder would.
+- **Versions cover presets and own rules, not the address list**, and there
+  are ten. A removed or expired address must not survive in a history
+  (privacy). "Versioned config" on the roadmap meant the configuration; as
+  the file is never rewritten by the program, only the changes need versions.
+- **Rules from the web interface come before those of the configuration.**
+  Otherwise a rule added there would often be shadowed by a preset or a
+  file rule and seem to do nothing.
+
 - **Changes from the web interface go into their own file and sit on top of
   the configuration; the YAML file is never rewritten.** Rewriting would
   lose the owner's comments and layout and make the program a writer of the

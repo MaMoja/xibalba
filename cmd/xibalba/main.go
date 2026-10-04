@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -262,12 +261,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// The rule set was checked when the configuration was loaded, so
 	// compiling it here cannot report problems; if it does, refuse to start.
-	spec, err := cfg.RuleSpec(cfg.Admin.Changes, time.Now())
-	if err != nil {
-		log.Error("start-up failed", "error", err.Error())
-		return exitFailed
-	}
-	engine, problems := rules.Compile(spec)
+	engine, problems := cfg.Compile(cfg.Admin.Changes, time.Now())
 	// With changes allowed, a preset switched on later may ask which
 	// crawler a request is or whether a client was trapped, so those parts
 	// run from the start.
@@ -471,13 +465,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Presets:   config.PresetNames(),
 		Protected: cfg.Server.TrustedPrefixes(),
 		Apply: func(state changes.State) error {
-			spec, err := cfg.RuleSpec(state, time.Now())
-			if err != nil {
-				return err
-			}
-			next, problems := rules.Compile(spec)
+			next, problems := cfg.Compile(state, time.Now())
 			if len(problems) > 0 {
-				return errors.New(problems[0].Message)
+				return reasons(problems)
 			}
 			decisions.Swap(next)
 			allow, deny := state.Active(time.Now())
@@ -496,7 +486,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	var editable admin.Settings
 	if mayChange {
-		editable = settings{cfg: &cfg, store: changed}
+		editable = settings{cfg: &cfg, store: changed, gate: decisions}
 	}
 
 	// The web interface, if the site owner switched it on. Off, none of

@@ -107,6 +107,41 @@ type Settings interface {
 	AddAddress(network, action, note string, lifetime time.Duration) error
 	// RemoveAddress takes one off the list.
 	RemoveAddress(network string) error
+	// Rules returns the rules written in the interface, as text.
+	Rules() string
+	// SetRules replaces them. An error with a method Lines() []string is
+	// shown line by line.
+	SetRules(text string) error
+	// Test says what would happen to a request under the rule set with
+	// text as the rules written in the interface. Nothing is changed.
+	Test(text string, probe Probe) (Verdict, error)
+	// Versions lists earlier versions of presets and rules, newest first.
+	Versions() []Version
+	// Restore goes back to the version with that number in Versions.
+	Restore(number int) error
+}
+
+// Probe is a made-up request to try the rules on.
+type Probe struct {
+	Method, Address, UserAgent, Client string
+	// Headers holds further headers, one "Name: value" per line.
+	Headers string
+}
+
+// Verdict is what the rules decide about a Probe.
+type Verdict struct {
+	// Action is "allow", "challenge" or "deny".
+	Action string
+	// Source is what decided: "rule:<name>", "threshold:<weight>" or "default".
+	Source string
+	Weight int
+}
+
+// Version is an earlier state to go back to. What names the change that
+// replaced it: "preset_on:<name>", "preset_off:<name>", "rules", "restore".
+type Version struct {
+	At   time.Time
+	What string
 }
 
 // Preset is a ready-made group of rules.
@@ -224,7 +259,7 @@ func (a *Admin) Handler() http.Handler {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}
-			a.settings(w, r, current, http.StatusOK, "", r.URL.Query().Get("saved") == "1")
+			a.settings(w, r, current, http.StatusOK, extra{saved: r.URL.Query().Get("saved") == "1"})
 		})
 		mux.HandleFunc("POST /settings/preset", a.change(func(r *http.Request) error {
 			state := r.PostFormValue("state")
@@ -243,6 +278,14 @@ func (a *Admin) Handler() http.Handler {
 		mux.HandleFunc("POST /settings/address/remove", a.change(func(r *http.Request) error {
 			return a.opts.Settings.RemoveAddress(r.PostFormValue("network"))
 		}))
+		mux.HandleFunc("POST /settings/restore", a.change(func(r *http.Request) error {
+			number, err := strconv.Atoi(r.PostFormValue("number"))
+			if err != nil {
+				return errors.New("number is not a number")
+			}
+			return a.opts.Settings.Restore(number)
+		}))
+		mux.HandleFunc("POST /settings/rules", a.rules)
 	}
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		if !a.signedIn(r) {
@@ -511,23 +554,98 @@ func (a *Admin) change(do func(*http.Request) error) http.HandlerFunc {
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		if r.ParseForm() != nil { // too large or damaged: never act on half a form
+			http.Error(w, "the form is too large or damaged", http.StatusRequestEntityTooLarge)
+			return
+		}
 		if subtle.ConstantTimeCompare([]byte(r.PostFormValue("form")), []byte(current.form)) != 1 {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if err := do(r); err != nil {
-			t := a.texts[pickLanguage(r.Header.Get("Accept-Language"))]
-			message := t["err_other"] + " " + err.Error()
-			var keyed interface{ ProblemKey() string }
-			if errors.As(err, &keyed) && t["err_"+keyed.ProblemKey()] != "" {
-				message = t["err_"+keyed.ProblemKey()]
-			}
-			a.settings(w, r, current, http.StatusUnprocessableEntity, message, false)
+			a.settings(w, r, current, http.StatusUnprocessableEntity, a.explain(r, err))
 			return
 		}
 		a.log.Info("a setting was changed in the web interface", "what", strings.TrimPrefix(r.URL.Path, "/settings/"))
 		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 	}
+}
+
+// extra is what the settings page shows besides the settings themselves.
+type extra struct {
+	saved   bool
+	problem string   // why a change was refused
+	lines   []string // the same, when there are several reasons
+	draft   *string  // rules being edited, if they differ from the saved ones
+	probe   *Probe   // the request that was tried
+	verdict *Verdict // and what the rules said
+}
+
+// explain turns a refused change into what the page says about it.
+func (a *Admin) explain(r *http.Request, err error) extra {
+	t := a.texts[pickLanguage(r.Header.Get("Accept-Language"))]
+	var keyed interface{ ProblemKey() string }
+	if errors.As(err, &keyed) && t["err_"+keyed.ProblemKey()] != "" {
+		return extra{problem: t["err_"+keyed.ProblemKey()]}
+	}
+	var many interface{ Lines() []string }
+	if errors.As(err, &many) {
+		return extra{problem: t["err_rules"], lines: many.Lines()}
+	}
+	return extra{problem: t["err_other"] + " " + err.Error()}
+}
+
+// rules saves the rules written in the interface, or tries them on a
+// made-up request without saving.
+func (a *Admin) rules(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	current, ok := a.sessionOf(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+	if r.ParseForm() != nil { // too large or damaged: never act on half a form
+		http.Error(w, "the form is too large or damaged", http.StatusRequestEntityTooLarge)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.PostFormValue("form")), []byte(current.form)) != 1 {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	draft := strings.ReplaceAll(r.PostFormValue("rules"), "\r\n", "\n")
+	if r.PostFormValue("do") != "test" {
+		if err := a.opts.Settings.SetRules(draft); err != nil {
+			e := a.explain(r, err)
+			e.draft = &draft
+			a.settings(w, r, current, http.StatusUnprocessableEntity, e)
+			return
+		}
+		a.log.Info("a setting was changed in the web interface", "what", "rules")
+		http.Redirect(w, r, "/settings?saved=1#rules", http.StatusSeeOther)
+		return
+	}
+	probe := Probe{Method: r.PostFormValue("method"), Address: r.PostFormValue("address"), UserAgent: r.PostFormValue("user_agent"),
+		Client: r.PostFormValue("client"), Headers: strings.ReplaceAll(r.PostFormValue("headers"), "\r\n", "\n")}
+	verdict, err := a.opts.Settings.Test(draft, probe)
+	e := extra{draft: &draft, probe: &probe}
+	status := http.StatusOK
+	if err != nil {
+		e = a.explain(r, err)
+		e.draft, e.probe = &draft, &probe
+		status = http.StatusUnprocessableEntity
+	} else {
+		e.verdict = &verdict
+	}
+	a.settings(w, r, current, status, e)
+}
+
+type versionRow struct {
+	Number   int
+	At, What string
 }
 
 type presetRow struct {
@@ -542,7 +660,7 @@ type addressRow struct {
 type choice struct{ ID, Label string }
 
 // settings writes the page on which things are changed.
-func (a *Admin) settings(w http.ResponseWriter, r *http.Request, current session, status int, problem string, saved bool) {
+func (a *Admin) settings(w http.ResponseWriter, r *http.Request, current session, status int, e extra) {
 	lang := pickLanguage(r.Header.Get("Accept-Language"))
 	t := a.texts[lang]
 	var presets []presetRow
@@ -566,8 +684,37 @@ func (a *Admin) settings(w http.ResponseWriter, r *http.Request, current session
 	for _, id := range lifetimeOrder {
 		choices = append(choices, choice{id, t["lifetime_"+id]})
 	}
-	a.render(w, status, "settings.html", map[string]any{"Lang": lang, "T": t, "Form": current.form, "Presets": presets,
-		"Addresses": addresses, "Lifetimes": choices, "Problem": problem, "Saved": saved && problem == ""})
+	var versions []versionRow
+	for i, v := range a.opts.Settings.Versions() {
+		kind, name, _ := strings.Cut(v.What, ":")
+		what := strings.ReplaceAll(t["version_"+kind], "{name}", name)
+		if what == "" {
+			what = v.What
+		}
+		versions = append(versions, versionRow{Number: i, At: v.At.UTC().Format("02.01.2006 15:04"), What: what})
+	}
+	text, probe := a.opts.Settings.Rules(), Probe{Method: "GET", Address: "/"}
+	if e.draft != nil {
+		text = *e.draft
+	}
+	if e.probe != nil {
+		probe = *e.probe
+	}
+	data := map[string]any{"Lang": lang, "T": t, "Form": current.form, "Presets": presets,
+		"Addresses": addresses, "Lifetimes": choices, "Problem": e.problem, "Lines": e.lines, "Saved": e.saved && e.problem == "",
+		"Rules": text, "Probe": probe, "Versions": versions, "Methods": []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}}
+	if e.verdict != nil {
+		source := strings.TrimPrefix(e.verdict.Source, "rule:")
+		switch {
+		case e.verdict.Source == "default":
+			source = t["source_default"]
+		case strings.HasPrefix(e.verdict.Source, "threshold:"):
+			source = strings.ReplaceAll(t["source_threshold"], "{weight}", strings.TrimPrefix(e.verdict.Source, "threshold:"))
+		}
+		data["Verdict"] = map[string]string{"Action": t["action_"+e.verdict.Action], "Class": e.verdict.Action}
+		data["VerdictText"] = strings.NewReplacer("{source}", source, "{weight}", strconv.Itoa(e.verdict.Weight)).Replace(t["result_text"])
+	}
+	a.render(w, status, "settings.html", data)
 }
 
 // The overview.
