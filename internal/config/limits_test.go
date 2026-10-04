@@ -273,3 +273,38 @@ func TestWhereASwitchedOnPresetGoes(t *testing.T) {
 		t.Errorf("order lists %d presets, there are %d", len(PresetsInOrder()), len(PresetNames()))
 	}
 }
+
+// A blocked address inside a network that is let through stays blocked, and
+// the two rule names of the list cannot be taken by the owner's own rules.
+func TestListedBlockBeatsListedAllow(t *testing.T) {
+	path := writeFiles(t, map[string]string{
+		"xibalba.yaml":       base,
+		"admin.changes.json": `{"addresses": [{"network": "198.51.100.0/24", "action": "allow"}, {"network": "198.51.100.7", "action": "deny"}]}`,
+	})
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, _ := cfg.RuleSpec(cfg.Admin.Changes, time.Now())
+	engine, problems := rules.Compile(spec)
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	for addr, want := range map[string]rules.Action{"198.51.100.7": rules.Deny, "198.51.100.8": rules.Allow} {
+		if got := engine.Evaluate(&rules.Request{Method: "GET", Path: "/", Client: netip.MustParseAddr(addr)}); got.Action != want {
+			t.Errorf("%s: %s, want %s", addr, got.Action, want)
+		}
+	}
+
+	taken := base + "rules:\n  list:\n    - name: web-interface.allow\n      match: {path: {prefix: \"/x\"}}\n      action: allow\n"
+	if _, err := Parse("xibalba.yaml", []byte(taken)); err == nil || !strings.Contains(err.Error(), "kept for the address list") {
+		t.Errorf("a reserved rule name: %v", err)
+	}
+
+	// Entries past their time do not count and do not keep Xibalba from starting.
+	old := `{"addresses": [{"network": "0.0.0.0", "action": "deny", "expires": "2020-01-01T00:00:00Z"}]}`
+	cfg, err = Load(writeFiles(t, map[string]string{"xibalba.yaml": base, "admin.changes.json": old}))
+	if err != nil || len(cfg.Admin.Changes.Addresses) != 0 {
+		t.Errorf("an expired entry: %+v, %v", cfg.Admin.Changes, err)
+	}
+}

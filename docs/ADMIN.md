@@ -164,10 +164,19 @@ network (`192.0.2.0/24`), choose whether it is let through or blocked, how
 long the entry stays (1 hour to 1 year, or without end; 30 days unless you
 choose otherwise), and a note for yourself. Things to know:
 
-- An entry comes before every rule. A blocked address gets the block page;
-  an address that is let through skips rules, security check and request
-  limits.
-- An entry ends by itself when its time is over.
+- An entry comes before every rule, **also before your own rules in the
+  configuration file and before every preset**. A blocked address gets the
+  block page; an address that is let through skips rules, security check
+  and request limits. Let through only addresses you trust.
+- Blocked beats let through: a blocked address inside a network that is let
+  through stays blocked.
+- An entry ends by itself when its time is over. Within a minute it is out
+  of force and gone from the changes file.
+- This machine's own address and the web servers in
+  `server.trusted_proxies` cannot be let through. If Xibalba sees such an
+  address for every visitor, letting it through would let everyone through.
+  Set `server.trusted_proxies` correctly before you use the list behind a
+  web server: otherwise every visitor has the web server's address.
 - At most 500 entries, and no network larger than a `/16` (IPv4) or `/32`
   (IPv6): the list is for single clients and organisations. For more, write
   a rule in the configuration file.
@@ -206,6 +215,11 @@ changes file is plain text:
 - A change that would give a rule set that does not work is refused and
   explained on the page; for example switching on `block-trapped` while the
   trap is off. A change that cannot be written to the file is taken back.
+- The names `web-interface.allow` and `web-interface.deny` are the two
+  rules made from the list; they appear under these names in the counts.
+  Your own rules cannot use names that start with `web-interface.`.
+- The part is `changes` in `/healthz`. It turns `degraded` if an expired
+  entry could not be taken out.
 - With `allow_changes`, Xibalba fetches the crawlers' address lists from the
   start, also if no rule asks for a crawler yet, because a preset switched
   on later needs them at once.
@@ -226,7 +240,7 @@ never from a link and never from another website.
 ### Privacy
 
 The addresses you list are stored in the changes file until you remove them
-or their time is over. They are your own, deliberate entries, like an
+or their time is over, at which point they are deleted from the file. They are your own, deliberate entries, like an
 address in a rule. Give entries an end date where you can.
 
 ## Planned

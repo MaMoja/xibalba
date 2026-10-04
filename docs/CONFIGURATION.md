@@ -365,6 +365,7 @@ top-level state is the worst state of any component. A component that is not
 | `limits` | The request limits. Listed only while `limits.enabled` is `true`. | Never: it keeps no state that can fail. |
 | `trap` | The trap. Listed only while `trap.enabled` is `true`. | Never. |
 | `statistics` | The counters kept on disk. Listed only if `statistics.directory` is set. | They cannot be written (`degraded`). Requests are not affected. |
+| `changes` | The changes made in the web interface. Listed only if there are any or `admin.allow_changes` is `true`. | An expired entry of the address list could not be taken out (`degraded`). |
 | `statistics-networks` | The counts per network. Listed only if `statistics.networks.enabled` is `true`. | They cannot be written (`degraded`). Requests are not affected. |
 | `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |

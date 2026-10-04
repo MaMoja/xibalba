@@ -67,7 +67,7 @@
   "group": "Group",
   "does": "What it does",
   "addresses_title": "Addresses let through or blocked",
-  "addresses_hint": "An entry here comes before every rule. Addresses that are let through are also not counted by the request limits.",
+  "addresses_hint": "An entry here comes before every rule, also before your own rules in the configuration file. A blocked address inside a network that is let through stays blocked. Addresses that are let through are also not counted by the request limits.",
   "network": "Address or network",
   "network_hint": "For example 192.0.2.7 or 192.0.2.0/24",
   "note": "Note",
@@ -94,7 +94,7 @@
   "err_network_listed": "That address or network is already on the list. Remove the entry first to change it.",
   "err_network_unknown": "That entry is no longer on the list.",
   "err_action_invalid": "Choose whether the address is let through or blocked.",
-  "err_note_invalid": "The note is too long (200 characters at most) or has a line break.",
+  "err_note_invalid": "The note is too long (200 characters at most) or has a line break or control character.",
   "err_lifetime_invalid": "That is not one of the durations on offer.",
   "err_preset_unknown": "There is no rule group of that name.",
   "err_too_many": "The list is full (500 entries). Remove entries you no longer need.",
@@ -111,5 +111,6 @@
   "preset_allow-ai-search": "Lets genuine crawlers of AI search services through, which show and link websites.",
   "preset_allow-ai-user-fetch": "Lets genuine AI assistants fetch a page when one of their users asks for it.",
   "preset_weigh-odd-browsers": "Adds suspicion to requests that claim to be a browser but do not behave like one. Decides nothing by itself: it needs rules.thresholds in the configuration file.",
-  "preset_challenge-browsers": "Makes everything that says it is a browser pass the security check once."
+  "preset_challenge-browsers": "Makes everything that says it is a browser pass the security check once.",
+  "err_allow_protected": "That address cannot be let through: it is this machine's own address or that of a web server in front of Xibalba. If Xibalba sees that address for every visitor, everyone would be let through."
 }

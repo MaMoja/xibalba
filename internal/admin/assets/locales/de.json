@@ -67,7 +67,7 @@
   "group": "Gruppe",
   "does": "Was sie tut",
   "addresses_title": "Durchgelassene und blockierte Adressen",
-  "addresses_hint": "Ein Eintrag hier kommt vor jeder Regel. Durchgelassene Adressen werden auch von den Anfragelimits nicht gezählt.",
+  "addresses_hint": "Ein Eintrag hier kommt vor jeder Regel, auch vor Ihren eigenen Regeln in der Konfigurationsdatei. Eine blockierte Adresse in einem durchgelassenen Netz bleibt blockiert. Durchgelassene Adressen werden auch von den Anfragelimits nicht gezählt.",
   "network": "Adresse oder Netz",
   "network_hint": "Zum Beispiel 192.0.2.7 oder 192.0.2.0/24",
   "note": "Notiz",
@@ -94,7 +94,7 @@
   "err_network_listed": "Diese Adresse oder dieses Netz steht schon in der Liste. Entfernen Sie den Eintrag zuerst, um ihn zu ändern.",
   "err_network_unknown": "Dieser Eintrag steht nicht mehr in der Liste.",
   "err_action_invalid": "Wählen Sie, ob die Adresse durchgelassen oder blockiert wird.",
-  "err_note_invalid": "Die Notiz ist zu lang (höchstens 200 Zeichen) oder enthält einen Zeilenumbruch.",
+  "err_note_invalid": "Die Notiz ist zu lang (höchstens 200 Zeichen) oder enthält einen Zeilenumbruch oder ein Steuerzeichen.",
   "err_lifetime_invalid": "Das ist keine der angebotenen Dauern.",
   "err_preset_unknown": "Eine Regelgruppe mit diesem Namen gibt es nicht.",
   "err_too_many": "Die Liste ist voll (500 Einträge). Entfernen Sie Einträge, die Sie nicht mehr brauchen.",
@@ -111,5 +111,6 @@
   "preset_allow-ai-search": "Lässt echte Crawler von KI-Suchdiensten durch, die Websites anzeigen und verlinken.",
   "preset_allow-ai-user-fetch": "Lässt echte KI-Assistenten eine Seite abrufen, wenn einer ihrer Nutzer danach fragt.",
   "preset_weigh-odd-browsers": "Erhöht den Verdacht bei Anfragen, die sich als Browser ausgeben, sich aber nicht so verhalten. Entscheidet allein nichts: Dazu braucht es rules.thresholds in der Konfigurationsdatei.",
-  "preset_challenge-browsers": "Lässt alles, was sich als Browser ausgibt, einmal die Sicherheitsprüfung bestehen."
+  "preset_challenge-browsers": "Lässt alles, was sich als Browser ausgibt, einmal die Sicherheitsprüfung bestehen.",
+  "err_allow_protected": "Diese Adresse kann nicht durchgelassen werden: Es ist die eigene Adresse dieses Rechners oder die eines Webservers vor Xibalba. Sieht Xibalba diese Adresse für jeden Besucher, würde jeder durchgelassen."
 }

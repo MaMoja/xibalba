@@ -100,6 +100,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Its own switch, `admin.allow_changes`, off by default (owner's decision 2026-10-04)
 - [x] Preset switches, in force at once
 - [x] IP block and allow lists with expiry and notes
+- [x] Security review of this part by a second agent (2026-10-04); no high finding. Fixed: a listed allow beat a more specific listed block (block now comes first); expired entries stayed in the file; reserved rule names; this machine's and the trusted proxies' addresses cannot be let through; notes counted in characters, control characters refused; `changes` in `/healthz`.
 - [x] Changes kept in their own file; the configuration file is never rewritten; rule set replaced while running
 - [ ] Rule editor with validation and request test box
 - [ ] Versioned config with rollback

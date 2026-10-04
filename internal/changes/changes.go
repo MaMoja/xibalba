@@ -6,10 +6,15 @@
 package changes
 
 import (
+	"io"
+	"unicode"
+	"unicode/utf8"
+
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MaMoja/xibalba/internal/health"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -23,7 +28,7 @@ const (
 	// MaxAddresses is how many addresses and networks can be listed. Each
 	// request is compared with all of them.
 	MaxAddresses = 500
-	// MaxNote is the longest note, in bytes.
+	// MaxNote is the longest note, in characters.
 	MaxNote = 200
 	// MaxLifetime is the longest time an entry can be set to last.
 	MaxLifetime = 366 * 24 * time.Hour
@@ -121,7 +126,7 @@ func (s State) Check(presets []string) error {
 		return problem("too_many", "more than %d addresses are listed", MaxAddresses)
 	}
 	seen := map[netip.Prefix]bool{}
-	for _, e := range s.Addresses {
+	for i, e := range s.Addresses {
 		prefix, err := ParseNetwork(e.Network)
 		if err != nil {
 			return err
@@ -130,14 +135,14 @@ func (s State) Check(presets []string) error {
 			return problem("network_invalid", "an entry is not in its plain form")
 		}
 		if seen[prefix] {
-			return problem("network_listed", "%s is listed twice", prefix)
+			return problem("network_listed", "entry number %d is listed twice", i+1)
 		}
 		seen[prefix] = true
 		if e.Action != Allow && e.Action != Deny {
 			return problem("action_invalid", "an entry has an action that is neither allow nor deny")
 		}
-		if len(e.Note) > MaxNote || strings.ContainsAny(e.Note, "\r\n\x00") {
-			return problem("note_invalid", "a note is longer than %d bytes or has a line break", MaxNote)
+		if utf8.RuneCountInString(e.Note) > MaxNote || !utf8.ValidString(e.Note) || strings.ContainsFunc(e.Note, unicode.IsControl) {
+			return problem("note_invalid", "a note is longer than %d characters or has a line break or control character", MaxNote)
 		}
 	}
 	return nil
@@ -159,6 +164,20 @@ func (s State) Active(now time.Time) (allow, deny []string) {
 		}
 	}
 	return allow, deny
+}
+
+// WithoutExpired returns s without the entries whose time is over at now.
+// They have no effect any more and must not stay on disk.
+func (s State) WithoutExpired(now time.Time) State {
+	out := s.clone()
+	kept := out.Addresses[:0]
+	for _, e := range out.Addresses {
+		if e.Expires.IsZero() || e.Expires.After(now) {
+			kept = append(kept, e)
+		}
+	}
+	out.Addresses = kept
+	return out
 }
 
 // Empty reports whether nothing was changed.
@@ -185,9 +204,14 @@ func Load(path string) (State, error) {
 	if err != nil || info.IsDir() || info.Size() > maxFile {
 		return s, errors.New("it cannot be read, is a directory or is larger than 1 MiB")
 	}
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return s, errors.New("it cannot be read")
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, maxFile+1))
+	_ = f.Close()
+	if err != nil || len(raw) > maxFile {
+		return s, errors.New("it cannot be read or is larger than 1 MiB")
 	}
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return State{}, errors.New("it is not valid JSON")
@@ -223,6 +247,10 @@ func Save(path string, s State) error {
 		_ = os.Remove(tmp.Name())
 		return errors.New("the changes file cannot be written")
 	}
+	if dir, err := os.Open(filepath.Dir(path)); err == nil { // so the new name survives a power cut
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
 	return nil
 }
 
@@ -234,6 +262,12 @@ type Options struct {
 	Initial State
 	// Presets are the names of the presets that exist.
 	Presets []string
+	// Protected are networks that must not be listed as let through,
+	// besides this machine's own addresses: the web servers in front
+	// (server.trusted_proxies). If such a server's address is what
+	// Xibalba sees for every visitor, letting it through would let
+	// everyone through.
+	Protected []netip.Prefix
 	// Apply puts a State into force. If it returns an error, the change is
 	// refused and nothing is written.
 	Apply func(State) error
@@ -246,9 +280,20 @@ type Options struct {
 type Store struct {
 	opts Options
 
-	mu    sync.Mutex
-	state State
-	next  time.Time // when the next entry expires; zero if none
+	mu      sync.Mutex
+	state   State
+	next    time.Time // when the next entry expires; zero if none
+	problem string    // why the last look at expired entries failed, or ""
+}
+
+// Health reports whether expired entries could be taken out of force.
+func (s *Store) Health() health.Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.problem != "" {
+		return health.Status{State: health.Degraded, Detail: s.problem}
+	}
+	return health.Status{State: health.OK}
 }
 
 // NewStore returns a Store.
@@ -285,6 +330,7 @@ func (s *Store) schedule() {
 // commit checks, applies and saves next, and makes it the current state.
 // The caller holds the lock.
 func (s *Store) commit(next State) error {
+	next = next.WithoutExpired(s.opts.Now())
 	if err := next.Check(s.opts.Presets); err != nil {
 		return err
 	}
@@ -322,6 +368,16 @@ func (s *Store) Add(network, action, note string, lifetime time.Duration) error 
 	if lifetime < 0 || lifetime > MaxLifetime {
 		return problem("lifetime_invalid", "the entry cannot last that long")
 	}
+	if action == Allow {
+		if prefix.Addr().IsLoopback() || prefix.Addr().IsUnspecified() {
+			return problem("allow_protected", "this machine's own address cannot be let through")
+		}
+		for _, p := range s.opts.Protected {
+			if p.Overlaps(prefix) {
+				return problem("allow_protected", "the address of a web server in front (server.trusted_proxies) cannot be let through")
+			}
+		}
+	}
 	plain := prefix.String()
 	if prefix.IsSingleIP() {
 		plain = prefix.Addr().String()
@@ -333,14 +389,8 @@ func (s *Store) Add(network, action, note string, lifetime time.Duration) error 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	next := s.state.clone()
-	kept := next.Addresses[:0]
-	for _, e := range next.Addresses { // entries past their time make room
-		if e.Expires.IsZero() || e.Expires.After(now) {
-			kept = append(kept, e)
-		}
-	}
-	next.Addresses = append(kept, entry)
+	next := s.state.WithoutExpired(now) // entries past their time make room
+	next.Addresses = append(next.Addresses, entry)
 	return s.commit(next)
 }
 
@@ -370,8 +420,12 @@ func (s *Store) Tick() {
 	if s.next.IsZero() || s.opts.Now().Before(s.next) {
 		return
 	}
-	_ = s.opts.Apply(s.state) // expired entries are left out by whoever applies
-	s.schedule()
+	// The expired entries go out of force and off the disk.
+	if err := s.commit(s.state); err != nil {
+		s.problem = "an entry of the address list has expired but could not be taken out: " + err.Error()
+		return // next stays: the next look tries again
+	}
+	s.problem = ""
 }
 
 // ProblemKey names the reason for the web interface.

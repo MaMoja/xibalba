@@ -466,9 +466,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// Changes made in the web interface: applied on top of the
 	// configuration, kept in their own file, in force as long as it exists.
 	changed := changes.NewStore(changes.Options{
-		Path:    cfg.Admin.ChangesPath,
-		Initial: cfg.Admin.Changes,
-		Presets: config.PresetNames(),
+		Path:      cfg.Admin.ChangesPath,
+		Initial:   cfg.Admin.Changes,
+		Presets:   config.PresetNames(),
+		Protected: cfg.Server.TrustedPrefixes(),
 		Apply: func(state changes.State) error {
 			spec, err := cfg.RuleSpec(state, time.Now())
 			if err != nil {
@@ -486,6 +487,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		},
 	})
 	if !cfg.Admin.Changes.Empty() || mayChange {
+		registry.Register("changes", changed.Health)
 		supervisor.Add(changes.NewWatcher(changed))
 	}
 	if !cfg.Admin.Changes.Empty() {

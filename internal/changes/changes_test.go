@@ -2,6 +2,7 @@ package changes
 
 import (
 	"errors"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,5 +217,69 @@ func TestLoad(t *testing.T) {
 	forged := State{Addresses: []Entry{{Network: "0.0.0.0/0", Action: Deny}}}
 	if err := forged.Check(nil); key(err) != "network_too_large" {
 		t.Errorf("a hand-made file that blocks everyone: %v", err)
+	}
+}
+
+// An entry whose time is over leaves the file too, not only the rule set.
+func TestExpiredEntriesLeaveTheFile(t *testing.T) {
+	s, w := newStore(t, State{})
+	if err := s.Add("192.0.2.7", Deny, "private note", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	w.now = w.now.Add(2 * time.Hour)
+	s.Tick()
+	raw, _ := os.ReadFile(w.path)
+	if strings.Contains(string(raw), "192.0.2.7") || strings.Contains(string(raw), "private note") {
+		t.Errorf("the expired entry is still on disk:\n%s", raw)
+	}
+	if h := s.Health(); h.State != "ok" {
+		t.Errorf("health = %+v", h)
+	}
+
+	// If it cannot be taken out, health says so and the next look tries again.
+	if err := s.Add("192.0.2.8", Deny, "", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	w.now = w.now.Add(2 * time.Hour)
+	w.refuse = errors.New("no")
+	s.Tick()
+	if h := s.Health(); h.State != "degraded" {
+		t.Errorf("health after a failed look = %+v", h)
+	}
+	w.refuse = nil
+	s.Tick()
+	if h := s.Health(); h.State != "ok" || len(s.State().Addresses) != 0 {
+		t.Errorf("after the second look: %+v, %+v", h, s.State())
+	}
+	old := State{Addresses: []Entry{{Network: "192.0.2.9", Action: Deny, Expires: w.now.Add(-time.Hour)}, {Network: "192.0.2.10", Action: Deny}}}
+	if got := old.WithoutExpired(w.now).Addresses; len(got) != 1 || got[0].Network != "192.0.2.10" || len(old.Addresses) != 2 {
+		t.Errorf("WithoutExpired = %+v (original %+v)", got, old.Addresses)
+	}
+}
+
+func TestAddressesThatMustNotBeLetThrough(t *testing.T) {
+	s, _ := newStore(t, State{})
+	s.opts.Protected = []netip.Prefix{netip.MustParsePrefix("10.0.0.5/32")}
+	for _, network := range []string{"127.0.0.1", "::1", "127.0.0.0/16", "10.0.0.5", "10.0.0.0/24"} {
+		if err := s.Add(network, Allow, "", 0); key(err) != "allow_protected" {
+			t.Errorf("allow %s: %v", network, err)
+		}
+	}
+	// Blocking them is the owner's business, and other addresses are fine.
+	if err := s.Add("10.0.1.0/24", Allow, "", 0); err != nil {
+		t.Errorf("allow a neighbour: %v", err)
+	}
+}
+
+func TestNotes(t *testing.T) {
+	s, _ := newStore(t, State{})
+	if err := s.Add("192.0.2.1", Deny, strings.Repeat("ä", MaxNote), 0); err != nil {
+		t.Errorf("200 umlauts: %v", err)
+	}
+	for i, note := range []string{strings.Repeat("ä", MaxNote+1), "esc\x1b[31m", "tab\there", "bad\xffutf8"} {
+		err := s.Add("192.0.2."+itoa(i+10), Deny, note, 0)
+		if key(err) != "note_invalid" {
+			t.Errorf("note %q: %v", note, err)
+		}
 	}
 }

@@ -94,13 +94,15 @@ func presetRules(name string) ([]rules.RuleSpec, []byte, error) {
 func (c *Config) RuleSpec(state changes.State, now time.Time) (rules.Spec, error) {
 	var all []rules.RuleSpec
 	allow, deny := state.Active(now)
+	// Blocked comes first: where a blocked address lies inside a network
+	// that is let through, the block holds.
+	if len(deny) > 0 {
+		all = append(all, rules.RuleSpec{Name: ListDenyRule, Match: rules.MatchSpec{IP: deny}, Action: rules.Deny})
+	}
 	if len(allow) > 0 {
 		// The owner listed these addresses by hand: they are let through
 		// and, like limits.exempt, not counted by the request limits.
 		all = append(all, rules.RuleSpec{Name: ListAllowRule, Match: rules.MatchSpec{IP: allow}, Action: rules.Allow, ExemptFromLimits: true})
-	}
-	if len(deny) > 0 {
-		all = append(all, rules.RuleSpec{Name: ListDenyRule, Match: rules.MatchSpec{IP: deny}, Action: rules.Deny})
 	}
 	all = append(all, c.Rules.List...)
 	for _, name := range c.Rules.EffectivePresets(state) {
@@ -128,11 +130,26 @@ func (c *Config) checkChanges(dir string, add func(path, message, hint string)) 
 	}
 	a.ChangesPath = resolve(dir, a.ChangesFile)
 	const hint = "correct the file, or delete it to drop every change made in the web interface"
+	for i, rule := range c.Rules.List {
+		if strings.HasPrefix(rule.Name, "web-interface.") {
+			add(fmt.Sprintf("rules.list[%d].name", i), fmt.Sprintf("the name %q is kept for the address list of the web interface", rule.Name),
+				`choose a name that does not start with "web-interface."`)
+		}
+	}
+	for _, file := range c.Rules.Imported {
+		for _, rule := range file.Rules {
+			if strings.HasPrefix(rule.Name, "web-interface.") {
+				add("rules.files", fmt.Sprintf("in %s, the name %q is kept for the address list of the web interface", file.Path, rule.Name),
+					`choose a name that does not start with "web-interface."`)
+			}
+		}
+	}
 	state, err := changes.Load(a.ChangesPath)
 	if err != nil {
 		add("admin.changes_file", fmt.Sprintf("%q cannot be used: %v", a.ChangesFile, err), hint)
 		return
 	}
+	state = state.WithoutExpired(time.Now()) // no effect any more; gone from the file at the next change
 	if err := state.Check(PresetNames()); err != nil {
 		add("admin.changes_file", fmt.Sprintf("%q holds a change that is not valid: %v", a.ChangesFile, err), hint)
 		return
