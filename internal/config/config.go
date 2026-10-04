@@ -45,6 +45,8 @@ type Config struct {
 	Rules Rules `yaml:"rules"`
 	// Crawlers says how crawlers are recognised and verified.
 	Crawlers Crawlers `yaml:"crawlers"`
+	// Admin is the optional web interface.
+	Admin Admin `yaml:"admin"`
 	// Statistics keeps counters by the hour on disk.
 	Statistics Statistics `yaml:"statistics"`
 	// Countries is the database that says which country an address is in.
@@ -298,6 +300,7 @@ func Default() Config {
 		Rules:      defaultRules(),
 		Crawlers:   defaultCrawlers(),
 		Limits:     defaultLimits(),
+		Admin:      defaultAdmin(),
 		Trap:       defaultTrap(),
 		Countries:  defaultCountries(),
 		Statistics: defaultStatistics(),
@@ -373,6 +376,9 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
 	cfg.Rules.CountriesOn = cfg.Countries.Database != ""
+	cfg.Admin.check(filepath.Dir(name), map[string]string{"server.listen": cfg.Server.Listen, "ops.listen": cfg.Ops.Listen}, func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
 	cfg.Limits.check(func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})

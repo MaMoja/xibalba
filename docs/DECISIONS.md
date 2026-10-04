@@ -4,6 +4,27 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **The web interface is an option, off by default, and as small as it can
+  be** (owner's decision). Its own listener, so that switched off nothing of
+  it exists and the operations listener stays free of logins. Pages are
+  rendered on the server without any script: the chart is an SVG drawn by
+  the server, with the same numbers as a table. About 600 lines of Go and
+  6 kB of embedded files.
+- **Password with PBKDF2-SHA256 from the standard library** (Go 1.24 has
+  `crypto/pbkdf2`), 600000 rounds, instead of bcrypt or argon2, which would
+  be a dependency. Checks run one at a time, and an address waits after five
+  failures, so the cost of a check cannot be used to keep the machine busy.
+- **One password, no user names; sessions in memory.** Small installations
+  have one operator. A restart signs everyone out, which is acceptable and
+  saves a session store. User accounts go to Later if someone asks.
+- **`-set-password` hides the typing through a terminal call from the
+  standard library** (`syscall`, Linux), instead of `golang.org/x/term`.
+  On other systems the password has to be piped in.
+- **`Referrer-Policy: same-origin` on the web interface, not `no-referrer`.**
+  With `no-referrer`, browsers send `Origin: null` with forms, and the check
+  that a form comes from our own page refused every login. Found by trying
+  it in a real browser.
+
 - **Counts per network are an option, off by default, with their own short
   time limit and only the largest networks per hour.** The owner asked for
   statistics per network. A `/24` or `/48` is not an address, but a small

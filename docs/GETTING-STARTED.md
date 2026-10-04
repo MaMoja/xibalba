@@ -226,11 +226,29 @@ Wanted crawlers and plain programs pass, crawlers that collect training data
 are denied, and whatever says it is a browser has to prove it. What each line
 does is explained in [Rules](RULES.md#presets) and [Crawlers](CRAWLERS.md).
 
+## Optional: the web interface
+
+Xibalba can show its numbers in a browser. This is a choice: it is off unless
+you switch it on, and switched off it uses nothing.
+
+```sh
+xibalba -set-password -config /etc/xibalba/xibalba.yaml
+```
+
+```yaml
+admin:
+  enabled: true
+```
+
+Restart, then open <http://127.0.0.1:9091/> on the server, or through an SSH
+tunnel from your own machine. Details: [Web interface](ADMIN.md).
+
 ## Where to go from here
 
 | I want to … | Read |
 |---|---|
 | write my own rules | [Rules](RULES.md) |
+| see the numbers in a browser | [Web interface](ADMIN.md) |
 | decide about AI crawlers and search engines | [Crawlers](CRAWLERS.md) |
 | limit how much one client may ask for | [Limits](LIMITS.md) |
 | block or check by country | [Countries](COUNTRIES.md) |

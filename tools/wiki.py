@@ -32,6 +32,7 @@ SECTIONS = [
         ("TRAP.md", "Trap", "The hidden link that catches crawlers, and the maze"),
         ("STATISTICS.md", "Statistics", "Counters kept on disk by the hour"),
         ("METRICS.md", "Metrics", "The numbers for a monitoring system"),
+        ("ADMIN.md", "Web-Interface", "The optional overview in the browser"),
         ("OPERATIONS.md", "Operations", "Running, updating, troubleshooting"),
         ("PRIVACY.md", "Privacy", "What is stored and what is not"),
         ("SPONSORS.md", "Sponsors", "What is free and what the sponsor license adds"),

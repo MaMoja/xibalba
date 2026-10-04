@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.T.overview}} · {{.T.title}}</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header>
+<p>{{.T.title}}</p>
+<form method="post" action="/logout"><button type="submit">{{.T.sign_out}}</button></form>
+</header>
+<main>
+<h1>{{.T.overview}}</h1>
+{{if .DryRun}}<p class="notice">{{.T.dry_run}}</p>{{end}}
+{{if .History}}
+<nav aria-label="{{.T.range_label}}"><ul>
+{{range .Ranges}}<li><a href="/?range={{.ID}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}
+</ul></nav>
+{{else}}<p class="notice">{{.T.no_history}}</p>{{end}}
+
+<h2>{{.T.requests}} <span class="dim">({{.RangeLabel}})</span></h2>
+<dl class="tiles">
+<div class="allow"><dt>{{.T.allowed}}</dt><dd>{{.Allowed}}</dd></div>
+<div class="check"><dt>{{.T.challenged}}</dt><dd>{{.Challenged}}</dd></div>
+<div class="deny"><dt>{{.T.denied}}</dt><dd>{{.Denied}}</dd></div>
+</dl>
+
+{{if .Chart}}
+<h2 id="chart">{{.T.chart_title}}</h2>
+<svg viewBox="0 0 {{.Chart.Width}} {{.Chart.Height}}" role="img" aria-labelledby="chart" aria-describedby="charthint">
+{{range .Chart.Bars}}<rect class="{{.Class}}" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"/>{{end}}
+</svg>
+<ul class="legend">
+<li><span class="allow"></span>{{.T.allowed}}</li>
+<li><span class="check"></span>{{.T.challenged}}</li>
+<li><span class="deny"></span>{{.T.denied}}</li>
+</ul>
+<p class="dim" id="charthint">{{.ChartHint}}</p>
+<details><summary>{{.T.as_table}}</summary>
+<div class="scroll" tabindex="0" role="group" aria-label="{{$.T.scroll_label}}"><table>
+<thead><tr><th scope="col">{{.T.time}}</th><th scope="col" class="n">{{.T.allowed}}</th><th scope="col" class="n">{{.T.challenged}}</th><th scope="col" class="n">{{.T.denied}}</th></tr></thead>
+<tbody>{{range .Chart.Rows}}<tr><th scope="row">{{.Label}}</th><td class="n">{{.Allowed}}</td><td class="n">{{.Challenged}}</td><td class="n">{{.Denied}}</td></tr>{{end}}</tbody>
+</table></div>
+</details>
+{{end}}
+
+<h2>{{.T.rules_title}}</h2>
+{{if .Rules}}<div class="scroll" tabindex="0" role="group" aria-label="{{$.T.scroll_label}}"><table>
+<thead><tr><th scope="col">{{.T.rule}}</th><th scope="col">{{.T.action}}</th><th scope="col" class="n">{{.T.count}}</th></tr></thead>
+<tbody>{{range .Rules}}<tr><td class="name">{{.Name}}</td><td>{{.Action}}</td><td class="n">{{.Count}}</td></tr>{{end}}</tbody>
+</table></div>{{else}}<p>{{.T.nothing}}</p>{{end}}
+
+{{if .Crawlers}}
+<h2>{{.T.crawlers_title}}</h2>
+<div class="scroll" tabindex="0" role="group" aria-label="{{$.T.scroll_label}}"><table>
+<thead><tr><th scope="col">{{.T.crawler}}</th><th scope="col" class="n">{{.T.verified}}</th><th scope="col" class="n">{{.T.impostor}}</th><th scope="col" class="n">{{.T.unchecked}}</th></tr></thead>
+<tbody>{{range .Crawlers}}<tr><td class="name">{{.Name}}</td><td class="n">{{.Verified}}</td><td class="n">{{.Impostor}}</td><td class="n">{{.Unchecked}}</td></tr>{{end}}</tbody>
+</table></div>
+{{end}}
+
+<h2>{{.T.check_title}}</h2>
+<div class="scroll" tabindex="0" role="group" aria-label="{{$.T.scroll_label}}"><table><tbody>
+<tr><th scope="row">{{.T.check_served}}</th><td class="n">{{.Check.Served}}</td></tr>
+<tr><th scope="row">{{.T.check_solved}}</th><td class="n">{{.Check.Solved}}</td></tr>
+<tr><th scope="row">{{.T.check_failed}}</th><td class="n">{{.Check.Failed}}</td></tr>
+<tr><th scope="row">{{.T.check_passed}}</th><td class="n">{{.Check.Passed}}</td></tr>
+</tbody></table></div>
+
+{{if .Other}}
+<h2>{{.T.other_title}}</h2>
+<div class="scroll" tabindex="0" role="group" aria-label="{{$.T.scroll_label}}"><table><tbody>
+{{range .Other}}<tr><th scope="row">{{.Name}}</th><td class="n">{{.Count}}</td></tr>{{end}}
+</tbody></table></div>
+{{end}}
+
+<h2>{{.T.health_title}}</h2>
+<div class="scroll" tabindex="0" role="group" aria-label="{{$.T.scroll_label}}"><table>
+<thead><tr><th scope="col">{{.T.part}}</th><th scope="col">{{.T.state}}</th><th scope="col">{{.T.detail}}</th></tr></thead>
+<tbody>{{range .Parts}}<tr><td>{{.Name}}</td><td>{{.State}}</td><td class="note">{{.Detail}}</td></tr>{{end}}</tbody>
+</table></div>
+<p class="dim">{{.T.version}}: {{.Version}}</p>
+</main>
+</body>
+</html>

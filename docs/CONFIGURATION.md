@@ -294,6 +294,17 @@ Counters kept on disk by the hour; explained in [STATISTICS.md](STATISTICS.md).
 Logs go to standard error. Every line carries a `component` attribute naming
 the part of the program that wrote it.
 
+### `admin`
+
+The optional web interface. See [ADMIN.md](ADMIN.md).
+
+| Setting | Default | Allowed | Meaning |
+|---|---|---|---|
+| `admin.enabled` | `false` | `true`, `false` | Switches the web interface on. Off, nothing listens. Needs a password, set with `xibalba -set-password -config <file>`. |
+| `admin.listen` | `127.0.0.1:9091` | `host:port`, different from the other listeners | Where the web interface listens. The connection is not encrypted; keep it local or put HTTPS in front. |
+| `admin.password_file` | `admin.password` | Path of a file, relative to the configuration file | Holds the stored form of the password, never the password. Written by `-set-password`. |
+| `admin.session_lifetime` | `12h` | `5m` to `720h` | How long a login lasts. |
+
 ### `ops`
 
 The operations listener serves internal endpoints. It is separate from the

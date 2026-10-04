@@ -203,6 +203,7 @@ The same pages, easier to browse, are in the [wiki](https://github.com/MaMoja/xi
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
 | [Countries](docs/COUNTRIES.md) | Rules by country: which database, licences, keeping it current |
 | [Trap](docs/TRAP.md) | The hidden link that catches crawlers, and the optional maze |
+| [Web interface](docs/ADMIN.md) | The optional overview in the browser: switching it on, reaching it safely |
 | [Operations](docs/OPERATIONS.md) | Running, updating, troubleshooting |
 | [Privacy](docs/PRIVACY.md) | What is stored and what is not |
 | [FAQ](docs/FAQ.md) | Questions operators ask |

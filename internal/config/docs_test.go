@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/MaMoja/xibalba/internal/admin"
 	"github.com/MaMoja/xibalba/internal/geo/geotest"
 	"os"
 	"path/filepath"
@@ -101,6 +102,17 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 			}
 			if strings.Contains(config, "sponsor.license") {
 				if err := os.WriteFile(filepath.Join(dir, "sponsor.license"), []byte(sponsor.issue(t, "2099-01-01")), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Examples that switch the web interface on come after the
+			// step that sets a password; give them one.
+			if regexp.MustCompile(`(?m)^admin:`).MatchString(config) {
+				line, err := admin.HashPassword("a password for the examples")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "admin.password"), []byte(line+"\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/MaMoja/xibalba/internal/admin"
 	"net/netip"
 	"os"
 	"strings"
@@ -147,5 +148,55 @@ func TestStatisticsSettings(t *testing.T) {
 		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", yaml, err)
 		}
+	}
+}
+
+func TestAdminSettings(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := cfg.Admin; a.Enabled || a.Listen != "127.0.0.1:9091" || a.PasswordFile != "admin.password" || a.SessionLifetime != 12*time.Hour {
+		t.Errorf("defaults = %+v", a)
+	}
+	line, err := admin.HashPassword("a password for the tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeFiles(t, map[string]string{"xibalba.yaml": base + "admin:\n  enabled: true\n  password_file: secret/pw\n", "secret/pw": line + "\n"})
+	if cfg, err = Load(path); err != nil || !cfg.Admin.Password.Matches("a password for the tests") {
+		t.Fatalf("err = %v", err)
+	}
+	if got, err := PasswordFile(path); err != nil || !strings.HasSuffix(got, "/secret/pw") {
+		t.Errorf("PasswordFile = %q, %v", got, err)
+	}
+	// The file is found even while the configuration is not valid yet.
+	broken := writeFiles(t, map[string]string{"xibalba.yaml": base + "admin:\n  enabled: true\n"})
+	if got, err := PasswordFile(broken); err != nil || !strings.HasSuffix(got, "/admin.password") {
+		t.Errorf("PasswordFile = %q, %v", got, err)
+	}
+	bad := writeFiles(t, map[string]string{"xibalba.yaml": base + "admin:\n  enabled: true\n", "admin.password": "geheim123456\n"})
+	for file, want := range map[string]string{broken: "does not exist", bad: "does not hold a stored password"} {
+		_, err := Load(file)
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "-set-password") {
+			t.Errorf("%s: %v", want, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "geheim123456") {
+			t.Errorf("the error repeats the file's content: %v", err)
+		}
+	}
+	for yaml, want := range map[string]string{
+		"admin:\n  listen: nowhere\n":       "admin.listen",
+		"admin:\n  session_lifetime: 10s\n": "admin.session_lifetime",
+		"admin:\n  password_file: \"\"\n":   "admin.password_file",
+	} {
+		if _, err := Parse("xibalba.yaml", []byte(base+yaml)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", yaml, err)
+		}
+	}
+	// The same port as another listener only matters when switched on.
+	same := "admin:\n  listen: \"127.0.0.1:9090\"\n"
+	if _, err := Parse("xibalba.yaml", []byte(base+same)); err != nil {
+		t.Errorf("switched off: %v", err)
 	}
 }

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.T.login_title}} · {{.T.title}}</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<main class="narrow">
+<h1>{{.T.login_title}}</h1>
+{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+<form class="login" method="post" action="/login">
+<label for="password">{{.T.password}}</label>
+<input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+<button type="submit">{{.T.sign_in}}</button>
+</form>
+</main>
+</body>
+</html>

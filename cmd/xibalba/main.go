@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MaMoja/xibalba/internal/admin"
 	"github.com/MaMoja/xibalba/internal/buildinfo"
 	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/clientip"
@@ -173,8 +174,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	checkOnly := flags.Bool("check", false, "validate the configuration file and exit")
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	healthCheck := flags.Bool("healthcheck", false, "ask the running Xibalba of this configuration whether it is healthy, and exit with 0 or 1")
+	newPassword := flags.Bool("set-password", false, "set the password of the web interface and exit")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
+	}
+	if *newPassword {
+		return setPassword(*configPath, os.Stdin, stdout, stderr)
 	}
 
 	if *showVersion {
@@ -397,6 +402,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	opsMux.Handle("GET /metrics", numbers.Handler())
 
 	// And kept on disk by the hour, if a directory is configured.
+	var history func(from, to time.Time) []admin.Hour
 	if cfg.Statistics.Path != "" {
 		kept := stats.New(stats.Options{
 			Dir:      cfg.Statistics.Path,
@@ -407,6 +413,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		registry.Register(kept.Name(), kept.Health)
 		supervisor.Add(kept)
 		opsMux.Handle("GET /statistics", kept.Handler())
+		history = func(from, to time.Time) []admin.Hour {
+			hours := kept.Hours(from, to)
+			out := make([]admin.Hour, len(hours))
+			for i, h := range hours {
+				out[i] = admin.Hour{Start: h.Hour, Counts: h.Counts}
+			}
+			return out
+		}
 		if networks == nil && stats.Remove(cfg.Statistics.NetworksPath()) {
 			log.Info("counts per network are switched off; those kept from earlier were removed", "component", "statistics")
 		}
@@ -425,6 +439,40 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			registry.Register(perNetwork.Name(), perNetwork.Health)
 			supervisor.Add(perNetwork)
 			opsMux.Handle("GET /statistics/networks", perNetwork.Handler())
+		}
+	}
+
+	// The web interface, if the site owner switched it on. Off, none of
+	// it exists: no listener, no templates in memory.
+	if cfg.Admin.Enabled {
+		ui, err := admin.New(admin.Options{
+			Password:        cfg.Admin.Password,
+			SessionLifetime: cfg.Admin.SessionLifetime,
+			History:         history,
+			Live:            func() map[string]uint64 { return totals(sources) },
+			Health:          registry.Report,
+			Version:         buildinfo.Get().Version,
+			DryRun:          cfg.Rules.DryRun,
+			Log:             log,
+		})
+		if err != nil {
+			log.Error("start-up failed", "error", "web interface: "+err.Error(), "component", "admin")
+			return exitFailed
+		}
+		adminServer := httpserver.New(httpserver.Options{
+			Name:      "admin",
+			Addr:      cfg.Admin.Listen,
+			Handler:   httpserver.Recover(log, ui.Handler()),
+			Log:       log,
+			OnFailure: supervisor.Reporter("admin"),
+		})
+		registry.Register(adminServer.Name(), adminServer.Health)
+		supervisor.Add(adminServer)
+		if host, _, err := net.SplitHostPort(cfg.Admin.Listen); err == nil && host != "localhost" {
+			if addr, err := netip.ParseAddr(host); err != nil || !addr.IsLoopback() {
+				log.Warn("the web interface is reachable from other machines and its connection is not encrypted: "+
+					"put a web server with HTTPS in front, or reach it through an SSH tunnel", "component", "admin", "listen", cfg.Admin.Listen)
+			}
 		}
 	}
 

@@ -323,6 +323,49 @@ lässt aber alles durch. Sehen Sie sich die Zähler eine Weile an
 ([Abschnitt 9](#9-betrieb-prüfen-beobachten-ändern)). Stimmen die Zahlen,
 setzen Sie `dry_run: false` und starten Xibalba neu.
 
+### Auf Wunsch: die Weboberfläche
+
+Xibalba kann seine Zahlen im Browser zeigen: durchgelassene, geprüfte und
+blockierte Anfragen im Verlauf, die Regeln, die Crawler und den Zustand
+aller Teile. **Das ist Ihre Wahl bei der Einrichtung.** Die Weboberfläche ist
+ab Werk ausgeschaltet; ausgeschaltet gibt es sie schlicht nicht, sie
+verbraucht dann nichts. Sie zeigt nur an; eingestellt wird weiterhin in der
+Konfigurationsdatei.
+
+So schalten Sie sie ein:
+
+**1.** Passwort setzen (mindestens 12 Zeichen; es wird zweimal abgefragt und
+beim Tippen nicht angezeigt):
+
+```sh
+xibalba -set-password -config /etc/xibalba/xibalba.yaml
+```
+
+**2.** In der Konfigurationsdatei einschalten und Xibalba neu starten:
+
+```yaml
+admin:
+  enabled: true
+```
+
+**3.** Auf dem Server <http://127.0.0.1:9091/> öffnen.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `admin.enabled` | `true` schaltet die Weboberfläche ein (ab Werk `false`) |
+| `admin.listen` | wo sie erreichbar ist; ab Werk nur auf dem Server selbst (`127.0.0.1:9091`) |
+| `admin.password_file` | Datei mit dem gespeicherten Passwort (nie das Passwort selbst); `-set-password` schreibt sie |
+| `admin.session_lifetime` | wie lange eine Anmeldung gilt (ab Werk `12h`) |
+
+Die Verbindung zur Weboberfläche ist nicht verschlüsselt. Von einem anderen
+Rechner aus erreichen Sie sie sicher über einen SSH-Tunnel
+(`ssh -L 9091:127.0.0.1:9091 sie@ihr-server`, dann
+<http://127.0.0.1:9091/> auf Ihrem Rechner) oder über Ihren Webserver mit
+HTTPS davor. Nach fünf falschen Passwörtern muss ein Anschluss warten. Den
+Verlauf über die Zeit sehen Sie nur, wenn die Zähler dauerhaft gespeichert
+werden (`statistics.directory`, Abschnitt 9). Einzelheiten:
+[ADMIN.md](../ADMIN.md).
+
 ## 5. Wo stelle ich was ein?
 
 Alle Einstellungen stehen in der Konfigurationsdatei. Nach jeder Änderung:
@@ -367,6 +410,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | meine Sponsor-Lizenz eintragen | `license.file` | Abschnitt 8 |
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
+| die Zahlen im Browser sehen | `admin.enabled` und ein Passwort | Abschnitt 4, „Auf Wunsch: die Weboberfläche“ |
 | die Zähler über Neustarts hinweg behalten | `statistics.directory`, `statistics.keep_days` | Abschnitt 9, „Zähler dauerhaft speichern“ |
 | sehen, aus welchen Netzen die meisten Anfragen kommen | `statistics.networks.enabled`, `top`, `keep_days` | Abschnitt 9, „Zähler pro Netz“ |
 | Xibalba an eine Überwachung (Prometheus) anbinden | nichts einzustellen; Abruf unter `/metrics` am Betriebsport | Abschnitt 9, „Überwachung anbinden“ |

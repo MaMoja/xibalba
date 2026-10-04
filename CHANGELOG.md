@@ -16,6 +16,11 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Web interface (`admin`), optional and off by default: a login and an
+  overview of requests let through, checked and blocked over time, the
+  rules, the crawlers and the state of every part. No script, nothing
+  loaded from elsewhere, German and English. `xibalba -set-password` sets
+  its password. It only reads.
 - Counts per network of origin (`statistics.networks`): the largest networks
   of each hour (IPv4 `/24`, IPv6 `/48`) and what happened to their requests.
   Off by default, own time limit (30 days), never a single address.

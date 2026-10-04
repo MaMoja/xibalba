@@ -80,6 +80,7 @@ More endpoints, each only while its feature is on:
 | `/limits` | the request limits and how many requests were over each |
 | `/trap` | how many requests followed the hidden link |
 | `/statistics` | the counters of the last hours, kept on disk; see [Statistics](STATISTICS.md) |
+| (web interface) | the same numbers in a browser, if switched on; it has its own listener, see [Web interface](ADMIN.md) |
 | `/statistics/networks` | the counts per network of origin, if switched on; see [Statistics](STATISTICS.md#counts-per-network) |
 | `/metrics` | everything above for a monitoring system; see [Metrics](METRICS.md) |
 

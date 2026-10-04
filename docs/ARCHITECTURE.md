@@ -95,6 +95,7 @@ the same code that later uses them.
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
 | `internal/stats` | Keep the other parts' counters on disk by the hour, with a time limit |
 | `internal/origin` | Count requests per network of origin, in a bounded table |
+| `internal/admin` | Serve the optional web interface: login and overview, read only |
 | `internal/metrics` | Serve the numbers of the other parts in the Prometheus text format |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
@@ -147,6 +148,7 @@ cannot recover from.
 | More clients were caught in the trap than its table holds | Older entries make way and are no longer treated as caught. | `clients` in `/trap` |
 | The country database is missing, damaged or cannot be downloaded | The database already loaded stays in use. If none is loaded, rules with a `country` condition are skipped; everything else works. A damaged file given in the configuration without downloading stops the start, like any wrong setting. | One warning with `component=countries`; `countries` is `degraded` in `/healthz` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
+| The web interface fails while building a page | That request gets status 500; the website and the other listeners are not affected. If its listener dies, the rule for listeners above applies. | Log line with `component=admin`; `admin` in `/healthz` |
 | A part fails while its numbers are collected for `/metrics` | Its numbers are left out of that answer; the others are served. | Missing series in the monitoring system |
 | The statistics directory is gone or the disk is full | Requests are served as before. What is counted meanwhile is written when writing works again. | One warning with `component=statistics`; `statistics` is `degraded` in `/healthz` |
 | The counts per network cannot be written, or requests come from more networks than the table holds | Requests are served as before. Networks beyond the table are counted as `other`. | `statistics-networks` is `degraded` in `/healthz` when writing fails |
@@ -189,7 +191,7 @@ Planned packages and their seams:
 
 | Package | Its one job | Interface it exposes |
 |---|---|---|
-| `internal/admin` | Serve the web interface | `http.Handler` |
+| `internal/admin` (write side) | Change settings from the web interface | planned with M8 |
 
 Two rules apply to every stage:
 

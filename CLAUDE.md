@@ -158,6 +158,7 @@ data/                 built-in crawler definitions and presets (embedded)
 internal/limit/       count requests per client, say when one is over a limit
 internal/geo/         country of an address, from a database file
 internal/trap/        hidden link that catches crawlers; optional maze
+internal/admin/       optional web interface: login and overview, read only
 internal/metrics/     the other parts' numbers in the Prometheus text format
 internal/stats/       the other parts' counters on disk, by the hour
 internal/origin/      requests per network of origin, in a bounded table

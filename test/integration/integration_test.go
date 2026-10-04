@@ -1832,3 +1832,107 @@ func TestStatisticsPerNetwork(t *testing.T) {
 		t.Errorf("/statistics holds networks:\n%s", general)
 	}
 }
+
+// The web interface is an option. Off (the default), nothing listens. On, it
+// needs a password that was set with -set-password, and shows nothing
+// without a login.
+func TestWebInterface(t *testing.T) {
+	site := newWebsite(t)
+
+	// Off by default: no "admin" part, although a password file may exist.
+	off := start(t, site.URL, testRules)
+	if _, report := health(t, off); report.Components["admin"].State != "" {
+		t.Errorf("the web interface runs without being switched on: %+v", report)
+	}
+
+	dir := t.TempDir()
+	config := filepath.Join(dir, "xibalba.yaml")
+	public, ops, ui := freeAddr(t), freeAddr(t), freeAddr(t)
+	text := fmt.Sprintf("upstream:\n  url: %s\nserver:\n  listen: %s\nops:\n  listen: %s\nlog:\n  format: text\nadmin:\n  enabled: true\n  listen: %s\n",
+		site.URL, public, ops, ui) + testRules
+	if err := os.WriteFile(config, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Switched on without a password: refused, with the way out.
+	out, err := exec.Command(binary, "-check", "-config", config).CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "admin.password_file") || !strings.Contains(string(out), "-set-password") {
+		t.Fatalf("check without a password: %v\n%s", err, out)
+	}
+
+	// A password that is too short is refused; a good one is stored, not kept.
+	const password = "ein langes Passwort 42"
+	short := exec.Command(binary, "-set-password", "-config", config)
+	short.Stdin = strings.NewReader("kurz\n")
+	if out, err := short.CombinedOutput(); err == nil {
+		t.Fatalf("a short password was accepted:\n%s", out)
+	}
+	set := exec.Command(binary, "-set-password", "-config", config)
+	set.Stdin = strings.NewReader(password + "\n")
+	if out, err := set.CombinedOutput(); err != nil {
+		t.Fatalf("set-password: %v\n%s", err, out)
+	}
+	stored, err := os.ReadFile(filepath.Join(dir, "admin.password"))
+	if err != nil || strings.Contains(string(stored), password) || !strings.HasPrefix(string(stored), "pbkdf2-sha256$") {
+		t.Fatalf("stored password: %v %q", err, stored)
+	}
+	if info, _ := os.Stat(filepath.Join(dir, "admin.password")); info.Mode().Perm() != 0o600 {
+		t.Errorf("mode of the password file: %v", info.Mode())
+	}
+
+	logs := &logBuffer{}
+	cmd := exec.Command(binary, "-config", config)
+	cmd.Stderr = logs
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	_ = waitFor(t, "http://"+ops+"/healthz").Body.Close()
+	inst := &instance{cmd: cmd, logs: logs, public: "http://" + public, ops: "http://" + ops}
+	if _, report := health(t, inst); report.Components["admin"].State != "ok" {
+		t.Fatalf("health = %+v", report)
+	}
+	get(t, inst.public+"/admin", language) // blocked by the rule: something to show
+
+	base := "http://" + ui
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	post := func(form url.Values, cookie string) *http.Response {
+		req, _ := http.NewRequest("POST", base+"/login", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if cookie != "" {
+			req.Header.Set("Cookie", cookie)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp
+	}
+
+	if resp, err := client.Get(base + "/"); err != nil || resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("overview without a login: %v %v", resp, err)
+	}
+	if resp := post(url.Values{"password": {"falsches Passwort 42"}}, ""); resp.StatusCode != http.StatusUnauthorized || len(resp.Cookies()) != 0 {
+		t.Fatalf("wrong password: %d", resp.StatusCode)
+	}
+	resp := post(url.Values{"password": {password}}, "")
+	if resp.StatusCode != http.StatusSeeOther || len(resp.Cookies()) != 1 {
+		t.Fatalf("right password: %d", resp.StatusCode)
+	}
+	cookie := resp.Cookies()[0]
+	req, _ := http.NewRequest("GET", base+"/", nil)
+	req.AddCookie(cookie)
+	page, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(page.Body)
+	_ = page.Body.Close()
+	if page.StatusCode != 200 || !strings.Contains(string(body), "block-admin") {
+		t.Errorf("overview: %d\n%s", page.StatusCode, body)
+	}
+	if text := logs.String(); strings.Contains(text, password) || strings.Contains(text, cookie.Value) || strings.Contains(text, "pbkdf2") {
+		t.Errorf("the log holds a secret:\n%s", text)
+	}
+}

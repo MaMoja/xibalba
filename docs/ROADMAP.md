@@ -89,9 +89,11 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Prometheus metrics endpoint (format checked by tests; not yet tried against a running Prometheus)
 
 ## M7: Web interface, read side
-- [ ] Login, sessions, localhost by default
-- [ ] Dashboard: allowed, challenged, denied over time; top crawlers; top rules
-- [ ] Accessible and usable on a phone
+- [x] An option, off by default; switched off, nothing of it exists (owner's decision 2026-10-04)
+- [x] Login, sessions, localhost by default; password set with `xibalba -set-password`
+- [x] Overview: let through, checked, blocked over time (24 hours, 7 days, 30 days); rules; crawlers; security check; limits and trap; state of the parts
+- [x] Accessible and usable on a phone: no script, chart with the same numbers as a table, checked with axe (WCAG 2.1 A and AA) in light and dark, at 375 px width
+- [ ] Security review of the milestone by a second agent
 
 ## M8: Web interface, write side
 - [ ] Preset switches

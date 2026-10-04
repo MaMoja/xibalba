@@ -283,5 +283,21 @@ ops:
   # host:port to listen on. The default is reachable from this machine only.
   listen: "127.0.0.1:9090"
 
+# Web interface: an overview of what Xibalba counted, in the browser. Optional
+# and off by default; switched off, nothing listens and nothing is used.
+# It only shows; settings stay in this file. See docs/ADMIN.md.
+admin:
+  # Set a password first:  xibalba -set-password -config xibalba.yaml
+  enabled: false
+  # host:port to listen on. The default is reachable from this machine only.
+  # The connection is not encrypted: from another machine, use an SSH tunnel
+  # or put a web server with HTTPS in front.
+  listen: "127.0.0.1:9091"
+  # File with the stored password (never the password itself), relative to
+  # this file. Written by "xibalba -set-password".
+  password_file: admin.password
+  # How long a login lasts (5m to 720h).
+  session_lifetime: 12h
+
 # How long running requests get to finish when Xibalba is asked to stop.
 shutdown_timeout: 10s
