@@ -9,6 +9,17 @@ Newest first. One entry per decision: what, why, who decided.
   more spellings match, which is right for rules that restrict and a hole
   for rules that let through, because the website receives the address as
   sent and may read it differently.
+- **Strictness is decided per path condition by polarity** (rule favours
+  XOR condition negated), the same test as for crawler names. Agent, after
+  the second review: "deny everything except /public/" favours the path as
+  much as "allow /public/" does.
+- **Roundabout also means: a `%` left after decoding, control characters,
+  invalid UTF-8.** Agent. Look-alike characters (fullwidth dots and slashes)
+  are not treated specially: no current web server folds them.
+- **Request targets that are not paths get 400.** Agent.
+- **`keep-internet-working` requires an address without a query**, except
+  for webfinger. Agent, for the owner to note: a default visitors meet.
+  Websites that route by query would otherwise serve any page there.
 - **Exemption from the request limits is a choice per rule
   (`exempt_from_limits`), not a consequence of `allow`.** Agent, after the
   review. Replaces "a request a rule explicitly allows is not counted".

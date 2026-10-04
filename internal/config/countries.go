@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/MaMoja/xibalba/internal/geo"
@@ -55,6 +56,12 @@ func (c *Countries) check(dir string, add func(path, message, hint string)) {
 		// at start; it must not keep Xibalba from starting (a power cut
 		// during a download can leave a damaged file).
 		if c.Download {
+			if info, statErr := os.Stat(c.Path); statErr == nil && !info.Mode().IsRegular() {
+				add("countries.database", fmt.Sprintf("%q is not a file", c.Database), "give the name of a file to keep the database in")
+			} else if parent, statErr := os.Stat(filepath.Dir(c.Path)); statErr != nil || !parent.IsDir() {
+				add("countries.database", fmt.Sprintf("the directory of %q does not exist", c.Database),
+					"create the directory and make it writable for the user Xibalba runs as")
+			}
 			return
 		}
 		add("countries.database", fmt.Sprintf("the database %q cannot be used: %v", c.Database, err),

@@ -21,6 +21,7 @@ All notable changes are listed here. The format follows
   meaningless syllables. Both off by default. `GET /trap` shows the state.
 - Preset `weigh-odd-browsers`: score for requests that say they are a
   browser but lack what every browser sends.
+- Rule condition `query`.
 - Presets `challenge-browsers` (check everything that says it is a
   browser), `keep-internet-working`, `allow-feeds` and `allow-git-clients`.
 - Request limits (`limits`). Up to four limits per client, each with a
@@ -115,8 +116,16 @@ Found by the independent review of milestone M5 and fixed before any release:
 - Any request to the trap's addresses was a catch, so another website could
   get visitors denied. Trap links are now made per client with a keyed
   check value, and only the client a link was made for can be caught.
+- The same held for rules of the form "restrict everything except this
+  path", and for addresses encoded twice; both are covered now.
+- A request target that is not a path (`GET http:admin/x`) was tested as
+  `/` and passed on as written. It is refused with status 400.
+- `keep-internet-working` let through its addresses with any query, which a
+  website that chooses the page by the query would answer with other pages.
+  It now requires an address without a query.
 - Requests let through by an allow rule were exempt from the request
-  limits. The exemption is now a choice per rule (`exempt_from_limits`).
+  limits. The exemption is now a choice per rule (`exempt_from_limits`), and
+  only by address or verified crawler.
 - `Retry-After` was too short for clients far over a limit.
 - A country database damaged during download could keep Xibalba from
   starting; downloads are synced before they replace the file, and an

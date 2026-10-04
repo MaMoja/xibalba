@@ -327,6 +327,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | angeben, wo meine Website läuft | `upstream.url` | Schritt 1 |
 | den Port ändern, auf dem Xibalba Anfragen annimmt | `server.listen` | [Referenz](../CONFIGURATION.md#server) |
 | die echte Besucheradresse hinter meinem Webserver erhalten | `server.trusted_proxies` | Schritt 5 |
+| nach dem Abfrageteil der Adresse (`?…`) unterscheiden | Bedingung `query` in einer Regel | [RULES.md](../RULES.md#conditions) |
 | einen Bot aussperren | Regel mit `action: deny` in `rules.list` | Abschnitt 6 |
 | einen Bereich nur nach Prüfung zugänglich machen | Regel mit `action: challenge` | Abschnitt 6 |
 | mein eigenes Netz immer durchlassen | Regel mit `ip` und `action: allow`, ganz oben | Abschnitt 6 |
@@ -524,7 +525,7 @@ und danach, was prüft oder sperrt.
 
 | Regelgruppe | Wirkung |
 |---|---|
-| `keep-internet-working` | lässt jeden `/.well-known/`, `/robots.txt` und `/favicon.ico` lesen |
+| `keep-internet-working` | lässt jeden `/.well-known/`, `/robots.txt` und `/favicon.ico` lesen, sofern die Adresse keinen Abfrageteil (`?…`) hat |
 | `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (letzter Teil der Adresse `feed`, `rss` oder `atom`, oder eine Datei `index`, `feed`, `rss`, `atom` mit Endung `.xml`, `.rss`, `.atom`) |
 | `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen und Methoden, die git selbst nutzt) |
 | `weigh-odd-browsers` | vergibt Punkte an Anfragen, die sich als Browser ausgeben, denen aber fehlt, was jeder Browser sendet (keine Sprachangabe: +10, keine `Accept`-Angabe: +10, fensterloser Automatik-Browser: +20). Entscheidet selbst nichts; braucht `rules.thresholds` |
@@ -565,10 +566,14 @@ rules:
     - weigh-odd-browsers
 ```
 
-**Durchlass-Regeln sind streng bei der Schreibweise.** Eine Regel, die
-anhand des Pfads durchlässt, gilt nur, wenn die Adresse schlicht geschrieben
-ist. Umwege wie `/seite.php/..;/robots.txt` oder `//robots.txt` werden nicht
-durchgelassen, weil Ihr Webserver sie anders lesen könnte als die Regel.
+**Wo ein Pfad begünstigt, zählt nur die schlichte Schreibweise.** Das gilt
+für Regeln, die anhand des Pfads durchlassen, und ebenso für Regeln der Art
+„alles sperren außer `/public/`“. Umwege wie `/seite.php/..;/robots.txt`,
+`//robots.txt` oder doppelt kodierte Zeichen werden weder durchgelassen noch
+verschont, weil Ihr Webserver sie anders lesen könnte als die Regel.
+`allow-feeds` und `allow-git-clients` richten sich nach dem Ende der Adresse:
+Prüfen Sie vor dem Einschalten, ob Ihre Website unter Adressen wie
+`/export/feed` etwas anderes als einen Feed ausliefert.
 Was diese Regelgruppen durchlassen, wird von der Begrenzung der Anfragen
 weiterhin gezählt.
 
@@ -744,8 +749,9 @@ dazuschreiben:
   exempt_from_limits: true
 ```
 
-Verwenden Sie das nur, wo der Anfragende es sich nicht aussuchen kann: bei
-einer Adresse oder einem geprüften Crawler. Alles andere wird gezählt, auch
+Das geht nur, wo der Anfragende es sich nicht aussuchen kann: Die Regel
+braucht eine `ip`-Bedingung oder einen geprüften Crawler. Eine Ausnahme
+allein nach Pfad oder Kennung lehnt Xibalba ab. Alles andere wird gezählt, auch
 Abrufe von `robots.txt` oder Feeds.
 
 **Die Zahlen wählen**

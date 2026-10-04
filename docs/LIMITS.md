@@ -72,6 +72,8 @@ style sheets and scripts. One page view can be 50 requests or more.
 - Start with `action: challenge` and a generous number.
 - Use `rules.dry_run: true` first. In a dry run the limits count but stop
   nobody, and `/limits` shows how many requests would have been affected.
+- An allow rule of your own can only exempt by address or verified crawler;
+  Xibalba refuses `exempt_from_limits` on a rule anyone could match.
 - **Behind a web server, set `server.trusted_proxies`.** Without it every
   visitor appears as the web server's address and all share one count.
   Xibalba warns in the log at start when it looks that way.

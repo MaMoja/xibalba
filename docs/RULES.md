@@ -66,6 +66,7 @@ All conditions written in one `match` must hold.
 |---|---|---|
 | `user_agent` | The `User-Agent` header | A text test |
 | `path` | The path of the request, normalised (see below) | A text test |
+| `query` | What follows the `?` in the address, as the client sent it | A text test, or `present: true` / `present: false` |
 | `host` | The host name the client asked for, without port | A text test |
 | `method` | The HTTP method | A list such as `["POST", "PUT"]` |
 | `header` | Any other header, by name | A text test or `present` per header |
@@ -145,17 +146,29 @@ write `regex: "^/admin(/|$)"`.
 
 ## Rules that let through are strict about the address
 
-A rule that restricts (`deny`, `challenge`, a positive `weigh`) tests the
-normalised path, so no spelling gets past it. A rule that favours a request
-(`allow`, a negative `weigh`) and has a `path` condition does more: it only
-applies if the address was sent in plain form. `/page.php/..;/robots.txt`,
-`//robots.txt`, `/x/../robots.txt` and `/a%2F..%2Frobots.txt` all normalise
-to `/robots.txt`, but your web server may read them as something else, and
-it receives them as sent. Such a request is not let through by the rule; the
-rules after it and the default decide.
+A `path` condition tests the normalised path, so no spelling gets past a
+rule that restricts. Where matching a path is to the client's advantage, the
+condition does more: it only holds for an address sent in plain form.
+`/page.php/..;/robots.txt`, `//robots.txt`, `/x/../robots.txt` and
+`/a%2F..%2Frobots.txt` all normalise to `/robots.txt`, but your web server
+receives them as sent and may read them as something else.
 
-Needlessly encoded characters (`/%72obots.txt`) count as roundabout too. A
-browser does not send them.
+Matching is to the client's advantage in two forms, and both are covered:
+
+- a rule that lets through or lowers the score, with a `path` condition
+  ("allow `/public/`"): a roundabout address is not let through by it;
+- a rule that restricts, with the `path` condition under `not` ("deny
+  everything except `/public/`"): a roundabout address is not spared by it.
+
+Roundabout means: dot segments, repeated slashes, backslashes, path
+parameters (`;…`), specially or needlessly encoded characters
+(`/%72obots.txt`), a `%` that is still there after decoding (encoded
+twice), control characters, and text that is not valid UTF-8. A browser
+sends none of these. An address that really contains a percent sign is
+therefore never let through by path; use another condition for it.
+
+A request whose target is not a path at all (`GET http:admin/x`) is refused
+with status 400 before any rule is asked.
 
 ## Exempting from the request limits
 
@@ -170,8 +183,10 @@ Being let through by an `allow` rule does not exempt a client from the
   exempt_from_limits: true
 ```
 
-Use it only where the client cannot choose to match: an address, a verified
-crawler. A rule on a path or user agent can be matched by anyone.
+A rule may only exempt by something the client cannot choose: it needs an
+`ip` condition or a `crawler` condition with `verified: true`. Exempting by
+path, user agent or header alone is refused, because anyone could send it
+and be uncounted.
 
 ## What can be trusted
 
@@ -265,7 +280,7 @@ that decides wins. So list what lets through before what checks or denies.
 
 | Preset | What it does |
 |---|---|
-| `keep-internet-working` | Lets everyone read `/.well-known/`, `/robots.txt` and `/favicon.ico`. |
+| `keep-internet-working` | Lets everyone read `/.well-known/`, `/robots.txt` and `/favicon.ico`, without a query (`?…`). `/.well-known/webfinger` may have one. |
 | `allow-feeds` | Lets feed readers fetch feeds: addresses whose last part is `feed`, `rss` or `atom`, or a file named `index`, `feed`, `rss` or `atom` ending in `.xml`, `.rss` or `.atom`. No earlier part of the address may contain a dot. |
 | `allow-git-clients` | Lets programs that say they are git use git's own addresses with git's own methods (`GET …/info/refs`, `POST …/git-upload-pack`, `POST …/git-receive-pack`). |
 | `block-trapped` | Denies clients that followed the hidden trap link. Needs `trap.enabled`; see [TRAP.md](TRAP.md). |
@@ -326,6 +341,11 @@ Things to know:
   everyone, including crawlers. That is the price of letting programs in
   that cannot be verified. A feed that carries the full text of your
   articles gives that text to anyone who asks for the feed.
+- `allow-feeds` and `allow-git-clients` match by the end of the address.
+  If your web server runs `/export.php` when asked for `/export/feed`
+  (content negotiation, "pretty" addresses without the ending), that page is
+  let through too. Check how your site answers such addresses before you
+  switch them on.
 - Requests let through by these presets are still counted by the
   [request limits](LIMITS.md). Only the presets for verified crawlers are
   exempt.

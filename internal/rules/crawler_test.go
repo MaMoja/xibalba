@@ -283,3 +283,134 @@ func TestRulesWithCountryAreSkippedWithoutData(t *testing.T) {
 		t.Error("with data, an unknown country is not outside")
 	}
 }
+
+// A roundabout address must never be treated better than a plain one. That
+// holds for rules that let through a path, and equally for rules that
+// restrict everything except a path.
+func TestRoundaboutAddressesAreNeverFavoured(t *testing.T) {
+	public := MatchSpec{Path: prefix("/public/")}
+	notPublic := MatchSpec{Not: &public}
+	roundabout := []string{
+		"/admin/..;x/public/y", "/admin//../public/y", `/admin\..\public/y`, "/public;x/y",
+		"/public/%2e%2e/admin", "/x/../public/y", "//public/y", "/public/a\x00b", "/public/\xff",
+	}
+	req := func(sent string) *Request {
+		r := request("GET", "h", sent, "ua", "192.0.2.1")
+		r.PathAltered = PathAltered(sent, "")
+		return r
+	}
+	sets := []struct {
+		name        string
+		spec        Spec
+		plain       Action // for /public/y
+		elsewhere   Action // for /admin
+		roundabouts Action
+	}{
+		{"allow the path, deny the rest",
+			Spec{DefaultAction: Deny, Rules: []RuleSpec{{Name: "r", Match: public, Action: Allow}}}, Allow, Deny, Deny},
+		{"deny everything except the path",
+			Spec{DefaultAction: Allow, Rules: []RuleSpec{{Name: "r", Match: notPublic, Action: Deny}}}, Allow, Deny, Deny},
+		{"challenge everything except the path",
+			Spec{DefaultAction: Allow, Rules: []RuleSpec{{Name: "r", Match: notPublic, Action: Challenge}}}, Allow, Challenge, Challenge},
+		{"score everything except the path",
+			Spec{DefaultAction: Allow, Thresholds: []ThresholdSpec{{Weight: 5, Action: Deny}},
+				Rules: []RuleSpec{{Name: "r", Match: notPublic, Action: Weigh, Weight: 5}}}, Allow, Deny, Deny},
+		{"lower the score for the path",
+			Spec{DefaultAction: Allow, Thresholds: []ThresholdSpec{{Weight: 5, Action: Deny}}, Rules: []RuleSpec{
+				{Name: "all", Match: MatchSpec{UserAgent: contains("ua")}, Action: Weigh, Weight: 5},
+				{Name: "r", Match: public, Action: Weigh, Weight: -5}}}, Allow, Deny, Deny},
+		{"except the path, nested",
+			Spec{DefaultAction: Allow, Rules: []RuleSpec{{Name: "r", Action: Deny,
+				Match: MatchSpec{All: []MatchSpec{{Not: &MatchSpec{Any: []MatchSpec{public, {Path: prefix("/static/")}}}}}}}}}, Allow, Deny, Deny},
+		// A rule that restricts a path errs on the wide side: every spelling is caught.
+		{"deny the path",
+			Spec{DefaultAction: Allow, Rules: []RuleSpec{{Name: "r", Match: public, Action: Deny}}}, Deny, Allow, Deny},
+		// "Allow everything except the path" favours whoever is NOT on it.
+		{"allow everything except the path",
+			Spec{DefaultAction: Deny, Rules: []RuleSpec{{Name: "r", Match: notPublic, Action: Allow}}}, Deny, Allow, Deny},
+	}
+	for _, set := range sets {
+		t.Run(set.name, func(t *testing.T) {
+			e := mustCompile(t, set.spec)
+			if got := e.Evaluate(req("/public/y")).Action; got != set.plain {
+				t.Errorf("/public/y: %s, want %s", got, set.plain)
+			}
+			if got := e.Evaluate(req("/admin")).Action; got != set.elsewhere {
+				t.Errorf("/admin: %s, want %s", got, set.elsewhere)
+			}
+			for _, sent := range roundabout {
+				r := req(sent)
+				r.Path = NormalizePath(sent)
+				if got := e.Evaluate(r).Action; got != set.roundabouts {
+					t.Errorf("%q (normalised %q): %s, want %s", sent, r.Path, got, set.roundabouts)
+				}
+			}
+		})
+	}
+}
+
+func TestPathAltered(t *testing.T) {
+	plain := []string{"/", "/a/b", "/a/b/", "/.well-known/x", "/Straße/ö", "/a.b/c-d_e~f", "/a b"}
+	for _, p := range plain {
+		if PathAltered(p, "") {
+			t.Errorf("%q counts as roundabout", p)
+		}
+	}
+	altered := []string{"//a", "/a//b", "/a/./b", "/a/../b", `/a\b`, "/a;x/b", "/a/%2e%2e/b", "/a%", "/a\x00", "/a\nb", "/a\x7f", "/a\xff", "/a\xc0\xae"}
+	for _, p := range altered {
+		if !PathAltered(p, "") {
+			t.Errorf("%q does not count as roundabout", p)
+		}
+	}
+	if !PathAltered("/a/b", "/a%2Fb") {
+		t.Error("an address with a specially encoded form does not count as roundabout")
+	}
+}
+
+func TestQueryCondition(t *testing.T) {
+	with := func(q string) *Request {
+		r := request("GET", "h", "/robots.txt", "ua", "192.0.2.1")
+		r.Query = q
+		return r
+	}
+	none := mustCompile(t, Spec{DefaultAction: Deny, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Path: &StringSpec{Equals: "/robots.txt"}, Query: &StringSpec{Present: no()}}, Action: Allow}}})
+	if none.Evaluate(with("")).Action != Allow || none.Evaluate(with("q=node/5")).Action != Deny {
+		t.Error("query: {present: false}")
+	}
+	has := mustCompile(t, Spec{DefaultAction: Allow, Rules: []RuleSpec{
+		{Name: "r", Match: MatchSpec{Query: &StringSpec{Contains: "export=all"}}, Action: Deny}}})
+	if has.Evaluate(with("a=1&EXPORT=all")).Action != Deny || has.Evaluate(with("a=1")).Action != Allow {
+		t.Error("query: {contains}")
+	}
+}
+
+// Exempting from the limits by something anyone can send would be a way
+// round the limits.
+func TestExemptionNeedsSomethingTheClientCannotChoose(t *testing.T) {
+	tests := []struct {
+		name  string
+		match MatchSpec
+		ok    bool
+	}{
+		{"by address", MatchSpec{IP: []string{"192.0.2.0/24"}}, true},
+		{"by verified crawler", MatchSpec{Crawler: &CrawlerSpec{Class: []string{"search-engine"}, Verified: yes()}}, true},
+		{"by address and path", MatchSpec{IP: []string{"192.0.2.1"}, Path: prefix("/api")}, true},
+		{"by path", MatchSpec{Path: prefix("/api")}, false},
+		{"by user agent", MatchSpec{UserAgent: contains("Monitor")}, false},
+		{"by a header", MatchSpec{Header: map[string]*StringSpec{"X-Key": {Equals: "secret"}}}, false},
+		{"by not being at an address", MatchSpec{Not: &MatchSpec{IP: []string{"192.0.2.1"}}}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, problems := Compile(Spec{DefaultAction: Challenge, Crawlers: testCatalog,
+				Rules: []RuleSpec{{Name: "r", Match: tt.match, Action: Allow, ExemptFromLimits: true}}})
+			if tt.ok != (len(problems) == 0) {
+				t.Errorf("problems = %+v", problems)
+			}
+			if !tt.ok && (len(problems) != 1 || problems[0].Field != "exempt_from_limits") {
+				t.Errorf("problems = %+v", problems)
+			}
+		})
+	}
+}

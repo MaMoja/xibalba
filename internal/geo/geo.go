@@ -274,10 +274,11 @@ func (l *Locator) maybeDownload(ctx context.Context) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if err != nil {
-		if l.problem != err.Error() {
+		problem := "download failed: " + err.Error()
+		if l.problem != problem { // say it once
 			l.log.Warn("the country database could not be downloaded", "error", err.Error())
 		}
-		l.problem = "download failed: " + err.Error()
+		l.problem = problem
 		return
 	}
 	l.attempts = 0

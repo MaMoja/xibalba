@@ -73,7 +73,8 @@ decision (2026-10-03): all of this comes before statistics.
   - [x] Low: trap lookup only when a rule asks, read lock; reload right after a download; bounded read of the country file; download address not echoed; health entries for `limits` and `trap`; privacy text names the 30 days.
   - [ ] Medium, documented only: a `challenge` limit does not restrain a client that holds a pass (advice: add a `deny` limit). Owner to say whether an automatic escalation is wanted.
   - [ ] Low, open: evict the oldest instead of any entry when the trap or limit table is full; cap the country file size lower for small machines.
-- [ ] Second review of the fixes
+- [x] Second review of the fixes (2026-10-04), and its findings fixed: strictness also for "everything except this path" and for addresses encoded twice; request targets that are not paths refused; `keep-internet-working` without a query; warning also for the trap and for listening on all addresses; `exempt_from_limits` only by address or verified crawler; file problems still reported with `countries.download`.
+  - [ ] Low, open: `allow-feeds` and `allow-git-clients` match any address ending the right way (documented); regular expressions in presets fold some non-ASCII letters; a damaged country file is read again every minute until replaced.
 
 ## M6: Statistics
 - [ ] Aggregated counters per hour: by action, rule, crawler, network

@@ -1509,3 +1509,32 @@ func TestMazeBehindTheHiddenLink(t *testing.T) {
 		t.Error("the maze reached the website")
 	}
 }
+
+// A request target that is not a path gives the rules nothing to test. It
+// must not be passed on.
+func TestRequestTargetsThatAreNotPathsAreRefused(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, testRules)
+	host := strings.TrimPrefix(inst.public, "http://")
+	for _, target := range []string{"http:admin/secret", "x:robots.txt", "*"} {
+		conn, err := net.Dial("tcp", host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		method := "GET"
+		if target == "*" {
+			method = "OPTIONS"
+		}
+		_, _ = fmt.Fprintf(conn, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", method, target, host)
+		answer, _ := io.ReadAll(conn)
+		_ = conn.Close()
+		// "OPTIONS *" asks about the server as a whole; Go answers it
+		// itself, and it never reaches the rules or the website.
+		if !strings.HasPrefix(string(answer), "HTTP/1.1 400") && target != "*" {
+			t.Errorf("%s %s: %.60q", method, target, answer)
+		}
+	}
+	if site.hitCount() != 0 {
+		t.Error("such a request reached the website")
+	}
+}

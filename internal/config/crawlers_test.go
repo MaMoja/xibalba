@@ -238,6 +238,17 @@ func TestAllowPresetsCannotBeAbused(t *testing.T) {
 		{"GET", "//robots.txt", "Mozilla", nil, rules.Challenge},
 		{"GET", "/a%2F..%2Frobots.txt", "Mozilla", nil, rules.Challenge},
 		{"GET", "/robots.txt;x", "Mozilla", nil, rules.Challenge},
+		// Encoded twice: a website that decodes twice would read "..".
+		{"GET", "/.well-known/%252e%252e/admin", "Mozilla", nil, rules.Challenge},
+		{"GET", "/.well-known/%252e%252e%252fadmin", "Mozilla", nil, rules.Challenge},
+		{"GET", "/.well-known/%C0%AE%C0%AE/admin", "Mozilla", nil, rules.Challenge},
+		{"GET", "/x%00y/feed", "Mozilla", nil, rules.Challenge},
+		{"GET", "/admin%0A/feed", "Mozilla", nil, rules.Challenge},
+		// A query, for websites that choose the page by the query.
+		{"GET", "/.well-known/x?q=node/5", "Mozilla", nil, rules.Challenge},
+		{"GET", "/robots.txt?x=/admin", "Mozilla", nil, rules.Challenge},
+		{"GET", "/favicon.ico?page=admin", "Mozilla", nil, rules.Challenge},
+		{"GET", "/.well-known/webfinger?resource=acct:a@example.org", "Mozilla", nil, rules.Allow},
 		// A script with something behind it.
 		{"GET", "/artikel.php/feed", "Mozilla", nil, rules.Challenge},
 		{"GET", "/artikel.php/x.xml", "Mozilla", nil, rules.Challenge},
@@ -268,7 +279,7 @@ func TestAllowPresetsCannotBeAbused(t *testing.T) {
 		}
 		req := rules.Request{
 			Method: tt.method, Host: "example.org", UserAgent: tt.ua, Header: header,
-			Path: rules.NormalizePath(u.Path), PathAltered: rules.PathAltered(u.Path, u.RawPath),
+			Path: rules.NormalizePath(u.Path), PathAltered: rules.PathAltered(u.Path, u.RawPath), Query: u.RawQuery,
 		}
 		if got := engine.Evaluate(&req).Action; got != tt.want {
 			t.Errorf("%s %s (%s): %s, want %s", tt.method, tt.target, tt.ua, got, tt.want)

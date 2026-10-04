@@ -73,6 +73,7 @@ documentation only, described in our own words), and where Xibalba stands.
 - Crawler classes by purpose and verification of AI crawlers' identity.
 - Rules that trust a crawler's name alone are refused.
 - Request limits per client with exempt addresses.
+- Rules that let through by path only apply to plainly written addresses.
 - Trusted-proxy list for the client address.
 - Configured answer when Xibalba itself fails (`rules.on_error`).
 - Dry run.

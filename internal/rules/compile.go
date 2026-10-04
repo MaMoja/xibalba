@@ -83,11 +83,15 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		// A rule that lets requests through, or makes them look better.
 		c.favours = rs.Action == Allow || (rs.Action == Weigh && rs.Weight < 0)
 		c.negated = false
-		before, pathsBefore := c.countryConditions, c.pathConditions
+		before := c.countryConditions
+		c.anchored = false
 		rule.match = c.match(rs.Match, "match", 1, true)
 		rule.needsCountry = c.countryConditions > before
-		rule.strictPath = c.favours && c.pathConditions > pathsBefore
 
+		if rs.ExemptFromLimits && rs.Action == Allow && !c.anchored {
+			c.add("exempt_from_limits", "the rule exempts from the limits whoever matches it, and anyone can choose to match it",
+				"exempt only by something the client cannot choose: add an ip condition or a crawler condition with verified: true")
+		}
 		if rs.ExemptFromLimits && rs.Action != Allow {
 			c.add("exempt_from_limits", fmt.Sprintf("only an allow rule can exempt from the limits, but the action is %s", rs.Action),
 				"remove exempt_from_limits, or change the action to allow")
@@ -160,10 +164,12 @@ type compiler struct {
 	usesCountry bool
 	// countryConditions counts the country conditions compiled so far.
 	countryConditions int
-	pathConditions    int
-	favours           bool // the rule being compiled allows, or lowers the score
-	negated           bool // the conditions being compiled are inside an odd number of "not"
-	usesCrawlers      bool
+	// anchored: the rule being compiled has a condition the client cannot
+	// choose to meet: its address, or being a verified crawler.
+	anchored     bool
+	favours      bool // the rule being compiled allows, or lowers the score
+	negated      bool // the conditions being compiled are inside an odd number of "not"
+	usesCrawlers bool
 }
 
 func (c *compiler) add(field, message, hint string) {
@@ -212,9 +218,17 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 		}
 	}
 	if spec.Path != nil {
-		c.pathConditions++
 		if sm, ok := c.text(*spec.Path, field+".path", false); ok {
-			parts = append(parts, fieldMatch{field: fieldPath, text: sm})
+			// Matching this condition favours the request if the rule
+			// favours and the condition is not negated, or the rule
+			// restricts and the condition is negated ("everyone except
+			// this path"). Then only a plainly written address may match.
+			parts = append(parts, fieldMatch{field: fieldPath, text: sm, strict: c.favours != c.negated})
+		}
+	}
+	if spec.Query != nil {
+		if sm, ok := c.text(*spec.Query, field+".query", true); ok {
+			parts = append(parts, queryMatch{text: sm})
 		}
 	}
 	if spec.UserAgent != nil {
@@ -263,6 +277,9 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	}
 
 	if spec.IP != nil {
+		if !c.negated {
+			c.anchored = true
+		}
 		if len(spec.IP) == 0 || len(spec.IP) > MaxConditions {
 			c.add(field+".ip", fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(spec.IP), MaxConditions),
 				`list addresses or networks such as ["192.0.2.7", "2001:db8::/32"]`)
@@ -317,7 +334,7 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	// A condition that was written but is invalid has already been reported.
 	// Saying "no conditions" on top of that would send the reader looking for
 	// a second mistake that does not exist.
-	declared := spec.Method != nil || spec.Host != nil || spec.Path != nil || spec.UserAgent != nil ||
+	declared := spec.Method != nil || spec.Host != nil || spec.Path != nil || spec.Query != nil || spec.UserAgent != nil ||
 		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.Trapped != nil || spec.Country != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
 
 	switch len(parts) {
@@ -449,6 +466,9 @@ func (c *compiler) crawler(spec CrawlerSpec, field string) (matcher, bool) {
 	if !ok {
 		return nil, false
 	}
+	if !c.negated && spec.Verified != nil && *spec.Verified {
+		c.anchored = true
+	}
 	c.usesCrawlers = true
 	return m, true
 }
@@ -490,10 +510,10 @@ func (c *compiler) text(spec StringSpec, field string, header bool) (textMatcher
 	if spec.Present != nil {
 		switch {
 		case !header:
-			c.add(field+".present", "present can only be used with a header", "use one of: "+tests)
+			c.add(field+".present", "present can only be used with a header or the query", "use one of: "+tests)
 			return textMatcher{}, false
 		case len(set) > 0:
-			c.add(field, "present cannot be combined with "+set[0].name, "use one test per header")
+			c.add(field, "present cannot be combined with "+set[0].name, "use one test")
 			return textMatcher{}, false
 		case spec.CaseSensitive:
 			c.add(field+".case_sensitive", "case_sensitive has no meaning with present", "remove case_sensitive")

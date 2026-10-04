@@ -5,6 +5,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Engine is a compiled rule set. Build one with Compile.
@@ -35,9 +36,6 @@ type compiledRule struct {
 	source int // index into Engine.sources; -1 for weigh rules
 	// needsCountry: the rule has a country condition somewhere.
 	needsCountry bool
-	// strictPath: the rule favours the request and tests the path, so it
-	// only applies to an address sent in plain form.
-	strictPath bool
 }
 
 type threshold struct {
@@ -51,9 +49,6 @@ func (e *Engine) Evaluate(req *Request) Decision {
 	for i := range e.rules {
 		rule := &e.rules[i]
 		if rule.needsCountry && req.NoCountryData {
-			continue
-		}
-		if rule.strictPath && req.PathAltered {
 			continue
 		}
 		if !rule.match.match(req) {
@@ -95,8 +90,20 @@ func (e *Engine) Len() int { return len(e.rules) }
 // roundabout way. path is the decoded path, raw the encoded form the client
 // sent if it differs from the standard encoding of path (http.Request's
 // URL.RawPath; empty otherwise).
+//
+// Also roundabout: an address that still holds a "%" after decoding (it was
+// encoded twice, and a website that decodes twice would read something
+// else), control characters, and text that is not valid UTF-8.
 func PathAltered(path, raw string) bool {
-	return raw != "" || path != NormalizePath(path)
+	if raw != "" || !utf8.ValidString(path) {
+		return true
+	}
+	for i := 0; i < len(path); i++ {
+		if b := path[i]; b == '%' || b < 0x20 || b == 0x7f {
+			return true
+		}
+	}
+	return path != NormalizePath(path)
 }
 
 // NormalizePath returns the form of a request path that rules are tested
@@ -309,6 +316,9 @@ const (
 type fieldMatch struct {
 	field field
 	text  textMatcher
+	// strict, for a path condition: matching favours the request, so an
+	// address written in a roundabout way does not match (see PathAltered).
+	strict bool
 }
 
 func (f fieldMatch) match(r *Request) bool {
@@ -316,10 +326,26 @@ func (f fieldMatch) match(r *Request) bool {
 	case fieldHost:
 		return f.text.matches(r.Host)
 	case fieldPath:
+		if f.strict && r.PathAltered {
+			return false
+		}
 		return f.text.matches(r.Path)
 	default:
 		return f.text.matches(r.UserAgent)
 	}
+}
+
+// queryMatch tests the query of the address.
+type queryMatch struct{ text textMatcher }
+
+func (q queryMatch) match(r *Request) bool {
+	switch q.text.op {
+	case opPresent:
+		return r.Query != ""
+	case opAbsent:
+		return r.Query == ""
+	}
+	return q.text.matches(r.Query)
 }
 
 type headerMatch struct {

@@ -128,6 +128,9 @@ type MatchSpec struct {
 	Host *StringSpec `yaml:"host"`
 	// Path tests the request path after normalisation (see NormalizePath).
 	Path *StringSpec `yaml:"path"`
+	// Query tests the query of the address: what follows the "?", as the
+	// client sent it. {present: false} holds if there is none.
+	Query *StringSpec `yaml:"query"`
 	// UserAgent tests the User-Agent header.
 	UserAgent *StringSpec `yaml:"user_agent"`
 	// Header tests other headers by name. A header with several values
@@ -221,6 +224,8 @@ type Request struct {
 	Host string
 	// Path is the normalised path (see NormalizePath).
 	Path string
+	// Query is the query of the address as the client sent it, without the "?".
+	Query string
 	// UserAgent is the User-Agent header.
 	UserAgent string
 	// Header holds the request headers with canonical names.

@@ -105,6 +105,13 @@ func withTrap(snare, next http.Handler) http.Handler {
 // else to site.
 func route(own, site http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A request target that is not a path ("GET http:admin/x", "*")
+		// has no path for the rules to test, yet would be passed on as
+		// written. No browser sends one; refuse it.
+		if r.URL.Opaque != "" || !strings.HasPrefix(r.URL.Path, "/") {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, challenge.Prefix) {
 			own.ServeHTTP(w, r)
 			return
@@ -381,12 +388,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				"settings_not_applied", strings.Join(cfg.SponsorSettings(), ", "))
 		}
 	}
-	if cfg.Limits.Enabled && len(cfg.Server.TrustedProxies) == 0 {
+	if (cfg.Limits.Enabled || cfg.Trap.Enabled) && len(cfg.Server.TrustedProxies) == 0 {
 		if host, _, err := net.SplitHostPort(cfg.Server.Listen); err == nil {
-			if addr, err := netip.ParseAddr(host); host == "localhost" || (err == nil && (addr.IsLoopback() || addr.IsPrivate())) {
-				log.Warn("request limits are on, Xibalba listens on an internal address, and server.trusted_proxies is empty: "+
-					"if a web server stands in front, all visitors appear as that one address and share one limit",
-					"component", "limits", "listen", cfg.Server.Listen)
+			addr, err := netip.ParseAddr(host)
+			internal := host == "localhost" || (err == nil && (addr.IsLoopback() || addr.IsPrivate()))
+			if internal || host == "" || (err == nil && addr.IsUnspecified()) {
+				log.Warn("request limits or the trap are on and server.trusted_proxies is empty: "+
+					"if a web server stands in front, all visitors appear as that one address, share one limit and are caught together",
+					"component", "public", "listen", cfg.Server.Listen)
 			}
 		}
 	}

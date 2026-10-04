@@ -210,6 +210,7 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 		Host:        rules.NormalizeHost(r.Host),
 		Path:        rules.NormalizePath(r.URL.Path),
 		PathAltered: rules.PathAltered(r.URL.Path, r.URL.RawPath),
+		Query:       r.URL.RawQuery,
 		UserAgent:   r.Header.Get("User-Agent"),
 		Header:      r.Header,
 		Client:      info.Client,

@@ -68,6 +68,13 @@ func TestCountryProblems(t *testing.T) {
 			t.Errorf("download on, %s: %v", file, err)
 		}
 	}
+	// What a download cannot repair is still reported.
+	for file, message := range map[string]string{".": "is not a file", "no/such/dir/c.mmdb": "directory"} {
+		_ = os.WriteFile(path, []byte(base+"countries:\n  database: "+file+"\n  download: true\n"), 0o600)
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), message) {
+			t.Errorf("download on, database %q: %v", file, err)
+		}
+	}
 	// The download address is not repeated in a message; it may hold a key.
 	_ = os.WriteFile(path, []byte(base+"countries:\n  download_url: http://example.org/db?key=secret\n"), 0o600)
 	if _, err := Load(path); err == nil || strings.Contains(err.Error(), "secret") {

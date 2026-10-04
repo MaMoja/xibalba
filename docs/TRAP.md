@@ -78,6 +78,12 @@ request the trap (an image tag would be enough for that): it does not know
 their links. As a second safeguard, a request that the browser marks as
 caused by another site is never a catch.
 
+Two cases remain. Clients that share one address (an office behind one
+connection) share one link: if one of them follows it, all are caught. And
+if a web server stands in front of Xibalba and `server.trusted_proxies` is
+not set, all visitors look like one client; Xibalba warns in the log at
+start when that may be so.
+
 ## Search engines
 
 A search engine that reads pages properly does not see the link. To be safe

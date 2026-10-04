@@ -1,12 +1,21 @@
 # Let through what every well-behaved program on the internet expects to be
 # able to read: the well-known addresses, robots.txt and the site icon.
 # Put this before any preset or rule that checks or denies.
+#
+# Only without a query ("?..."): some websites choose the page by the query
+# whatever the path says, and would hand out other pages under these
+# addresses. The one well-known address that needs a query, webfinger, is
+# named.
 rules:
   - name: preset.keep-internet-working
     match:
       method: ["GET", "HEAD"]
       any:
         - path: {prefix: "/.well-known/"}
+          query: {present: false}
+        - path: {equals: "/.well-known/webfinger"}
         - path: {equals: "/robots.txt"}
+          query: {present: false}
         - path: {equals: "/favicon.ico"}
+          query: {present: false}
     action: allow
