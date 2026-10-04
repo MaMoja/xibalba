@@ -2,15 +2,20 @@ package admin
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/MaMoja/xibalba/data"
 	"github.com/MaMoja/xibalba/internal/health"
 )
 
@@ -367,5 +372,161 @@ func TestSecureCookie(t *testing.T) {
 	c := rec.Result().Cookies()[0]
 	if page := w.do("GET", "/", "", map[string]string{"Cookie": c.Name + "=" + c.Value}); page.Code != 200 {
 		t.Errorf("overview with the secure cookie: %d", page.Code)
+	}
+}
+
+type fakeSettings struct {
+	presets   []Preset
+	addresses []Address
+	calls     []string
+	fail      error
+}
+
+func (f *fakeSettings) Presets() []Preset    { return f.presets }
+func (f *fakeSettings) Addresses() []Address { return f.addresses }
+func (f *fakeSettings) SetPreset(name string, on bool) error {
+	f.calls = append(f.calls, fmt.Sprintf("preset %s %v", name, on))
+	return f.fail
+}
+func (f *fakeSettings) AddAddress(network, action, note string, lifetime time.Duration) error {
+	f.calls = append(f.calls, fmt.Sprintf("add %s %s %q %s", network, action, note, lifetime))
+	return f.fail
+}
+func (f *fakeSettings) RemoveAddress(network string) error {
+	f.calls = append(f.calls, "remove "+network)
+	return f.fail
+}
+
+type keyedError struct{ key string }
+
+func (k keyedError) Error() string      { return "english text of " + k.key }
+func (k keyedError) ProblemKey() string { return k.key }
+
+var formValue = regexp.MustCompile(`name="form" value="([^"]+)"`)
+
+func TestWithoutPermissionNothingCanBeChanged(t *testing.T) {
+	w := newWorld(t, nil) // Settings is nil: the interface only shows
+	cookie := cookieOf(w.signIn(password, nil))
+	if rec := w.do("GET", "/settings", "", map[string]string{"Cookie": cookie}); rec.Code != http.StatusNotFound {
+		t.Errorf("GET /settings: %d", rec.Code)
+	}
+	for _, target := range []string{"/settings/preset", "/settings/address", "/settings/address/remove"} {
+		if rec := w.do("POST", target, "name=x&state=on", map[string]string{"Cookie": cookie}); rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s: %d", target, rec.Code)
+		}
+	}
+	if body := w.do("GET", "/", "", map[string]string{"Cookie": cookie}).Body.String(); strings.Contains(body, "/settings") {
+		t.Error("the overview links to settings that do not exist")
+	}
+}
+
+func TestChangingSettings(t *testing.T) {
+	fake := &fakeSettings{
+		presets:   []Preset{{Name: "block-ai-training", On: true}, {Name: "challenge-browsers"}},
+		addresses: []Address{{Network: "192.0.2.0/24", Action: "deny", Note: `<script>alert(1)</script>`, Added: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}},
+	}
+	w := newWorld(t, func(o *Options) { o.Settings = fake })
+
+	// Without a login: nothing, not even with a guessed form value.
+	if rec := w.do("GET", "/settings", "", nil); rec.Code != http.StatusSeeOther {
+		t.Errorf("GET /settings without a login: %d", rec.Code)
+	}
+	if rec := w.do("POST", "/settings/preset", "form=x&name=challenge-browsers&state=on", nil); rec.Code != http.StatusSeeOther || len(fake.calls) != 0 {
+		t.Fatalf("POST without a login: %d, calls %v", rec.Code, fake.calls)
+	}
+
+	cookie := cookieOf(w.signIn(password, nil))
+	auth := map[string]string{"Cookie": cookie}
+	page := w.do("GET", "/settings", "", auth)
+	body := page.Body.String()
+	m := formValue.FindStringSubmatch(body)
+	if page.Code != 200 || m == nil {
+		t.Fatalf("GET /settings: %d", page.Code)
+	}
+	form := "form=" + url.QueryEscape(m[1])
+	for _, want := range []string{"block-ai-training", "Blocks crawlers that collect pages", "192.0.2.0/24", "&lt;script&gt;alert(1)", "Switch off: block-ai-training", "Switch on: challenge-browsers"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if strings.Contains(body, "<script>") {
+		t.Error("a note reached the page as markup")
+	}
+
+	// A form that is not ours changes nothing.
+	for name, attempt := range map[string]*httptest.ResponseRecorder{
+		"no form value":     w.do("POST", "/settings/preset", "name=challenge-browsers&state=on", auth),
+		"wrong form value":  w.do("POST", "/settings/preset", "form=AAAA&name=challenge-browsers&state=on", auth),
+		"another site":      w.do("POST", "/settings/preset", form+"&name=challenge-browsers&state=on", map[string]string{"Cookie": cookie, "Origin": "https://evil.example"}),
+		"cross-site fetch":  w.do("POST", "/settings/address", form+"&network=192.0.2.9&action=deny&lifetime=day", map[string]string{"Cookie": cookie, "Sec-Fetch-Site": "cross-site"}),
+		"by a link":         w.do("GET", "/settings/preset?"+form+"&name=challenge-browsers&state=on", "", auth),
+		"form value in URL": w.do("POST", "/settings/address/remove?"+form+"&network=192.0.2.0/24", "", auth),
+	} {
+		if attempt.Code == http.StatusSeeOther || len(fake.calls) != 0 {
+			t.Errorf("%s: %d, calls %v", name, attempt.Code, fake.calls)
+			fake.calls = nil
+		}
+	}
+
+	// Our own form does.
+	for _, body := range []string{
+		"&name=challenge-browsers&state=on",
+	} {
+		if rec := w.do("POST", "/settings/preset", form+body, auth); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings?saved=1" {
+			t.Errorf("preset: %d %q", rec.Code, rec.Body)
+		}
+	}
+	w.do("POST", "/settings/address", form+"&network=198.51.100.7&action=allow&note=office&lifetime=week", auth)
+	w.do("POST", "/settings/address/remove", form+"&network="+url.QueryEscape("192.0.2.0/24"), auth)
+	want := []string{"preset challenge-browsers true", `add 198.51.100.7 allow "office" 168h0m0s`, "remove 192.0.2.0/24"}
+	if strings.Join(fake.calls, "|") != strings.Join(want, "|") {
+		t.Errorf("calls = %v", fake.calls)
+	}
+
+	// Values that are not among the choices never reach the settings.
+	fake.calls = nil
+	for _, bad := range []string{"&name=x&state=maybe", "&name=x"} {
+		if rec := w.do("POST", "/settings/preset", form+bad, auth); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("preset %q: %d", bad, rec.Code)
+		}
+	}
+	if rec := w.do("POST", "/settings/address", form+"&network=192.0.2.9&action=deny&lifetime=forever", auth); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("unknown lifetime: %d", rec.Code)
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("calls = %v", fake.calls)
+	}
+
+	// A refused change is explained in the reader's language.
+	fake.fail = keyedError{"network_invalid"}
+	rec := w.do("POST", "/settings/address", form+"&network=nonsense&action=deny&lifetime=day", map[string]string{"Cookie": cookie, "Accept-Language": "de"})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "Das ist keine IP-Adresse") || strings.Contains(rec.Body.String(), "english text") {
+		t.Errorf("refused: %d", rec.Code)
+	}
+	fake.fail = errors.New(`the rule "<b>" needs the trap`)
+	rec = w.do("POST", "/settings/preset", form+"&name=block-trapped&state=on", auth)
+	if !strings.Contains(rec.Body.String(), "That did not work: the rule &#34;&lt;b&gt;&#34; needs the trap") {
+		t.Errorf("other error: %s", rec.Body.String()[:200])
+	}
+
+	if log := w.log.String(); strings.Contains(log, m[1]) || strings.Contains(log, "198.51.100.7") {
+		t.Errorf("the log holds the form value or a listed address:\n%s", log)
+	}
+}
+
+// Every preset that ships has its explanation in both languages.
+func TestEveryPresetIsExplained(t *testing.T) {
+	entries, err := fs.ReadDir(data.Files, "presets")
+	if err != nil || len(entries) == 0 {
+		t.Fatal(err)
+	}
+	w := newWorld(t, nil)
+	for _, entry := range entries {
+		name := strings.TrimSuffix(entry.Name(), ".yaml")
+		for _, lang := range languages {
+			if w.a.texts[lang]["preset_"+name] == "" {
+				t.Errorf("%s: no text for preset %s", lang, name)
+			}
+		}
 	}
 }

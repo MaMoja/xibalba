@@ -11,6 +11,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/MaMoja/xibalba/internal/admin"
+	"github.com/MaMoja/xibalba/internal/changes"
 )
 
 // Admin holds the settings of the web interface. It is documented in
@@ -31,6 +32,17 @@ type Admin struct {
 	// SecureCookie marks the login cookie for HTTPS only.
 	SecureCookie bool `yaml:"secure_cookie"`
 
+	// AllowChanges lets the web interface change things: switch presets,
+	// list addresses. Off, it only shows.
+	AllowChanges bool `yaml:"allow_changes"`
+	// ChangesFile keeps what was changed in the web interface, relative to
+	// the configuration file. What it holds applies even while
+	// AllowChanges is off.
+	ChangesFile string `yaml:"changes_file"`
+
+	// Changes is the content of ChangesFile; ChangesPath is where it is.
+	Changes     changes.State `yaml:"-"`
+	ChangesPath string        `yaml:"-"`
 	// PasswordOpen says that the password file can be read by other users.
 	PasswordOpen bool `yaml:"-"`
 
@@ -39,7 +51,8 @@ type Admin struct {
 }
 
 func defaultAdmin() Admin {
-	return Admin{Enabled: false, Listen: "127.0.0.1:9091", PasswordFile: "admin.password", SessionLifetime: 12 * time.Hour, Hostnames: []string{}}
+	return Admin{Enabled: false, Listen: "127.0.0.1:9091", PasswordFile: "admin.password", SessionLifetime: 12 * time.Hour, Hostnames: []string{},
+		AllowChanges: false, ChangesFile: "admin.changes.json"}
 }
 
 func resolve(dir, path string) string {
@@ -67,6 +80,10 @@ func (a *Admin) check(dir string, others map[string]string, add func(path, messa
 	}
 	if a.SessionLifetime < 5*time.Minute || a.SessionLifetime > 30*24*time.Hour {
 		add("admin.session_lifetime", fmt.Sprintf("%s is out of range", a.SessionLifetime), `use a duration from "5m" to "720h"; "12h" is a working day`)
+	}
+	if a.AllowChanges && !a.Enabled {
+		add("admin.allow_changes", "changes are allowed, and the web interface they would be made in is switched off",
+			"set admin.enabled to true, or admin.allow_changes to false")
 	}
 	if strings.TrimSpace(a.PasswordFile) == "" {
 		add("admin.password_file", "no file is named", `name the file that holds the stored password, for example "admin.password"`)

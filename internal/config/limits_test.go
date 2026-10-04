@@ -2,6 +2,8 @@ package config
 
 import (
 	"github.com/MaMoja/xibalba/internal/admin"
+	"github.com/MaMoja/xibalba/internal/changes"
+	"github.com/MaMoja/xibalba/internal/rules"
 	"net/netip"
 	"os"
 	"strings"
@@ -200,5 +202,74 @@ func TestAdminSettings(t *testing.T) {
 	same := "admin:\n  listen: \"127.0.0.1:9090\"\n"
 	if _, err := Parse("xibalba.yaml", []byte(base+same)); err != nil {
 		t.Errorf("switched off: %v", err)
+	}
+}
+
+func TestChangesFromTheWebInterface(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	changed := `{"presets": {"block-ai-training": true, "allow-feeds": false},
+ "addresses": [{"network": "192.0.2.0/24", "action": "deny", "added": "2026-10-01T00:00:00Z"},
+               {"network": "198.51.100.7", "action": "allow", "added": "2026-10-01T00:00:00Z", "expires": "2026-10-02T00:00:00Z"}]}`
+	path := writeFiles(t, map[string]string{
+		"xibalba.yaml":       base + "rules:\n  presets: [allow-feeds, challenge-browsers]\n",
+		"admin.changes.json": changed,
+	})
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// In force although the web interface is off: the file decides.
+	if got := cfg.Rules.EffectivePresets(cfg.Admin.Changes); strings.Join(got, ",") != "block-ai-training,challenge-browsers" {
+		t.Errorf("presets = %v", got)
+	}
+	spec, err := cfg.RuleSpec(cfg.Admin.Changes, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The expired entry is left out, the list comes first.
+	if spec.Rules[0].Name != ListDenyRule || len(spec.Rules[0].Match.IP) != 1 || spec.Rules[1].Name == ListAllowRule {
+		t.Errorf("first rules = %+v", spec.Rules[:2])
+	}
+	if _, problems := rules.Compile(spec); len(problems) != 0 {
+		t.Errorf("problems = %+v", problems)
+	}
+
+	for name, tt := range map[string]struct{ file, want string }{
+		"damaged":           {"{", "is not valid JSON"},
+		"blocks everyone":   {`{"addresses": [{"network": "0.0.0.0/0", "action": "deny"}]}`, "not valid"},
+		"unknown preset":    {`{"presets": {"nope": true}}`, "is not a preset"},
+		"needs what is off": {`{"presets": {"block-trapped": true}}`, "the rule set does not work"},
+		"unknown action":    {`{"addresses": [{"network": "192.0.2.1", "action": "weigh"}]}`, "not valid"},
+	} {
+		path := writeFiles(t, map[string]string{"xibalba.yaml": base, "admin.changes.json": tt.file})
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "admin.changes_file") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := Parse("xibalba.yaml", []byte(base+"admin:\n  allow_changes: true\n")); err == nil || !strings.Contains(err.Error(), "admin.allow_changes") {
+		t.Errorf("changes allowed without the web interface: %v", err)
+	}
+}
+
+func TestWhereASwitchedOnPresetGoes(t *testing.T) {
+	r := Rules{Presets: []string{"challenge-browsers", "allow-feeds"}} // the owner's order is kept
+	on := func(names ...string) changes.State {
+		s := changes.State{Presets: map[string]bool{}}
+		for _, n := range names {
+			s.Presets[n] = true
+		}
+		return s
+	}
+	for want, state := range map[string]changes.State{
+		"challenge-browsers,allow-feeds":                                         {},
+		"block-ai-training,challenge-browsers,allow-feeds":                       on("block-ai-training"),
+		"keep-internet-working,block-ai-training,challenge-browsers,allow-feeds": on("block-ai-training", "keep-internet-working", "allow-feeds"),
+	} {
+		if got := strings.Join(r.EffectivePresets(state), ","); got != want {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	}
+	if len(PresetsInOrder()) != len(PresetNames()) {
+		t.Errorf("order lists %d presets, there are %d", len(PresetsInOrder()), len(PresetNames()))
 	}
 }

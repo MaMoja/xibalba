@@ -302,6 +302,14 @@ admin:
   # front: ["xibalba.example.org"]. Requests under other names are refused.
   # localhost and 127.0.0.1 always work.
   hostnames: []
+  # false: the web interface only shows. true: it can also switch presets on
+  # and off and keep a list of addresses that are let through or blocked.
+  # Changes take effect at once, without a restart.
+  allow_changes: false
+  # Where those changes are kept, relative to this file. This file here is
+  # never rewritten. What the changes file holds applies as long as it
+  # exists, also while allow_changes is false; delete it to drop the changes.
+  changes_file: admin.changes.json
   # true if you reach it over HTTPS (a web server in front): the login cookie
   # is then only ever sent encrypted. Leave false for http://127.0.0.1.
   secure_cookie: false

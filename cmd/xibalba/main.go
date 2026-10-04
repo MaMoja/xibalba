@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/admin"
 	"github.com/MaMoja/xibalba/internal/buildinfo"
 	"github.com/MaMoja/xibalba/internal/challenge"
+	"github.com/MaMoja/xibalba/internal/changes"
 	"github.com/MaMoja/xibalba/internal/clientip"
 	"github.com/MaMoja/xibalba/internal/config"
 	"github.com/MaMoja/xibalba/internal/crawlers"
@@ -260,7 +262,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// The rule set was checked when the configuration was loaded, so
 	// compiling it here cannot report problems; if it does, refuse to start.
-	engine, problems := rules.Compile(cfg.Rules.Spec())
+	spec, err := cfg.RuleSpec(cfg.Admin.Changes, time.Now())
+	if err != nil {
+		log.Error("start-up failed", "error", err.Error())
+		return exitFailed
+	}
+	engine, problems := rules.Compile(spec)
+	// With changes allowed, a preset switched on later may ask which
+	// crawler a request is or whether a client was trapped, so those parts
+	// run from the start.
+	mayChange := cfg.Admin.Enabled && cfg.Admin.AllowChanges
 	if len(problems) > 0 {
 		log.Error("start-up failed", "error", fmt.Sprintf("the rule set does not compile: %+v", problems))
 		return exitFailed
@@ -324,7 +335,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	})
 	opsMux.Handle("GET /crawlers", known.Handler())
 	var identify func(string, netip.Addr) rules.Crawler
-	if engine.UsesCrawlers() {
+	if engine.UsesCrawlers() || mayChange {
 		registry.Register(known.Name(), known.Health)
 		supervisor.Add(known)
 		identify = func(userAgent string, client netip.Addr) rules.Crawler {
@@ -371,7 +382,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var trapped func(netip.Addr) bool
 	own := check.Handler()
 	if snare != nil {
-		if engine.UsesTrap() { // nobody asks otherwise; spare every request the lookup
+		if engine.UsesTrap() || mayChange { // nobody asks otherwise; spare every request the lookup
 			trapped = snare.Caught
 		}
 		own = withTrap(snare.Handler(), own)
@@ -452,6 +463,40 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	// Changes made in the web interface: applied on top of the
+	// configuration, kept in their own file, in force as long as it exists.
+	changed := changes.NewStore(changes.Options{
+		Path:    cfg.Admin.ChangesPath,
+		Initial: cfg.Admin.Changes,
+		Presets: config.PresetNames(),
+		Apply: func(state changes.State) error {
+			spec, err := cfg.RuleSpec(state, time.Now())
+			if err != nil {
+				return err
+			}
+			next, problems := rules.Compile(spec)
+			if len(problems) > 0 {
+				return errors.New(problems[0].Message)
+			}
+			decisions.Swap(next)
+			allow, deny := state.Active(time.Now())
+			log.Info("rule set replaced", "component", "changes", "rules", next.Len(),
+				"presets", strings.Join(cfg.Rules.EffectivePresets(state), ","), "addresses_allowed", len(allow), "addresses_blocked", len(deny))
+			return nil
+		},
+	})
+	if !cfg.Admin.Changes.Empty() || mayChange {
+		supervisor.Add(changes.NewWatcher(changed))
+	}
+	if !cfg.Admin.Changes.Empty() {
+		log.Info("changes made in the web interface are in force", "component", "changes", "file", cfg.Admin.ChangesFile,
+			"presets_changed", len(cfg.Admin.Changes.Presets), "addresses", len(cfg.Admin.Changes.Addresses))
+	}
+	var editable admin.Settings
+	if mayChange {
+		editable = settings{cfg: &cfg, store: changed}
+	}
+
 	// The web interface, if the site owner switched it on. Off, none of
 	// it exists: no listener, no templates in memory.
 	if cfg.Admin.Enabled {
@@ -460,6 +505,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			SessionLifetime: cfg.Admin.SessionLifetime,
 			Hosts:           adminHosts(cfg.Admin),
 			SecureCookie:    cfg.Admin.SecureCookie,
+			Settings:        editable,
 			History:         history,
 			Live:            func() map[string]uint64 { return totals(sources) },
 			Health:          registry.Report,

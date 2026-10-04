@@ -97,8 +97,10 @@ decision (2026-10-03): all of this comes before statistics.
   - [ ] Low, documented: behind a web server all sign-in attempts share one address and one wait.
 
 ## M8: Web interface, write side
-- [ ] Preset switches
-- [ ] IP block and allow lists with expiry and notes
+- [x] Its own switch, `admin.allow_changes`, off by default (owner's decision 2026-10-04)
+- [x] Preset switches, in force at once
+- [x] IP block and allow lists with expiry and notes
+- [x] Changes kept in their own file; the configuration file is never rewritten; rule set replaced while running
 - [ ] Rule editor with validation and request test box
 - [ ] Versioned config with rollback
 

@@ -29,6 +29,7 @@ func settings(cfg Config) Config {
 	cfg.Rules.Catalog = nil
 	cfg.Rules.TrapOn = false
 	cfg.Rules.CountriesOn = false
+	cfg.Admin.ChangesPath = ""
 	return cfg
 }
 

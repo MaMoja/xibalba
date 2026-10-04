@@ -1936,3 +1936,145 @@ func TestWebInterface(t *testing.T) {
 		t.Errorf("the log holds a secret:\n%s", text)
 	}
 }
+
+// With admin.allow_changes the web interface switches presets and lists
+// addresses. A change takes effect at once, is kept in its own file, and is
+// still in force after a restart.
+func TestChangesInTheWebInterface(t *testing.T) {
+	site := newWebsite(t)
+	dir := t.TempDir()
+	config := filepath.Join(dir, "xibalba.yaml")
+	public, ops, ui := freeAddr(t), freeAddr(t), freeAddr(t)
+	text := fmt.Sprintf("upstream:\n  url: %s\nserver:\n  listen: %s\nops:\n  listen: %s\nlog:\n  format: text\ncrawlers:\n  refresh: false\nadmin:\n  enabled: true\n  allow_changes: true\n  listen: %s\n",
+		site.URL, public, ops, ui)
+	if err := os.WriteFile(config, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const password = "ein langes Passwort 42"
+	set := exec.Command(binary, "-set-password", "-config", config)
+	set.Stdin = strings.NewReader(password + "\n")
+	if out, err := set.CombinedOutput(); err != nil {
+		t.Fatalf("set-password: %v\n%s", err, out)
+	}
+	startIt := func() (*exec.Cmd, *logBuffer) {
+		logs := &logBuffer{}
+		cmd := exec.Command(binary, "-config", config)
+		cmd.Stderr = logs
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if cmd.ProcessState == nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+		})
+		_ = waitFor(t, "http://"+ops+"/healthz").Body.Close()
+		return cmd, logs
+	}
+	cmd, _ := startIt()
+
+	base := "http://" + ui
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var cookie *http.Cookie
+	send := func(method, path string, form url.Values) (int, string) {
+		req, _ := http.NewRequest(method, base+path, strings.NewReader(form.Encode()))
+		if method == "POST" {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, _ := io.ReadAll(resp.Body)
+		for _, c := range resp.Cookies() {
+			cookie = c
+		}
+		return resp.StatusCode, string(body)
+	}
+	signIn := func() string {
+		cookie = nil
+		if code, _ := send("POST", "/login", url.Values{"password": {password}}); code != http.StatusSeeOther {
+			t.Fatalf("sign-in: %d", code)
+		}
+		_, page := send("GET", "/settings", nil)
+		m := regexp.MustCompile(`name="form" value="([^"]+)"`).FindStringSubmatch(page)
+		if m == nil {
+			t.Fatalf("no form value on the settings page:\n%s", page)
+		}
+		return m[1]
+	}
+	form := signIn()
+	visit := func(agent string) int {
+		resp, _ := get(t, "http://"+public+"/", map[string]string{"User-Agent": agent, "Accept-Language": "en"})
+		return resp.StatusCode
+	}
+
+	// A preset: off, a training crawler gets through; on, it does not.
+	if code := visit("GPTBot/1.0"); code != 200 {
+		t.Fatalf("GPTBot before: %d", code)
+	}
+	if code, body := send("POST", "/settings/preset", url.Values{"form": {form}, "name": {"block-ai-training"}, "state": {"on"}}); code != http.StatusSeeOther {
+		t.Fatalf("switching the preset on: %d\n%s", code, body)
+	}
+	if code := visit("GPTBot/1.0"); code != http.StatusForbidden {
+		t.Errorf("GPTBot after: %d", code)
+	}
+
+	// A preset that needs something that is off is refused, with the reason.
+	if code, body := send("POST", "/settings/preset", url.Values{"form": {form}, "name": {"block-trapped"}, "state": {"on"}}); code != http.StatusUnprocessableEntity || !strings.Contains(body, "trap") {
+		t.Errorf("block-trapped without the trap: %d", code)
+	}
+
+	// An address: blocked at once, let through again when removed.
+	if code := visit("curl/8"); code != 200 {
+		t.Fatalf("before blocking: %d", code)
+	}
+	if code, body := send("POST", "/settings/address", url.Values{"form": {form}, "network": {"127.0.0.1"}, "action": {"deny"}, "lifetime": {"day"}, "note": {"test"}}); code != http.StatusSeeOther {
+		t.Fatalf("blocking: %d\n%s", code, body)
+	}
+	if code := visit("curl/8"); code != http.StatusForbidden {
+		t.Errorf("after blocking: %d", code)
+	}
+	// The web interface itself is not behind the rules: nobody locks themselves out of it.
+	if code, _ := send("GET", "/settings", nil); code != 200 {
+		t.Errorf("settings after blocking this address: %d", code)
+	}
+
+	// Kept in its own file; the configuration file is untouched.
+	kept, err := os.ReadFile(filepath.Join(dir, "admin.changes.json"))
+	if err != nil || !strings.Contains(string(kept), `"block-ai-training": true`) || !strings.Contains(string(kept), `"127.0.0.1"`) {
+		t.Fatalf("changes file: %v\n%s", err, kept)
+	}
+	if now, _ := os.ReadFile(config); string(now) != text {
+		t.Error("the configuration file was rewritten")
+	}
+
+	// Still in force after a restart.
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+	_ = cmd.Wait()
+	_, logs := startIt()
+	if code := visit("curl/8"); code != http.StatusForbidden {
+		t.Errorf("after the restart: %d", code)
+	}
+	if !strings.Contains(logs.String(), "changes made in the web interface are in force") {
+		t.Errorf("the log does not mention the changes:\n%s", logs.String())
+	}
+	form = signIn()
+	if code, body := send("POST", "/settings/address/remove", url.Values{"form": {form}, "network": {"127.0.0.1"}}); code != http.StatusSeeOther {
+		t.Fatalf("removing: %d\n%s", code, body)
+	}
+	if code := visit("curl/8"); code != 200 {
+		t.Errorf("after removing: %d", code)
+	}
+	if code := visit("GPTBot/1.0"); code != http.StatusForbidden {
+		t.Errorf("GPTBot after the restart: %d", code)
+	}
+	if text := logs.String(); strings.Contains(text, "127.0.0.1\"") && strings.Contains(text, "addresses=127") {
+		t.Errorf("the log names a listed address:\n%s", text)
+	}
+}

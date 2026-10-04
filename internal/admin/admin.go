@@ -9,9 +9,11 @@ package admin
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -70,6 +72,8 @@ type Options struct {
 	Live func() map[string]uint64
 	// Health returns the state of the parts.
 	Health func() health.Report
+	// Settings lets the interface change things. Nil: it only shows.
+	Settings Settings
 	// Hosts are the names under which the interface may be asked for,
 	// besides "localhost" and addresses of this machine itself (127.0.0.1,
 	// ::1). A request under any other name is refused: a foreign web page
@@ -89,6 +93,41 @@ type Options struct {
 	Now func() time.Time
 }
 
+// Settings is what the interface can change, if the site owner allows it.
+// An error that has a method ProblemKey() string is shown with the text the
+// interface has for that key; any other error is shown as it is.
+type Settings interface {
+	// Presets lists every preset and whether it is on.
+	Presets() []Preset
+	// SetPreset switches a preset on or off.
+	SetPreset(name string, on bool) error
+	// Addresses lists the addresses and networks let through or blocked.
+	Addresses() []Address
+	// AddAddress lists one more. lifetime zero means no end.
+	AddAddress(network, action, note string, lifetime time.Duration) error
+	// RemoveAddress takes one off the list.
+	RemoveAddress(network string) error
+}
+
+// Preset is a ready-made group of rules.
+type Preset struct {
+	Name string
+	On   bool
+}
+
+// Address is a listed address or network. Action is "allow" or "deny".
+type Address struct {
+	Network, Action, Note string
+	Added, Expires        time.Time
+}
+
+type session struct {
+	end time.Time
+	// form goes into every form that changes something, and has to come
+	// back with it: a second proof that the form was ours.
+	form string
+}
+
 // Admin is the web interface. Use Handler to serve it.
 type Admin struct {
 	opts  Options
@@ -103,8 +142,8 @@ type Admin struct {
 	hosts    map[string]bool
 
 	mu       sync.Mutex
-	sessions map[string]time.Time // session -> end
-	failures map[string]*failure  // address -> wrong passwords
+	sessions map[string]session
+	failures map[string]*failure // address -> wrong passwords
 }
 
 type failure struct {
@@ -125,7 +164,7 @@ func New(opts Options) (*Admin, error) {
 		opts.SessionLifetime = 12 * time.Hour
 	}
 	a := &Admin{opts: opts, log: opts.Log.With("component", "admin"), texts: map[string]map[string]string{},
-		sessions: map[string]time.Time{}, failures: map[string]*failure{}, checking: make(chan struct{}, 1),
+		sessions: map[string]session{}, failures: map[string]*failure{}, checking: make(chan struct{}, 1),
 		cookie: cookieName, hosts: map[string]bool{"localhost": true}}
 	if opts.SecureCookie {
 		a.cookie = "__Host-" + cookieName // the browser then ties it to this exact host, over HTTPS only
@@ -178,6 +217,33 @@ func (a *Admin) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /login", a.signIn)
 	mux.HandleFunc("POST /logout", a.signOut)
+	if a.opts.Settings != nil {
+		mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
+			current, ok := a.sessionOf(r)
+			if !ok {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
+			a.settings(w, r, current, http.StatusOK, "", r.URL.Query().Get("saved") == "1")
+		})
+		mux.HandleFunc("POST /settings/preset", a.change(func(r *http.Request) error {
+			state := r.PostFormValue("state")
+			if state != "on" && state != "off" {
+				return errors.New("state must be on or off")
+			}
+			return a.opts.Settings.SetPreset(r.PostFormValue("name"), state == "on")
+		}))
+		mux.HandleFunc("POST /settings/address", a.change(func(r *http.Request) error {
+			lifetime, ok := lifetimes[r.PostFormValue("lifetime")]
+			if !ok {
+				return errors.New("lifetime is not one of the choices")
+			}
+			return a.opts.Settings.AddAddress(r.PostFormValue("network"), r.PostFormValue("action"), r.PostFormValue("note"), lifetime)
+		}))
+		mux.HandleFunc("POST /settings/address/remove", a.change(func(r *http.Request) error {
+			return a.opts.Settings.RemoveAddress(r.PostFormValue("network"))
+		}))
+	}
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		if !a.signedIn(r) {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -323,27 +389,32 @@ func (a *Admin) signIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	session := base64.RawURLEncoding.EncodeToString(raw)
+	id := base64.RawURLEncoding.EncodeToString(raw)
+	form := make([]byte, 32)
+	if _, err := rand.Read(form); err != nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	a.mu.Lock()
 	delete(a.failures, key)
-	for id, end := range a.sessions {
-		if now.After(end) {
+	for id, old := range a.sessions {
+		if now.After(old.end) {
 			delete(a.sessions, id)
 		}
 	}
 	for len(a.sessions) >= maxSessions { // drop the one that ends first
 		first := ""
-		for id, end := range a.sessions {
-			if first == "" || end.Before(a.sessions[first]) {
+		for id, old := range a.sessions {
+			if first == "" || old.end.Before(a.sessions[first].end) {
 				first = id
 			}
 		}
 		delete(a.sessions, first)
 	}
-	a.sessions[session] = now.Add(a.opts.SessionLifetime)
+	a.sessions[id] = session{end: now.Add(a.opts.SessionLifetime), form: base64.RawURLEncoding.EncodeToString(form)}
 	a.mu.Unlock()
 
-	http.SetCookie(w, &http.Cookie{Name: a.cookie, Value: session, Path: "/", HttpOnly: true,
+	http.SetCookie(w, &http.Cookie{Name: a.cookie, Value: id, Path: "/", HttpOnly: true,
 		SameSite: http.SameSiteStrictMode, Secure: a.opts.SecureCookie, MaxAge: int(a.opts.SessionLifetime.Seconds())})
 	a.log.Info("signed in")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -364,18 +435,24 @@ func (a *Admin) signOut(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) signedIn(r *http.Request) bool {
+	_, ok := a.sessionOf(r)
+	return ok
+}
+
+// sessionOf returns the session of a request, if it has a live one.
+func (a *Admin) sessionOf(r *http.Request) (session, bool) {
 	c, err := r.Cookie(a.cookie)
 	if err != nil || c.Value == "" {
-		return false
+		return session{}, false
 	}
 	a.mu.Lock()
-	end, ok := a.sessions[c.Value] // a map lookup: the session is 256 random bits, timing tells nothing useful
-	if ok && a.opts.Now().After(end) {
+	defer a.mu.Unlock()
+	found, ok := a.sessions[c.Value] // a map lookup: the session is 256 random bits, timing tells nothing useful
+	if ok && a.opts.Now().After(found.end) {
 		delete(a.sessions, c.Value)
 		ok = false
 	}
-	a.mu.Unlock()
-	return ok
+	return found, ok
 }
 
 func (a *Admin) login(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -410,6 +487,87 @@ func pickLanguage(header string) string {
 		}
 	}
 	return languages[0]
+}
+
+// lifetimes are the choices for how long a listed address stays listed.
+var lifetimes = map[string]time.Duration{
+	"hour": time.Hour, "day": 24 * time.Hour, "week": 7 * 24 * time.Hour,
+	"month": 30 * 24 * time.Hour, "year": 365 * 24 * time.Hour, "never": 0,
+}
+
+var lifetimeOrder = []string{"hour", "day", "week", "month", "year", "never"}
+
+// change wraps a handler that changes a setting: only for a signed-in
+// session, only from our own form, and with the session's form value.
+func (a *Admin) change(do func(*http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !sameOrigin(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		current, ok := a.sessionOf(r)
+		if !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+		if subtle.ConstantTimeCompare([]byte(r.PostFormValue("form")), []byte(current.form)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if err := do(r); err != nil {
+			t := a.texts[pickLanguage(r.Header.Get("Accept-Language"))]
+			message := t["err_other"] + " " + err.Error()
+			var keyed interface{ ProblemKey() string }
+			if errors.As(err, &keyed) && t["err_"+keyed.ProblemKey()] != "" {
+				message = t["err_"+keyed.ProblemKey()]
+			}
+			a.settings(w, r, current, http.StatusUnprocessableEntity, message, false)
+			return
+		}
+		a.log.Info("a setting was changed in the web interface", "what", strings.TrimPrefix(r.URL.Path, "/settings/"))
+		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+	}
+}
+
+type presetRow struct {
+	Name, Text string
+	On         bool
+}
+
+type addressRow struct {
+	Network, Action, ActionLabel, Note, Added, Expires string
+}
+
+type choice struct{ ID, Label string }
+
+// settings writes the page on which things are changed.
+func (a *Admin) settings(w http.ResponseWriter, r *http.Request, current session, status int, problem string, saved bool) {
+	lang := pickLanguage(r.Header.Get("Accept-Language"))
+	t := a.texts[lang]
+	var presets []presetRow
+	for _, p := range a.opts.Settings.Presets() {
+		presets = append(presets, presetRow{Name: p.Name, Text: t["preset_"+p.Name], On: p.On})
+	}
+	now := a.opts.Now()
+	var addresses []addressRow
+	for _, e := range a.opts.Settings.Addresses() {
+		row := addressRow{Network: e.Network, Action: e.Action, ActionLabel: t["action_"+e.Action], Note: e.Note,
+			Added: e.Added.UTC().Format("02.01.2006"), Expires: t["never"]}
+		if !e.Expires.IsZero() {
+			row.Expires = e.Expires.UTC().Format("02.01.2006 15:04")
+			if !now.Before(e.Expires) {
+				row.Expires = t["expired"]
+			}
+		}
+		addresses = append(addresses, row)
+	}
+	var choices []choice
+	for _, id := range lifetimeOrder {
+		choices = append(choices, choice{id, t["lifetime_"+id]})
+	}
+	a.render(w, status, "settings.html", map[string]any{"Lang": lang, "T": t, "Form": current.form, "Presets": presets,
+		"Addresses": addresses, "Lifetimes": choices, "Problem": problem, "Saved": saved && problem == ""})
 }
 
 // The overview.
@@ -460,7 +618,7 @@ func (a *Admin) overview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	data := map[string]any{"Lang": lang, "T": t, "Version": a.opts.Version, "DryRun": a.opts.DryRun,
+	data := map[string]any{"Lang": lang, "T": t, "Version": a.opts.Version, "DryRun": a.opts.DryRun, "CanChange": a.opts.Settings != nil,
 		"History": a.opts.History != nil, "RangeLabel": t["since_start"]}
 	totals := map[string]uint64{}
 	if a.opts.History == nil {

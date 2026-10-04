@@ -4,6 +4,30 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Changes from the web interface go into their own file and sit on top of
+  the configuration; the YAML file is never rewritten.** Rewriting would
+  lose the owner's comments and layout and make the program a writer of the
+  file it validates. The changes file holds only what was changed (presets
+  on or off, listed addresses) and is plain JSON.
+- **The changes file is in force whenever it exists**, also with
+  `allow_changes: false`. Otherwise locking the interface down would
+  silently unblock every blocked address. `allow_changes` governs editing,
+  the file governs effect; deleting the file drops the changes.
+- **Listed addresses become two ordinary rules in front of all others**
+  (`web-interface.allow`, `web-interface.deny`), and the whole rule set is
+  compiled again and swapped in one step (`gate.Swap`). One mechanism for
+  presets and addresses, the same validation as at start, and the decision
+  path stays as it was: one pointer load more per request. The list is
+  capped at 500 entries because a rule's addresses are compared one by one.
+- **Addresses let through in the web interface are exempt from the request
+  limits**, like `limits.exempt`. An owner who lists the office expects it
+  not to be limited. Stated on the page.
+- **With `allow_changes`, crawler verification runs from the start** even if
+  no rule uses it yet, so that a preset switched on later works at once.
+  The cost is the outgoing requests for the address lists.
+- **Forms that change something carry a value tied to the login**, on top of
+  the same-origin check and the SameSite cookie.
+
 - **Sponsor names and pictures in the README are taken from GitHub
   automatically, once a day; licenses stay manual.** The owner asked for
   automation. Name and picture come from the sponsor's GitHub account, so

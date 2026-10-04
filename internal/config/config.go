@@ -388,6 +388,11 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 	problems = append(problems, cfg.Crawlers.load(filepath.Dir(name), lines)...)
 	cfg.Rules.Catalog = catalog(cfg.Crawlers.Definitions)
 	problems = append(problems, cfg.Rules.load(filepath.Dir(name), lines)...)
+	if len(problems) == 0 { // the changes sit on top of a rule set that works by itself
+		cfg.checkChanges(filepath.Dir(name), func(path, message, hint string) {
+			problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+		})
+	}
 	if len(problems) > 0 {
 		return Config{}, &Error{File: name, Problems: problems}
 	}

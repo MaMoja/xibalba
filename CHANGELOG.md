@@ -16,11 +16,16 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Changing settings in the web interface (`admin.allow_changes`, off by
+  default): switch presets on and off, and keep a list of addresses that
+  are let through or blocked, with note and end date. Changes take effect
+  without a restart and are kept in their own file (`admin.changes_file`);
+  the configuration file is never rewritten.
 - Web interface (`admin`), optional and off by default: a login and an
   overview of requests let through, checked and blocked over time, the
   rules, the crawlers and the state of every part. No script, nothing
   loaded from elsewhere, German and English. `xibalba -set-password` sets
-  its password. It only reads.
+  its password.
 - Counts per network of origin (`statistics.networks`): the largest networks
   of each hour (IPv4 `/24`, IPv6 `/48`) and what happened to their requests.
   Off by default, own time limit (30 days), never a single address.

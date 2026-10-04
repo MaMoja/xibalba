@@ -10,6 +10,10 @@
 <body>
 <header>
 <p>{{.T.title}}</p>
+{{if .CanChange}}<nav aria-label="{{.T.title}}"><ul>
+<li><a href="/" aria-current="page">{{.T.overview}}</a></li>
+<li><a href="/settings">{{.T.settings}}</a></li>
+</ul></nav>{{end}}
 <form method="post" action="/logout"><button type="submit">{{.T.sign_out}}</button></form>
 </header>
 <main>

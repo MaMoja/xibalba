@@ -305,6 +305,8 @@ The optional web interface. See [ADMIN.md](ADMIN.md).
 | `admin.password_file` | `admin.password` | Path of a file, relative to the configuration file | Holds the stored form of the password, never the password. Written by `-set-password`. |
 | `admin.session_lifetime` | `12h` | `5m` to `720h` | How long a login lasts. |
 | `admin.hostnames` | empty | List of host names, without scheme or port | Names the web interface answers to besides `localhost` and local addresses. Needed when a web server passes requests on under its own name. |
+| `admin.allow_changes` | `false` | `true`, `false` | Lets the web interface switch presets and keep a list of addresses that are let through or blocked. Needs `admin.enabled`. See [ADMIN.md](ADMIN.md#changing-settings-in-the-browser). |
+| `admin.changes_file` | `admin.changes.json` | Path of a file, relative to the configuration file | Where the changes made in the web interface are kept. What it holds is in force as long as the file exists, also with `allow_changes: false`. The configuration file is never rewritten. |
 | `admin.secure_cookie` | `false` | `true`, `false` | Marks the login cookie for HTTPS only. Set it when a web server with HTTPS stands in front. |
 
 ### `ops`

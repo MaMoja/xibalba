@@ -357,6 +357,8 @@ admin:
 | `admin.password_file` | Datei mit dem gespeicherten Passwort (nie das Passwort selbst); `-set-password` schreibt sie |
 | `admin.session_lifetime` | wie lange eine Anmeldung gilt (ab Werk `12h`) |
 | `admin.hostnames` | Namen, unter denen Sie die Weboberfläche öffnen, wenn ein Webserver davor steht, zum Beispiel `["xibalba.example.org"]`; `localhost` und `127.0.0.1` gehen immer |
+| `admin.allow_changes` | `true` erlaubt Änderungen in der Weboberfläche (ab Werk `false`): Regelgruppen ein- und ausschalten, Adressen durchlassen oder blockieren |
+| `admin.changes_file` | Datei, in der diese Änderungen stehen (ab Werk `admin.changes.json` neben der Konfigurationsdatei) |
 | `admin.secure_cookie` | `true`, wenn Sie sie über HTTPS erreichen: Das Anmelde-Cookie wird dann nur verschlüsselt übertragen |
 
 Die Verbindung zur Weboberfläche ist nicht verschlüsselt. Von einem anderen
@@ -367,6 +369,26 @@ HTTPS davor. Nach fünf falschen Passwörtern muss ein Anschluss warten. Den
 Verlauf über die Zeit sehen Sie nur, wenn die Zähler dauerhaft gespeichert
 werden (`statistics.directory`, Abschnitt 9). Einzelheiten:
 [ADMIN.md](../ADMIN.md).
+
+**Einstellungen im Browser ändern.** Ab Werk zeigt die Weboberfläche nur an.
+Mit `admin.allow_changes: true` erscheint zusätzlich die Seite
+„Einstellungen“. Dort können Sie
+
+- jede fertige Regelgruppe ein- oder ausschalten und
+- Adressen oder Netze eintragen, die durchgelassen oder blockiert werden,
+  mit Notiz und Ablauf (1 Stunde bis 1 Jahr oder ohne Ende; ab Werk 30 Tage).
+
+Eine Änderung gilt sofort, ohne Neustart. Sie steht in einer eigenen Datei
+(`admin.changes.json` neben der Konfigurationsdatei); **die
+Konfigurationsdatei selbst wird nie verändert.** Was in dieser Datei steht,
+gilt, solange es die Datei gibt, auch wenn Sie `allow_changes` wieder
+ausschalten. Um alle Änderungen zu verwerfen, löschen Sie die Datei und
+starten neu. Ein Eintrag in der Adressliste kommt vor jeder Regel;
+durchgelassene Adressen werden auch von den Anfragelimits nicht gezählt. Von
+der Weboberfläche können Sie sich nicht aussperren: Sie hat einen eigenen
+Anschluss und liegt nicht hinter den Regeln. Die eingetragenen Adressen
+werden gespeichert, bis Sie sie entfernen oder ihre Zeit abgelaufen ist;
+geben Sie Einträgen nach Möglichkeit ein Ende.
 
 ## 5. Wo stelle ich was ein?
 
@@ -412,6 +434,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | meine Sponsor-Lizenz eintragen | `license.file` | Abschnitt 8 |
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
+| Regelgruppen oder einzelne Adressen im Browser schalten | `admin.allow_changes` | Abschnitt 4, „Einstellungen im Browser ändern“ |
 | die Zahlen im Browser sehen | `admin.enabled` und ein Passwort | Abschnitt 4, „Auf Wunsch: die Weboberfläche“ |
 | die Zähler über Neustarts hinweg behalten | `statistics.directory`, `statistics.keep_days` | Abschnitt 9, „Zähler dauerhaft speichern“ |
 | sehen, aus welchen Netzen die meisten Anfragen kommen | `statistics.networks.enabled`, `top`, `keep_days` | Abschnitt 9, „Zähler pro Netz“ |

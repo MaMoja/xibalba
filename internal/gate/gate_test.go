@@ -714,3 +714,47 @@ func TestOriginIsToldTheOutcome(t *testing.T) {
 		t.Errorf("told = %s\nwant   %s", got, want)
 	}
 }
+
+// A new rule set takes effect for the next request; counters of rules that
+// stay carry on, and requests running meanwhile are not disturbed.
+func TestSwap(t *testing.T) {
+	h := newHarness(t, nil)
+	h.do(call{target: "/admin"})
+	h.do(call{target: "/admin"})
+	if rec := h.do(call{target: "/shop"}); rec.Code != 200 {
+		t.Fatalf("/shop before: %d", rec.Code)
+	}
+	next, problems := rules.Compile(rules.Spec{
+		DefaultAction: rules.Allow,
+		Rules: []rules.RuleSpec{
+			{Name: "block-shop", Match: rules.MatchSpec{Path: &rules.StringSpec{Prefix: "/shop"}}, Action: rules.Deny},
+			{Name: "block-admin", Match: rules.MatchSpec{Path: &rules.StringSpec{Prefix: "/admin"}}, Action: rules.Deny},
+		},
+	})
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ { // requests during the swap; -race watches
+		wg.Add(1)
+		go func() { defer wg.Done(); h.do(call{target: "/admin"}) }() // denied under both sets
+	}
+	h.gate.Swap(next)
+	wg.Wait()
+	if rec := h.do(call{target: "/shop"}); rec.Code != http.StatusForbidden {
+		t.Errorf("/shop after: %d", rec.Code)
+	}
+	h.do(call{target: "/admin"})
+	counts := map[string]uint64{}
+	for _, s := range h.gate.Snapshot().Sources {
+		counts[s.Source] = s.Count
+	}
+	// A request decided at the very moment of the swap may be counted in
+	// the set that is leaving; all others are carried over.
+	if n := counts["rule:block-admin"]; n < 3 || n > 11 || counts["rule:block-shop"] != 1 {
+		t.Errorf("counts = %v", counts)
+	}
+	if _, still := counts["rule:block-bot"]; still {
+		t.Errorf("a rule that is gone is still listed: %v", counts)
+	}
+}

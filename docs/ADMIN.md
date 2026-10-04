@@ -6,8 +6,9 @@ whether every part works.
 
 The web interface is **optional and off by default**. Switched off, nothing
 of it exists: no listener, no memory, no work. Switched on, it costs nothing
-while nobody looks at it. It only shows; all settings stay in the
-configuration file.
+while nobody looks at it. By default it only shows; with a second switch it
+can change presets and a list of addresses
+([Changing settings in the browser](#changing-settings-in-the-browser)).
 
 ## Do I want it?
 
@@ -65,6 +66,8 @@ configuration xibalba.yaml: 1 problem
 | `admin.password_file` | `admin.password` | The file `-set-password` writes, relative to the configuration file. |
 | `admin.session_lifetime` | `12h` | How long a login lasts (`5m` to `720h`). |
 | `admin.hostnames` | none | Names under which you open the web interface when a web server stands in front. `localhost` and `127.0.0.1` always work; any other name is refused unless listed. |
+| `admin.allow_changes` | `false` | `true` lets the web interface switch presets and list addresses. |
+| `admin.changes_file` | `admin.changes.json` | Where those changes are kept, relative to the configuration file. |
 | `admin.secure_cookie` | `false` | `true` when you reach it over HTTPS: the login cookie is then only sent encrypted and only to this exact host. |
 
 To change the password, run `-set-password` again and restart. A restart
@@ -137,7 +140,96 @@ keep them.
 
 The component is `admin` in `/healthz` and in the log.
 
+## Changing settings in the browser
+
+By default the web interface only shows. With `admin.allow_changes` it can
+also change two things, and a change takes effect at once, without a restart:
+
+```yaml
+admin:
+  enabled: true
+  allow_changes: true
+```
+
+A second page, "Settings", then appears beside the overview.
+
+**Ready-made rule groups (presets).** Every preset is listed with one
+sentence on what it does, and a button to switch it on or off. A preset
+switched on here is put at its usual place among the others: wanted programs
+first, unwanted crawlers next, wanted crawlers after them, the general check
+for browsers last. The order you wrote in the configuration file is kept.
+
+**Addresses let through or blocked.** Enter an address (`192.0.2.7`) or a
+network (`192.0.2.0/24`), choose whether it is let through or blocked, how
+long the entry stays (1 hour to 1 year, or without end; 30 days unless you
+choose otherwise), and a note for yourself. Things to know:
+
+- An entry comes before every rule. A blocked address gets the block page;
+  an address that is let through skips rules, security check and request
+  limits.
+- An entry ends by itself when its time is over.
+- At most 500 entries, and no network larger than a `/16` (IPv4) or `/32`
+  (IPv6): the list is for single clients and organisations. For more, write
+  a rule in the configuration file.
+- You cannot lock yourself out of the web interface: it has its own
+  listener and is not behind the rules.
+
+### Where the changes are kept
+
+In their own small file, `admin.changes.json` beside the configuration file
+(`admin.changes_file`). **The configuration file is never rewritten.** The
+changes file is plain text:
+
+```json
+{
+  "presets": {
+    "block-ai-training": true
+  },
+  "addresses": [
+    {
+      "network": "203.0.113.0/24",
+      "action": "deny",
+      "note": "Scraper, Meldung vom 4.10.",
+      "added": "2026-10-04T16:16:40Z",
+      "expires": "2026-11-03T16:16:40Z"
+    }
+  ]
+}
+```
+
+- What the file holds is in force **as long as the file exists**, also when
+  `allow_changes` or the whole web interface is switched off again.
+  Switching `allow_changes` off stops further changes; it does not undo
+  earlier ones. To drop them all, delete the file and restart.
+- `xibalba -check` checks the configuration together with the changes file.
+- Xibalba's user must be able to write to the directory of the file.
+- A change that would give a rule set that does not work is refused and
+  explained on the page; for example switching on `block-trapped` while the
+  trap is off. A change that cannot be written to the file is taken back.
+- With `allow_changes`, Xibalba fetches the crawlers' address lists from the
+  start, also if no rule asks for a crawler yet, because a preset switched
+  on later needs them at once.
+
+The log notes every change, without the address:
+
+```text
+level=INFO msg="rule set replaced" component=changes rules=4 presets=block-ai-training,allow-search-engines,challenge-browsers addresses_allowed=0 addresses_blocked=1
+level=INFO msg="a setting was changed in the web interface" component=admin what=address
+```
+
+### How changes are protected
+
+Besides the login: a change is only accepted from the interface's own form
+(the browser must say so, and the form carries a value tied to your login),
+never from a link and never from another website.
+
+### Privacy
+
+The addresses you list are stored in the changes file until you remove them
+or their time is over. They are your own, deliberate entries, like an
+address in a rule. Give entries an end date where you can.
+
 ## Planned
 
-Changing settings in the browser (preset switches, block lists, a rule
-editor) is planned for a later version. Today the web interface only reads.
+A rule editor with a test box, and versions of the configuration with a way
+back, are planned for a later version.

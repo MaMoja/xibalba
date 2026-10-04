@@ -103,12 +103,10 @@ type Options struct {
 
 // Gate is the http.Handler that enforces decisions.
 type Gate struct {
-	opts    Options
-	log     *slog.Logger
-	sources []rules.Source
-	counts  []atomic.Uint64 // one per source, same order
-	trusted []bool          // per source: exempt from the request limits
-	since   time.Time
+	opts  Options
+	log   *slog.Logger
+	set   atomic.Pointer[ruleSet] // the rule set in force; replaced as a whole by Swap
+	since time.Time
 
 	challengesServed atomic.Uint64 // challenge pages shown
 	challengesPassed atomic.Uint64 // requests let through on a valid pass
@@ -119,29 +117,55 @@ type Gate struct {
 	lastMsg  string
 }
 
+// ruleSet is one compiled rule set with its counters.
+type ruleSet struct {
+	engine  Evaluator
+	sources []rules.Source
+	counts  []atomic.Uint64 // one per source, same order
+	trusted []bool          // per source: exempt from the request limits
+}
+
+func newRuleSet(engine Evaluator) *ruleSet {
+	sources := engine.Sources()
+	set := &ruleSet{engine: engine, sources: sources, counts: make([]atomic.Uint64, len(sources)), trusted: make([]bool, len(sources))}
+	for i, s := range sources {
+		set.trusted[i] = s.ExemptFromLimits
+	}
+	return set
+}
+
+// Swap puts a new rule set in force without interrupting requests: one
+// already being decided finishes under the old set, the next one uses the
+// new. Counters of rules that exist in both, with the same outcome, carry on.
+func (g *Gate) Swap(engine Evaluator) {
+	next, old := newRuleSet(engine), g.set.Load()
+	type key struct {
+		id     string
+		action rules.Action
+	}
+	before := make(map[key]uint64, len(old.sources))
+	for i, s := range old.sources {
+		before[key{s.ID, s.Action}] = old.counts[i].Load()
+	}
+	for i, s := range next.sources {
+		next.counts[i].Store(before[key{s.ID, s.Action}])
+	}
+	g.set.Store(next)
+}
+
 // New returns a Gate for opts.
 func New(opts Options) *Gate {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	sources := opts.Engine.Sources()
-	trusted := make([]bool, len(sources))
-	for i, s := range sources {
-		trusted[i] = s.ExemptFromLimits
-	}
-	return &Gate{
-		trusted: trusted,
-		opts:    opts,
-		log:     opts.Log.With("component", "rules"),
-		sources: sources,
-		counts:  make([]atomic.Uint64, len(sources)),
-		since:   opts.Now(),
-	}
+	g := &Gate{opts: opts, log: opts.Log.With("component", "rules"), since: opts.Now()}
+	g.set.Store(newRuleSet(opts.Engine))
+	return g
 }
 
 // ServeHTTP decides what happens to the request and carries it out.
 func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	decision, client, ok := g.decide(r)
+	decision, client, set, ok := g.decide(r)
 	if !ok {
 		if g.opts.FailOpen {
 			g.opts.Next.ServeHTTP(w, r)
@@ -151,11 +175,11 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g.counts[decision.Source].Add(1)
+	set.counts[decision.Source].Add(1)
 	if g.log.Enabled(r.Context(), slog.LevelDebug) {
 		g.log.Debug("decision",
 			"action", string(decision.Action),
-			"source", g.sources[decision.Source].ID,
+			"source", set.sources[decision.Source].ID,
 			"weight", decision.Weight,
 			"enforced", !g.opts.DryRun,
 		)
@@ -166,7 +190,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// outcome stricter.
 	var over, refuse bool
 	var retryAfter time.Duration
-	if g.opts.Limit != nil && !g.trusted[decision.Source] {
+	if g.opts.Limit != nil && !set.trusted[decision.Source] {
 		over, refuse, retryAfter = g.opts.Limit(client)
 		if g.opts.Page != nil {
 			// Whether this is a page is known when the website answers.
@@ -202,7 +226,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch action {
 	case rules.Deny:
-		g.opts.Blocked(w, r, g.sources[decision.Source].Reference)
+		g.opts.Blocked(w, r, set.sources[decision.Source].Reference)
 	case rules.Challenge:
 		switch {
 		case g.opts.Challenge == nil:
@@ -258,7 +282,7 @@ func isHTML(contentType string) bool {
 // decide evaluates the request. The engine is built so that it cannot fail,
 // but this stage stands in front of someone's website: if it fails anyway,
 // the failure is contained here and the configured answer applies.
-func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Addr, ok bool) {
+func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Addr, set *ruleSet, ok bool) {
 	defer func() {
 		if p := recover(); p != nil {
 			g.recordFailure(fmt.Sprint(p))
@@ -289,7 +313,8 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 	if g.opts.Identify != nil {
 		req.Crawler = g.opts.Identify(req.UserAgent, req.Client)
 	}
-	return g.opts.Engine.Evaluate(&req), req.Client, true
+	set = g.set.Load()
+	return set.engine.Evaluate(&req), req.Client, set, true
 }
 
 func (g *Gate) recordFailure(msg string) {
@@ -365,12 +390,13 @@ type SourceCount struct {
 
 // Snapshot returns the current counters.
 func (g *Gate) Snapshot() Snapshot {
+	set := g.set.Load()
 	s := Snapshot{
 		DryRun:   g.opts.DryRun,
 		Since:    g.since.UTC().Truncate(time.Second),
 		Totals:   map[rules.Action]uint64{rules.Allow: 0, rules.Challenge: 0, rules.Deny: 0},
 		Failures: g.failures.Load(),
-		Sources:  make([]SourceCount, len(g.sources)),
+		Sources:  make([]SourceCount, len(set.sources)),
 		Challenge: ChallengeCounts{
 			Served: g.challengesServed.Load(),
 			Passed: g.challengesPassed.Load(),
@@ -379,8 +405,8 @@ func (g *Gate) Snapshot() Snapshot {
 	if g.opts.Challenge != nil {
 		s.Challenge.Solved, s.Challenge.Failed = g.opts.Challenge.Counts()
 	}
-	for i, src := range g.sources {
-		n := g.counts[i].Load()
+	for i, src := range set.sources {
+		n := set.counts[i].Load()
 		s.Totals[src.Action] += n
 		s.Sources[i] = SourceCount{Source: src.ID, Action: src.Action, Reference: src.Reference, Count: n}
 	}

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{{.T.settings}} · {{.T.title}}</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header>
+<p>{{.T.title}}</p>
+<nav aria-label="{{.T.title}}"><ul>
+<li><a href="/">{{.T.overview}}</a></li>
+<li><a href="/settings" aria-current="page">{{.T.settings}}</a></li>
+</ul></nav>
+<form method="post" action="/logout"><button type="submit">{{.T.sign_out}}</button></form>
+</header>
+<main>
+<h1>{{.T.settings}}</h1>
+{{if .Problem}}<p class="notice" role="alert">{{.Problem}}</p>{{end}}
+{{if .Saved}}<p class="notice" role="status">{{.T.saved}}</p>{{end}}
+
+<h2>{{.T.presets_title}}</h2>
+<p>{{.T.presets_hint}}</p>
+<div class="scroll" tabindex="0" role="group" aria-label="{{.T.scroll_label}}"><table class="stack">
+<thead><tr><th scope="col">{{.T.group}}</th><th scope="col">{{.T.does}}</th><th scope="col">{{.T.state}}</th><th scope="col"></th></tr></thead>
+<tbody>{{range .Presets}}<tr>
+<th scope="row" class="name">{{.Name}}</th>
+<td>{{.Text}}</td>
+<td>{{if .On}}<strong>{{$.T.on}}</strong>{{else}}{{$.T.off}}{{end}}</td>
+<td><form method="post" action="/settings/preset">
+<input type="hidden" name="form" value="{{$.Form}}">
+<input type="hidden" name="name" value="{{.Name}}">
+<input type="hidden" name="state" value="{{if .On}}off{{else}}on{{end}}">
+<button type="submit" class="small" aria-label="{{if .On}}{{$.T.switch_off}}{{else}}{{$.T.switch_on}}{{end}}: {{.Name}}">{{if .On}}{{$.T.switch_off}}{{else}}{{$.T.switch_on}}{{end}}</button>
+</form></td>
+</tr>{{end}}</tbody>
+</table></div>
+
+<h2>{{.T.addresses_title}}</h2>
+<p>{{.T.addresses_hint}}</p>
+{{if .Addresses}}<div class="scroll" tabindex="0" role="group" aria-label="{{.T.scroll_label}}"><table class="stack">
+<thead><tr><th scope="col">{{.T.network}}</th><th scope="col">{{.T.action}}</th><th scope="col">{{.T.note}}</th><th scope="col">{{.T.added}}</th><th scope="col">{{.T.until}}</th><th scope="col"></th></tr></thead>
+<tbody>{{range .Addresses}}<tr>
+<th scope="row">{{.Network}}</th>
+<td>{{.ActionLabel}}</td>
+<td class="note">{{.Note}}</td>
+<td>{{.Added}}</td>
+<td>{{.Expires}}</td>
+<td><form method="post" action="/settings/address/remove">
+<input type="hidden" name="form" value="{{$.Form}}">
+<input type="hidden" name="network" value="{{.Network}}">
+<button type="submit" class="small" aria-label="{{$.T.remove}}: {{.Network}}">{{$.T.remove}}</button>
+</form></td>
+</tr>{{end}}</tbody>
+</table></div>{{else}}<p>{{.T.no_addresses}}</p>{{end}}
+
+<form class="add" method="post" action="/settings/address">
+<input type="hidden" name="form" value="{{.Form}}">
+<div><label for="network">{{.T.network}}</label>
+<input id="network" name="network" required maxlength="64" autocomplete="off" aria-describedby="networkhint">
+<p class="dim" id="networkhint">{{.T.network_hint}}</p></div>
+<div><label for="action">{{.T.choose_action}}</label>
+<select id="action" name="action"><option value="deny">{{.T.do_deny}}</option><option value="allow">{{.T.do_allow}}</option></select></div>
+<div><label for="lifetime">{{.T.lasts}}</label>
+<select id="lifetime" name="lifetime">{{range .Lifetimes}}<option value="{{.ID}}"{{if eq .ID "month"}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
+<div><label for="note">{{.T.note}}</label>
+<input id="note" name="note" maxlength="200" autocomplete="off" aria-describedby="notehint">
+<p class="dim" id="notehint">{{.T.note_hint}}</p></div>
+<div><button type="submit">{{.T.add}}</button></div>
+</form>
+</main>
+</body>
+</html>
