@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/MaMoja/xibalba/internal/buildinfo.Version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: build run test bench browser-check webserver-check lint cross check wiki clean help
+.PHONY: build run test bench browser-check webserver-check lint cross check wiki release clean help
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -37,6 +37,9 @@ cross: ## Build for linux/amd64 and linux/arm64 into dist/
 wiki: ## Build the wiki pages from docs/ into dist/wiki (also checks the links between documents)
 	python3 tools/wiki.py dist/wiki
 	python3 tools/sponsors_test.py
+
+release: ## Build archives and Debian packages into dist/release: make release RELEASE=1.2.3
+	tools/release.sh $(RELEASE)
 
 check: lint test cross wiki ## Everything CI runs
 

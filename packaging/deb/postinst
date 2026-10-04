@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! getent passwd xibalba >/dev/null; then
+        adduser --system --group --no-create-home --home /var/lib/xibalba --shell /usr/sbin/nologin xibalba >/dev/null
+    fi
+    install -d -o xibalba -g xibalba -m 0700 /var/lib/xibalba /var/lib/xibalba/crawlers
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        # After an upgrade, a running Xibalba is restarted so the new
+        # version is the one that runs. It is never started by itself.
+        if [ -n "$2" ] && systemctl is-active --quiet xibalba; then
+            systemctl restart xibalba || true
+        fi
+    fi
+    if [ -z "$2" ]; then
+        echo "Xibalba is installed but not started."
+        echo "  1. Set upstream.url in /etc/xibalba/xibalba.yaml"
+        echo "  2. xibalba -check -config /etc/xibalba/xibalba.yaml"
+        echo "  3. systemctl enable --now xibalba"
+    fi
+fi
+exit 0

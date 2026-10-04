@@ -1,0 +1,27 @@
+# Xibalba's configuration, as installed by the package.
+#
+# 1. Set upstream.url to where your website is reached from this machine.
+# 2. Check:  xibalba -check -config /etc/xibalba/xibalba.yaml
+# 3. Start:  systemctl enable --now xibalba
+#
+# Every setting with its default is in /usr/share/doc/xibalba/xibalba.example.yaml.
+# The handbook: https://github.com/MaMoja/xibalba/wiki
+
+upstream:
+  url: "http://127.0.0.1:3000"
+
+# What Xibalba keeps lies in /var/lib/xibalba, the one directory the service
+# may write to.
+challenge:
+  key_file: /var/lib/xibalba/xibalba.key
+
+crawlers:
+  cache_dir: /var/lib/xibalba/crawlers
+
+# The web interface is off. To use it:
+#   sudo -u xibalba xibalba -set-password -config /etc/xibalba/xibalba.yaml
+# then set enabled to true and restart.
+admin:
+  enabled: false
+  password_file: /var/lib/xibalba/admin.password
+  changes_file: /var/lib/xibalba/admin.changes.json

@@ -1,0 +1,137 @@
+name: Release
+
+# Builds what a release offers for download and tries it on a real machine:
+# the Debian package is installed and the service started with systemd.
+#
+#   A tag "v1.2.3" publishes the release and the container image.
+#   "Run workflow" by hand builds and tries everything and publishes nothing;
+#   the files are kept with the run for a few days.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for a trial build (nothing is published)"
+        default: "0.0.0-trial"
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    name: Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Version
+        id: version
+        env:
+          TRIAL: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$TRIAL"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::Building version $version"
+      - name: Tests
+        run: go vet ./... && go test ./...
+      - name: Build
+        run: tools/release.sh "${{ steps.version.outputs.version }}"
+      - name: Check the checksums
+        run: cd dist/release && sha256sum --check SHA256SUMS
+      - name: Install the package
+        run: |
+          sudo dpkg -i "dist/release/xibalba_${{ steps.version.outputs.version }}_amd64.deb"
+          xibalba -version
+          xibalba -check -config /etc/xibalba/xibalba.yaml
+          systemd-analyze verify /lib/systemd/system/xibalba.service
+      - name: Start the service
+        run: |
+          sudo systemctl start xibalba
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:9090/healthz && break
+            sleep 0.5
+          done
+          systemctl is-active xibalba
+          curl -sf http://127.0.0.1:9090/healthz | grep -q '"state": *"ok"\|"state":"ok"'
+          # No website behind it on this machine: Xibalba answers itself.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)" = "502"
+      - name: The web interface under the service's restrictions
+        run: |
+          printf 'a password for the trial run\n' | sudo -u xibalba xibalba -set-password -config /etc/xibalba/xibalba.yaml
+          sudo sed -i 's/^  enabled: false/  enabled: true\n  allow_changes: true/' /etc/xibalba/xibalba.yaml
+          sudo systemctl restart xibalba
+          for i in $(seq 1 20); do
+            curl -sf -o /dev/null http://127.0.0.1:9091/login && break
+            sleep 0.5
+          done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9091/login)" = "200"
+          systemctl is-active xibalba
+      - name: Service log
+        if: always()
+        run: sudo journalctl -u xibalba --no-pager | tail -40
+      - name: Remove the package
+        run: |
+          sudo dpkg --purge xibalba
+          test ! -e /var/lib/xibalba && test ! -e /usr/bin/xibalba
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xibalba-${{ steps.version.outputs.version }}
+          path: dist/release/
+          retention-days: 7
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          flags=""
+          case "$VERSION" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/release/* $flags \
+            --title "Xibalba $VERSION" \
+            --notes "What changed: see [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). How to install: see [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/GETTING-STARTED.md#install). Check a download with \`sha256sum --check SHA256SUMS\`."
+
+  image:
+    name: Container image
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.packages.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Builder for several kinds of processor
+        run: docker buildx create --use
+      - name: Build
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 \
+            --build-arg VERSION="$VERSION" .
+      - name: Publish
+        if: github.ref_type == 'tag'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          tags="-t $image:$VERSION"
+          case "$VERSION" in *-*) ;; *) tags="$tags -t $image:latest" ;; esac
+          docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 \
+            --build-arg VERSION="$VERSION" $tags --push .
