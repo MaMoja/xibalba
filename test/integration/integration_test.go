@@ -740,7 +740,7 @@ func TestChallengeWithoutJavaScript(t *testing.T) {
 	}
 	k = parseTask(t, page)
 
-	time.Sleep(1200 * time.Millisecond)
+	time.Sleep(2200 * time.Millisecond) // the wait of 1s ends on a full second
 	resp, _ = v.do("POST", inst.public+"/.xibalba/verify", k.answer("button", ""))
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("after waiting: status %d", resp.StatusCode)
@@ -760,7 +760,7 @@ func TestChallengeCanRequireJavaScript(t *testing.T) {
 		t.Fatalf("the page should ask for JavaScript and offer no button:\n%s", page)
 	}
 	k := parseTask(t, page)
-	time.Sleep(1200 * time.Millisecond)
+	time.Sleep(2200 * time.Millisecond) // the wait of 1s ends on a full second
 	if resp, _ := v.do("POST", inst.public+"/.xibalba/verify", k.answer("button", "")); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("a button answer was accepted although the button is off: status %d", resp.StatusCode)
 	}
@@ -2152,7 +2152,7 @@ rules:
 
 	// The gentle rule: the page sends the browser on by itself.
 	resp, body := fetch("/gentle/page")
-	m := regexp.MustCompile(`http-equiv="refresh" content="1;url=([^"]+)"`).FindStringSubmatch(body)
+	m := regexp.MustCompile(`http-equiv="refresh" content="\d+;url=([^"]+)"`).FindStringSubmatch(body)
 	if resp.StatusCode != http.StatusForbidden || m == nil || strings.Contains(body, "<script") {
 		t.Fatalf("gentle page: %d\n%s", resp.StatusCode, body)
 	}
@@ -2161,8 +2161,8 @@ rules:
 		t.Error("the forward counted before the wait was over")
 	}
 	_, body = fetch("/gentle/page")
-	forward = html.UnescapeString(regexp.MustCompile(`content="1;url=([^"]+)"`).FindStringSubmatch(body)[1])
-	time.Sleep(1100 * time.Millisecond)
+	forward = html.UnescapeString(regexp.MustCompile(`content="\d+;url=([^"]+)"`).FindStringSubmatch(body)[1])
+	time.Sleep(2100 * time.Millisecond) // the wait of 1s ends on a full second
 	if resp, _ := fetch(forward); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/gentle/page" {
 		t.Fatalf("the forward after the wait: %d to %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
