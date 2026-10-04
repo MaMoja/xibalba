@@ -42,7 +42,8 @@ xibalba_decisions_total{source="default",action="allow"} 0
 | `xibalba_limit_over_total` | counter | `per`, `count`, `action` | Requests that were over a limit. |
 | `xibalba_trap_hits_total` | counter | | Requests that followed the hidden link. Only while the trap is on. |
 | `xibalba_trap_ignored_total` | counter | | Requests to the trap's addresses that were no catch. |
-| `xibalba_trap_clients` | gauge | | Clients remembered as caught. |
+| `xibalba_trap_clients` | gauge | | Clients remembered as caught. May lag by up to a minute. |
+| `xibalba_metrics_failures_total` | counter | | How often a part failed while its numbers were collected; its numbers are then missing from that answer. |
 
 Counters start at zero with every start of Xibalba; a monitoring system
 handles that. Statistics that Xibalba itself keeps across restarts are

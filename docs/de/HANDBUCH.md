@@ -752,11 +752,18 @@ limits:
     - {requests: 300, per: 1m, action: challenge}
 ```
 
-Bilder, Stildateien, Skripte und Schriften zählen dabei nicht; dieselbe Seite
-zählt nur einmal; `/liste?seite=2` und `/liste?seite=3` sind zwei Seiten. Die
-Zahl ist eine Schätzung (höchstens etwa ein Zehntel daneben) und geht bis
-500. Wer immer wieder dasselbe abruft, wird von einer Grenze auf Anfragen
-erfasst, nicht von dieser.
+Als Seite zählt, was Ihre Website als Seite beantwortet (eine erfolgreiche
+Antwort vom Typ `text/html`). Bilder, Stildateien, Skripte und Daten zählen
+nicht, und ein Crawler kann eine Seite nicht hinter einer Adresse verstecken,
+die wie ein Bild aussieht. Dieselbe Seite zählt nur einmal;
+`/liste?seite=2` und `/liste?seite=3` sind zwei Seiten. Die Zahl ist eine
+Schätzung (bei wenigen Seiten genau, sonst meist innerhalb eines Zehntels)
+und geht bis 500. Wer immer wieder dasselbe abruft, wird von einer Grenze
+auf Anfragen erfasst, nicht von dieser; behalten Sie deshalb beide.
+
+Verwenden Sie für eine Seiten-Grenze `action: challenge`. Setzt Ihre Website
+wechselnde Werte in die Adressen ihrer Seiten (Sitzungsnummern, Suche beim
+Tippen), zählt jeder Wert als neue Seite; dann passt diese Grenze schlecht.
 
 **Wer nie begrenzt wird:** die Ausnahmeliste und die echten Suchmaschinen und
 KI-Crawler, die Sie über die `allow-`Regelgruppen für Crawler durchlassen.

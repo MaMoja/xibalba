@@ -26,7 +26,8 @@ All notable changes are listed here. The format follows
   browser but lack what every browser sends.
 - Limits on the number of different pages a client asks for
   (`limits.windows[].count: pages`), to tell a crawler that walks through a
-  site from a person who loads many images.
+  site from a person who loads many images. A page is what the website
+  answers as one (`text/html`), not what the address looks like.
 - Preset `allow-registry-clients` for container registries.
 - Rule condition `query`.
 - Presets `challenge-browsers` (check everything that says it is a

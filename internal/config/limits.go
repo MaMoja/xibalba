@@ -127,6 +127,6 @@ func (l *Limits) check(add func(path, message, hint string)) {
 		}
 	}
 	if l.MaxClients < 1000 || l.MaxClients > 5000000 {
-		add("limits.max_clients", fmt.Sprintf("%d is out of range", l.MaxClients), "use a number from 1000 to 5000000; 100000 needs about 15 MB")
+		add("limits.max_clients", fmt.Sprintf("%d is out of range", l.MaxClients), "use a number from 1000 to 5000000; 100000 needs about 15 MB, or 40 MB with a limit that counts pages")
 	}
 }

@@ -22,6 +22,9 @@ xibalba_decisions_total{action="deny",source="rule:block \"bad\"\\bot"} 3
 # HELP xibalba_clients Clients counted\nright now.
 # TYPE xibalba_clients gauge
 xibalba_clients 1.5
+# HELP xibalba_metrics_failures_total How often a part failed while its numbers were collected; those numbers are then missing.
+# TYPE xibalba_metrics_failures_total counter
+xibalba_metrics_failures_total 0
 `
 	if got := string(r.Render()); got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
@@ -33,7 +36,7 @@ func TestHostileValuesCannotBreakTheFormat(t *testing.T) {
 	line := regexp.MustCompile(`^(# (HELP|TYPE) [a-zA-Z_][a-zA-Z0-9_]* .*|[a-zA-Z_][a-zA-Z0-9_]*(\{([a-zA-Z_][a-zA-Z0-9_]*="([^"\\\n]|\\\\|\\"|\\n)*",?)+\})? [-+0-9.eE]+|[a-zA-Z_][a-zA-Z0-9_]* (NaN|[+-]Inf))$`)
 	r := New()
 	r.Add(func(w *Writer) {
-		for _, v := range []string{"plain", "a\nfake_metric 1", `quote"} 99`, `back\slash\`, "", "ünïcode", "a\r\nb"} {
+		for _, v := range []string{"bad\xffbytes", "plain", "a\nfake_metric 1", `quote"} 99`, `back\slash\`, "", "ünïcode", "a\r\nb"} {
 			w.Counter("m_total", "help", 1, "v", v)
 		}
 		w.Counter("bad name", "ignored", 1)
@@ -63,9 +66,18 @@ func TestAPanickingCollectorLosesOnlyItsOwnNumbers(t *testing.T) {
 		panic("broken")
 	})
 	r.Add(func(w *Writer) { w.Gauge("last", "h", 3) })
+	// A later part that writes the metric the failed one had begun must
+	// get its announcement lines.
+	r.Add(func(w *Writer) { w.Gauge("half", "h", 7) })
 	out := string(r.Render())
 	if !strings.Contains(out, "first 1") || !strings.Contains(out, "last 3") || strings.Contains(out, "half 1") {
 		t.Errorf("output:\n%s", out)
+	}
+	if !strings.Contains(out, "# TYPE half gauge\nhalf 7\n") || !strings.Contains(out, "xibalba_metrics_failures_total 1") {
+		t.Errorf("output:\n%s", out)
+	}
+	if out := string(r.Render()); !strings.Contains(out, "xibalba_metrics_failures_total 2") {
+		t.Errorf("second output:\n%s", out)
 	}
 }
 

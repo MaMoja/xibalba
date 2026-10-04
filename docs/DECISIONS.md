@@ -15,9 +15,13 @@ Newest first. One entry per decision: what, why, who decided.
   limit and period** (linear counting). Agent. Exact counting would need a
   list of addresses per client; the estimate needs 64 bytes, stores no
   address a client asked for, and is within about a tenth up to 500 pages.
-- **A page is told from what a page loads by the ending of the address.**
-  Agent. Headers that say so (`Sec-Fetch-Dest`) are chosen by the client and
-  absent in the crawlers this is meant for.
+- **A page is told by the website's answer: a successful answer of type
+  `text/html`.** Agent, after the review of the first version, which went by
+  the ending of the address and could be dodged with `/page.php/x.css`.
+  Request headers that say what is being loaded are chosen by the client.
+  Costs a thin wrapper around the answer, only when a limit counts pages.
+- **Pages read again in the next period are not counted twice**: the sliding
+  estimate adds only what the previous period holds beyond the current one.
 
 - **Rules that favour a request and test the path only apply to addresses
   sent in plain form.** Agent, after the security review. Normalising makes

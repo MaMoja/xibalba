@@ -82,6 +82,10 @@ func TestFollowingTheLinkIsRemembered(t *testing.T) {
 	if tr.Caught(addr("203.0.113.5")) {
 		t.Error("still caught after the time is up")
 	}
+	// The report shows them until the next sweep, which runs every minute.
+	tr.mu.Lock()
+	tr.sweep(now)
+	tr.mu.Unlock()
 	if r := tr.Report(); r.Clients != 0 {
 		t.Errorf("report after the time is up = %+v", r)
 	}

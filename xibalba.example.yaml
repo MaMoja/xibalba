@@ -160,10 +160,10 @@ limits:
   #     - {requests: 300, per: 1m, action: challenge}
   #     - {requests: 20000, per: 24h, action: deny}
   #
-  # "count: pages" counts the different pages a client asks for instead of
-  # every request (images, style sheets, scripts and fonts are not pages).
-  # A person reads a few pages in ten minutes, a crawler walks through
-  # hundreds. At most 500. Example:
+  # "count: pages" counts the different pages a client is given instead of
+  # every request. A page is what your website answers as one (text/html);
+  # images, scripts and data do not count. A person reads a few pages in ten
+  # minutes, a crawler walks through hundreds. At most 500. Example:
   #
   #     - {requests: 60, per: 10m, action: challenge, count: pages}
   windows:
@@ -174,7 +174,8 @@ limits:
   # Addresses and networks that are never counted: your own office, your
   # monitoring, a partner's server. Example: ["192.0.2.0/24", "2001:db8::/32"]
   exempt: []
-  # How many clients are tracked at most (memory: about 15 MB per 100000).
+  # How many clients are tracked at most (memory: about 15 MB per 100000,
+  # about 40 MB with a limit that counts pages).
   max_clients: 100000
 
 # The security check a client has to pass when a rule or threshold says

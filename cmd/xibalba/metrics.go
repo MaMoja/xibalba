@@ -30,10 +30,16 @@ func collect(m *metrics.Registry, p parts) {
 		w.Gauge("xibalba_build_info", "The running build; the value is always 1.", 1, "version", buildinfo.Get().Version)
 		w.Gauge("xibalba_start_time_seconds", "When Xibalba started, as seconds since 1970.", float64(p.started.Unix()))
 
-		states := map[health.State]float64{health.OK: 0, health.Degraded: 1, health.Down: 2}
 		report := p.health.Report()
 		for _, name := range sortedKeys(report.Components) {
-			w.Gauge("xibalba_component_state", "State of each part: 0 ok, 1 degraded, 2 down.", states[report.Components[name].State], "component", name)
+			state := 2.0 // down, also for a state not known here
+			switch report.Components[name].State {
+			case health.OK:
+				state = 0
+			case health.Degraded:
+				state = 1
+			}
+			w.Gauge("xibalba_component_state", "State of each part: 0 ok, 1 degraded, 2 down.", state, "component", name)
 		}
 	})
 

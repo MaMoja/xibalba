@@ -68,8 +68,9 @@ type Trap struct {
 	clients map[netip.Addr]time.Time // key -> when it is forgotten
 	swept   time.Time
 
-	hits      atomic.Uint64 // catches
-	strangers atomic.Uint64 // requests under the prefix that were no catch
+	remembered atomic.Int64  // entries in clients; may include some whose time is up
+	hits       atomic.Uint64 // catches
+	strangers  atomic.Uint64 // requests under the prefix that were no catch
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -225,6 +226,7 @@ func (t *Trap) catch(addr netip.Addr) {
 		}
 	}
 	t.clients[k] = now.Add(t.opts.Remember)
+	t.remembered.Store(int64(len(t.clients)))
 }
 
 // sweep forgets clients whose time is up. The caller holds the lock.
@@ -235,6 +237,7 @@ func (t *Trap) sweep(now time.Time) {
 			delete(t.clients, k)
 		}
 	}
+	t.remembered.Store(int64(len(t.clients)))
 }
 
 // Handler answers requests under Prefix. A request is a catch only if the
@@ -341,7 +344,8 @@ type Report struct {
 	// Ignored is how many requests to the trap's addresses were no catch:
 	// not the address made for that client, or caused by another website.
 	Ignored uint64 `json:"ignored"`
-	// Clients is how many clients are remembered right now.
+	// Clients is how many clients are remembered. Clients whose time ran
+	// out are taken off once a minute, so the number can lag by that much.
 	Clients int `json:"clients"`
 	// Maze says whether the maze is on.
 	Maze bool `json:"maze"`
@@ -349,16 +353,9 @@ type Report struct {
 
 // Report returns the current state.
 func (t *Trap) Report() Report {
-	now := t.opts.Now()
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	n := 0
-	for _, until := range t.clients {
-		if now.Before(until) {
-			n++
-		}
-	}
-	return Report{Hits: t.hits.Load(), Ignored: t.strangers.Load(), Clients: n, Maze: t.opts.Maze}
+	// From counters, without walking the table: a report must not hold up
+	// requests, however many clients are remembered.
+	return Report{Hits: t.hits.Load(), Ignored: t.strangers.Load(), Clients: int(t.remembered.Load()), Maze: t.opts.Maze}
 }
 
 // ReportHandler serves the report as JSON for the operations listener.

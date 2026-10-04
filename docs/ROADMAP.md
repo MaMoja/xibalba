@@ -56,6 +56,8 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Request limits per client and period, switchable, with a list of exempt addresses
 - [x] Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds; ready-made exceptions for git clients and feed readers
 - [x] Ready-made exception for container registry clients (`allow-registry-clients`, by the addresses of the OCI distribution specification). Small browsers need none: they get through with the path without JavaScript.
+- [x] Third review (2026-10-04), of the limits on pages, the registry preset and the metrics; findings fixed: pages are told by the website's answer, the same pages across periods count once, small limits exact, trap report without walking the table, metrics hardening.
+  - [ ] Open: a setting for query parameters to ignore when telling pages apart; these fixes have not been reviewed again.
 - [ ] Uptime monitors as verified crawler definitions (their operators publish addresses); moved to Later
 - [x] Plausibility of browser headers, as weights: no language, no Accept, headless browser
 - [ ] Further plausibility checks that depend on HTTPS (client hints, fetch metadata); need a condition for the scheme first

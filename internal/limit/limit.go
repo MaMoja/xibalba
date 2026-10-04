@@ -3,7 +3,8 @@
 //
 // A limit counts either every request or the different pages a client asks
 // for. A person reads a handful of pages in a few minutes; a crawler walks
-// through hundreds. Images, style sheets, scripts and fonts are not pages.
+// through hundreds. What a page is, is for the caller to say (the gate goes
+// by what the website answered); the limiter is told with Page.
 //
 // A client is an IPv4 address or an IPv6 /64 (one IPv6 connection owns a
 // whole /64), or, if configured, the wider network around it. Counts are
@@ -173,40 +174,9 @@ func distinct(field *[sketchBits / 64]uint64) float64 {
 	case 0:
 		return 0
 	case sketchBits:
-		return 4 * sketchBits // full: far more than can be told
+		return 8 * sketchBits // full: far more than can be told, and more than any field with a bit clear
 	}
 	return -sketchBits * math.Log(float64(sketchBits-set)/sketchBits)
-}
-
-// assets are the file endings of what a page loads, as opposed to a page.
-var assets = map[string]bool{
-	"css": true, "js": true, "mjs": true, "map": true,
-	"png": true, "jpg": true, "jpeg": true, "gif": true, "svg": true, "webp": true, "avif": true, "ico": true, "bmp": true,
-	"woff": true, "woff2": true, "ttf": true, "otf": true, "eot": true,
-	"mp3": true, "mp4": true, "webm": true, "ogg": true, "wav": true, "m4a": true, "m4v": true, "mov": true,
-}
-
-// IsPage reports whether a path is a page rather than something a page
-// loads. The ending decides; a path without an ending is a page.
-func IsPage(path string) bool {
-	for i := len(path) - 1; i >= 0 && len(path)-i <= 6; i-- {
-		switch path[i] {
-		case '/':
-			return true
-		case '.':
-			var lower [5]byte
-			ending := lower[:len(path)-i-1]
-			for j := range ending {
-				b := path[i+1+j]
-				if b >= 'A' && b <= 'Z' {
-					b += 'a' - 'A'
-				}
-				ending[j] = b
-			}
-			return !assets[string(ending)]
-		}
-	}
-	return true
 }
 
 // New returns a Limiter. The options must have been validated (see
@@ -251,82 +221,45 @@ func (l *Limiter) key(addr netip.Addr) netip.Addr {
 	return p.Addr()
 }
 
-// Count records one request from addr for the address path?query and says
-// whether the client is over a limit. An invalid or exempt address is never
-// counted.
-func (l *Limiter) Count(addr netip.Addr, path, query string) Verdict {
-	addr = addr.Unmap().WithZone("")
-	if !addr.IsValid() || len(l.opts.Windows) == 0 {
+// Count records one request from addr and says whether the client is over a
+// limit, on requests or on pages. An invalid or exempt address is never
+// counted. Pages are recorded separately, with Page.
+func (l *Limiter) Count(addr netip.Addr) Verdict {
+	key, s, ok := l.locate(addr, true)
+	if !ok {
 		return Verdict{}
 	}
-	for _, p := range l.opts.Exempt {
-		if p.Contains(addr) {
-			l.exempted.Add(1)
-			return Verdict{}
-		}
-	}
-	key := l.key(addr)
-	raw := key.As16()
-	s := &l.shards[maphash.Bytes(l.seed, raw[:])%shards]
 	now := l.opts.Now()
 
-	// Which bit this page sets, if pages are counted and this is one.
-	page, bit := false, uint64(0)
-	if l.pages && IsPage(path) {
-		var h maphash.Hash
-		h.SetSeed(l.seed)
-		_, _ = h.WriteString(path)
-		_ = h.WriteByte('?')
-		_, _ = h.WriteString(query)
-		page, bit = true, h.Sum64()%sketchBits
-	}
-
 	s.mu.Lock()
-	c := s.clients[key]
-	if c == nil {
-		l.makeRoom(s, now)
-		c = &counters{}
-		if l.pages {
-			c.sketch = &sketches{}
-		}
-		s.clients[key] = c
-	}
-	c.seen = now
+	c := l.client(s, key, now)
 	var verdict Verdict
 	worst := -1
 	for i, w := range l.opts.Windows {
-		period := now.UnixNano() / int64(w.Per)
-		switch c.period[i] {
-		case period:
-		case period - 1:
-			c.previous[i], c.current[i] = c.current[i], 0
-			if w.Pages {
-				c.sketch.previous[i], c.sketch.current[i] = c.sketch.current[i], [sketchBits / 64]uint64{}
-			}
-		default:
-			c.previous[i], c.current[i] = 0, 0
-			if w.Pages {
-				c.sketch.previous[i], c.sketch.current[i] = [sketchBits / 64]uint64{}, [sketchBits / 64]uint64{}
-			}
-		}
-		c.period[i] = period
-
-		var current, previous float64
+		elapsed := l.roll(c, i, w, now)
+		var current, previous, limit float64
 		if w.Pages {
-			if page {
-				c.sketch.current[i][bit/64] |= 1 << (bit % 64)
+			// Pages of the previous period that were read again in this
+			// one are the same pages: count what the previous period adds.
+			both := c.sketch.current[i]
+			for j := range both {
+				both[j] |= c.sketch.previous[i][j]
 			}
-			current, previous = distinct(&c.sketch.current[i]), distinct(&c.sketch.previous[i])
+			current = distinct(&c.sketch.current[i])
+			previous = math.Max(0, distinct(&both)-current)
+			// The estimate for a few pages lies a little above their
+			// number; half a page of room keeps a limit of N from
+			// stopping the Nth page.
+			limit = float64(w.Requests) + 0.5
 		} else {
 			if c.current[i] < 1<<31 {
 				c.current[i]++
 			}
-			current, previous = float64(c.current[i]), float64(c.previous[i])
+			current, previous, limit = float64(c.current[i]), float64(c.previous[i]), float64(w.Requests)
 		}
 		// Share of the previous period that still lies within the last Per.
-		elapsed := now.UnixNano() - period*int64(w.Per)
 		remaining := float64(int64(w.Per)-elapsed) / float64(w.Per)
-		if current+previous*remaining > float64(w.Requests) {
+		if current+previous*remaining > limit {
 			if worst < 0 || (w.Action == "deny" && verdict.Action != "deny") {
 				worst = i
 				verdict = Verdict{Over: true, Action: w.Action, RetryAfter: retryAfter(w, current, previous, elapsed)}
@@ -339,6 +272,93 @@ func (l *Limiter) Count(addr netip.Addr, path, query string) Verdict {
 		l.exceeded[worst].Add(1)
 	}
 	return verdict
+}
+
+// Page records that the client was given the page at path?query. It only
+// matters to limits that count pages.
+func (l *Limiter) Page(addr netip.Addr, path, query string) {
+	if !l.pages {
+		return
+	}
+	key, s, ok := l.locate(addr, false)
+	if !ok {
+		return
+	}
+	var h maphash.Hash
+	h.SetSeed(l.seed)
+	_, _ = h.WriteString(path)
+	_ = h.WriteByte('?')
+	_, _ = h.WriteString(query)
+	bit := h.Sum64() % sketchBits
+	now := l.opts.Now()
+
+	s.mu.Lock()
+	c := l.client(s, key, now)
+	for i, w := range l.opts.Windows {
+		if w.Pages {
+			l.roll(c, i, w, now)
+			c.sketch.current[i][bit/64] |= 1 << (bit % 64)
+		}
+	}
+	s.mu.Unlock()
+}
+
+// locate returns what addr is counted under and the shard that holds it. ok
+// is false for an address that is not counted: invalid, exempt, or no
+// limits. note says whether a request from an exempt address is noted.
+func (l *Limiter) locate(addr netip.Addr, note bool) (key netip.Addr, s *shard, ok bool) {
+	addr = addr.Unmap().WithZone("")
+	if !addr.IsValid() || len(l.opts.Windows) == 0 {
+		return key, nil, false
+	}
+	for _, p := range l.opts.Exempt {
+		if p.Contains(addr) {
+			if note {
+				l.exempted.Add(1)
+			}
+			return key, nil, false
+		}
+	}
+	key = l.key(addr)
+	raw := key.As16()
+	return key, &l.shards[maphash.Bytes(l.seed, raw[:])%shards], true
+}
+
+// client returns the counters of a client, making room and creating them if
+// need be. The caller holds the shard's lock.
+func (l *Limiter) client(s *shard, key netip.Addr, now time.Time) *counters {
+	c := s.clients[key]
+	if c == nil {
+		l.makeRoom(s, now)
+		c = &counters{}
+		if l.pages {
+			c.sketch = &sketches{}
+		}
+		s.clients[key] = c
+	}
+	c.seen = now
+	return c
+}
+
+// roll moves the counters of window i on to the period that now lies in and
+// returns how far that period has run.
+func (l *Limiter) roll(c *counters, i int, w Window, now time.Time) (elapsed int64) {
+	period := now.UnixNano() / int64(w.Per)
+	switch c.period[i] {
+	case period:
+	case period - 1:
+		c.previous[i], c.current[i] = c.current[i], 0
+		if w.Pages {
+			c.sketch.previous[i], c.sketch.current[i] = c.sketch.current[i], [sketchBits / 64]uint64{}
+		}
+	default:
+		c.previous[i], c.current[i] = 0, 0
+		if w.Pages {
+			c.sketch.previous[i], c.sketch.current[i] = [sketchBits / 64]uint64{}, [sketchBits / 64]uint64{}
+		}
+	}
+	c.period[i] = period
+	return now.UnixNano() - period*int64(w.Per)
 }
 
 // retryAfter says how long a client that sends nothing more stays over a

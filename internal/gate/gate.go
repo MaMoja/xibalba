@@ -73,7 +73,11 @@ type Options struct {
 	// refused (deny) or have to pass the check. If nil, nothing is limited.
 	// Requests let through by a rule marked exempt_from_limits are neither
 	// counted nor limited.
-	Limit func(client netip.Addr, path, query string) (over, deny bool, retryAfter time.Duration)
+	Limit func(client netip.Addr) (over, deny bool, retryAfter time.Duration)
+	// Page is told when the website answered a counted request with a
+	// page (a successful answer of type text/html), for limits that count
+	// different pages. If nil, answers are not looked at.
+	Page func(client netip.Addr, path, query string)
 	// Limited writes the page for a request refused by a limit.
 	Limited func(w http.ResponseWriter, r *http.Request, retryAfter time.Duration)
 	// Challenge handles requests whose decision is "challenge". If nil,
@@ -159,7 +163,13 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var over, refuse bool
 	var retryAfter time.Duration
 	if g.opts.Limit != nil && !g.trusted[decision.Source] {
-		over, refuse, retryAfter = g.opts.Limit(client, rules.NormalizePath(r.URL.Path), r.URL.RawQuery)
+		over, refuse, retryAfter = g.opts.Limit(client)
+		if g.opts.Page != nil {
+			// Whether this is a page is known when the website answers.
+			w = &pageWatch{ResponseWriter: w, found: func() {
+				g.opts.Page(client, rules.NormalizePath(r.URL.Path), r.URL.RawQuery)
+			}}
+		}
 	}
 
 	if g.opts.DryRun {
@@ -191,6 +201,42 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		g.opts.Next.ServeHTTP(w, r)
 	}
+}
+
+// pageWatch looks at the answer the website gives and reports a page: a
+// successful answer of type text/html. Going by the answer instead of the
+// request means a client cannot disguise the pages it reads as something
+// else, and an address that merely looks like a page does not count.
+type pageWatch struct {
+	http.ResponseWriter
+	found func()
+	done  bool
+}
+
+func (p *pageWatch) WriteHeader(status int) {
+	if !p.done && status >= 200 { // 1xx answers come before the real one
+		p.done = true
+		if status < 300 && isHTML(p.Header().Get("Content-Type")) {
+			p.found()
+		}
+	}
+	p.ResponseWriter.WriteHeader(status)
+}
+
+func (p *pageWatch) Write(b []byte) (int, error) {
+	if !p.done {
+		p.WriteHeader(http.StatusOK)
+	}
+	return p.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the real writer, so streaming
+// and upgraded connections (websockets) work as without the watch.
+func (p *pageWatch) Unwrap() http.ResponseWriter { return p.ResponseWriter }
+
+func isHTML(contentType string) bool {
+	const html = "text/html"
+	return len(contentType) >= len(html) && strings.EqualFold(contentType[:len(html)], html)
 }
 
 // decide evaluates the request. The engine is built so that it cannot fail,

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -441,7 +442,7 @@ func TestCrawlerIdentityReachesTheRules(t *testing.T) {
 // limitHarness is a gate whose limiter says what the test tells it to.
 func limitHarness(t *testing.T, over, deny *bool, counted *[]string, change func(*Options)) *harness {
 	return newHarness(t, func(o *Options) {
-		o.Limit = func(client netip.Addr, _, _ string) (bool, bool, time.Duration) {
+		o.Limit = func(client netip.Addr) (bool, bool, time.Duration) {
 			*counted = append(*counted, client.String())
 			return *over, *deny, 42 * time.Second
 		}
@@ -613,5 +614,83 @@ func TestCountryReachesTheRules(t *testing.T) {
 	loaded = true
 	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != http.StatusForbidden {
 		t.Errorf("with the database back: %d", rec.Code)
+	}
+}
+
+// Pages are told by what the website answers, not by what the address looks like.
+func TestPagesAreReportedFromTheAnswer(t *testing.T) {
+	var pages []string
+	over := false
+	answers := map[string]struct {
+		status int
+		kind   string
+	}{
+		"/artikel/1":           {200, "text/html; charset=utf-8"},
+		"/index.php/a/x.css":   {200, "TEXT/HTML"},
+		"/bild.png":            {200, "image/png"},
+		"/api/x":               {200, "application/json"},
+		"/weg":                 {302, "text/html"},
+		"/fehlt":               {404, "text/html"},
+		"/ohne-typ":            {200, ""},
+		"/public/../artikel/2": {200, "text/html"},
+	}
+	h := newHarness(t, func(o *Options) {
+		o.Limit = func(netip.Addr) (bool, bool, time.Duration) { return over, true, time.Minute }
+		o.Limited = func(w http.ResponseWriter, _ *http.Request, _ time.Duration) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		}
+		o.Page = func(client netip.Addr, path, query string) { pages = append(pages, client.String()+" "+path+"?"+query) }
+		o.Next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			a := answers[r.URL.Path]
+			if a.kind != "" {
+				w.Header().Set("Content-Type", a.kind)
+			}
+			if a.status == 200 && r.URL.Path != "/ohne-typ" {
+				_, _ = io.WriteString(w, "x") // an answer without an explicit status
+				return
+			}
+			w.WriteHeader(a.status)
+		})
+	})
+	for target := range answers {
+		req := httptest.NewRequest("GET", "http://example.org/", nil)
+		u, _ := url.Parse("http://example.org" + target + "?seite=2")
+		req.URL = u
+		req.RemoteAddr = "203.0.113.5:1"
+		h.handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	sort.Strings(pages)
+	want := "203.0.113.5 /artikel/1?seite=2|203.0.113.5 /artikel/2?seite=2|203.0.113.5 /index.php/a/x.css?seite=2"
+	if got := strings.Join(pages, "|"); got != want {
+		t.Errorf("pages = %s\nwant    %s", got, want)
+	}
+
+	// Requests an exempt rule lets through, refused requests, and Xibalba's
+	// own pages are not pages of the website.
+	pages = nil
+	h.do(call{target: "/artikel/1", remote: "192.0.2.10:1"}) // office: exempt
+	h.do(call{target: "/admin"})                             // denied by a rule
+	over = true
+	h.do(call{target: "/artikel/1"}) // over the limit
+	if len(pages) != 0 {
+		t.Errorf("pages = %v", pages)
+	}
+}
+
+// The watch must not get in the way of streaming and upgraded connections.
+func TestPageWatchKeepsTheWriterUsable(t *testing.T) {
+	rec := httptest.NewRecorder()
+	found := 0
+	w := &pageWatch{ResponseWriter: rec, found: func() { found++ }}
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusEarlyHints) // comes before the real answer
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		t.Errorf("flush through the watch: %v", err)
+	}
+	_, _ = w.Write([]byte("a"))
+	_, _ = w.Write([]byte("b"))
+	w.WriteHeader(http.StatusOK)
+	if found != 1 || rec.Body.String() != "ab" {
+		t.Errorf("found %d times, body %q", found, rec.Body)
 	}
 }

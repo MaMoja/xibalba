@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Writer collects samples for one answer.
@@ -54,7 +55,7 @@ func (w *Writer) sample(name, kind, help string, value float64, labels []string)
 			w.buf.WriteByte('{')
 			wrote = true
 		}
-		w.buf.WriteString(labels[i] + `="` + escape(labels[i+1], true) + `"`)
+		w.buf.WriteString(labels[i] + `="` + escape(strings.ToValidUTF8(labels[i+1], "\uFFFD"), true) + `"`)
 	}
 	if wrote {
 		w.buf.WriteByte('}')
@@ -104,6 +105,7 @@ func escape(s string, quotes bool) string {
 type Registry struct {
 	mu         sync.Mutex
 	collectors []func(*Writer)
+	failures   atomic.Uint64
 }
 
 // New returns an empty Registry.
@@ -128,14 +130,23 @@ func (r *Registry) Render() []byte {
 	for _, collect := range collectors {
 		func() {
 			mark := w.buf.Len()
+			known := make(map[string]bool, len(w.declared))
+			for name := range w.declared {
+				known[name] = true
+			}
 			defer func() {
 				if recover() != nil {
-					w.buf.Truncate(mark) // no half-written metric
+					// No half-written metric, and no metric counted as
+					// announced whose announcement was just taken back.
+					w.buf.Truncate(mark)
+					w.declared = known
+					r.failures.Add(1)
 				}
 			}()
 			collect(w)
 		}()
 	}
+	w.Counter("xibalba_metrics_failures_total", "How often a part failed while its numbers were collected; those numbers are then missing.", float64(r.failures.Load()))
 	return w.buf.Bytes()
 }
 

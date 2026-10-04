@@ -25,21 +25,21 @@ func TestLimit(t *testing.T) {
 	c := newClock()
 	l := New(Options{Windows: []Window{{Requests: 5, Per: time.Minute, Action: "challenge"}}, MaxClients: 1000, Now: c.Now})
 	for i := 1; i <= 5; i++ {
-		if v := l.Count(addr("192.0.2.1"), "/", ""); v.Over {
+		if v := l.Count(addr("192.0.2.1")); v.Over {
 			t.Fatalf("request %d is over the limit of 5", i)
 		}
 	}
-	v := l.Count(addr("192.0.2.1"), "/", "")
+	v := l.Count(addr("192.0.2.1"))
 	if !v.Over || v.Action != "challenge" || v.RetryAfter <= 0 || v.RetryAfter > 2*time.Minute {
 		t.Fatalf("request 6: %+v", v)
 	}
 	// Another client is not affected.
-	if l.Count(addr("192.0.2.2"), "/", "").Over {
+	if l.Count(addr("192.0.2.2")).Over {
 		t.Error("a different address is over the limit")
 	}
 	// After the period has fully passed, the client starts afresh.
 	c.advance(2 * time.Minute)
-	if l.Count(addr("192.0.2.1"), "/", "").Over {
+	if l.Count(addr("192.0.2.1")).Over {
 		t.Error("still over the limit two periods later")
 	}
 }
@@ -52,7 +52,7 @@ func TestRetryAfterIsWhenTheClientIsBelowTheLimitAgain(t *testing.T) {
 		c.advance(20 * time.Second)
 		var v Verdict
 		for i := 0; i < sent; i++ {
-			v = l.Count(addr("192.0.2.1"), "/", "")
+			v = l.Count(addr("192.0.2.1"))
 		}
 		if !v.Over || v.RetryAfter <= 0 || v.RetryAfter > 2*time.Minute || (sent == 3000 && v.RetryAfter < 90*time.Second) {
 			t.Fatalf("%d sent: %+v", sent, v)
@@ -60,7 +60,7 @@ func TestRetryAfterIsWhenTheClientIsBelowTheLimitAgain(t *testing.T) {
 		// At that moment the next request is let through, although it is
 		// counted as well.
 		c.advance(v.RetryAfter + time.Second)
-		if got := l.Count(addr("192.0.2.1"), "/", ""); got.Over {
+		if got := l.Count(addr("192.0.2.1")); got.Over {
 			t.Errorf("%d sent: still over the limit %v after the announced %v", sent, got.RetryAfter, v.RetryAfter)
 		}
 	}
@@ -73,12 +73,12 @@ func TestBoundaryCannotBeStraddled(t *testing.T) {
 	l := New(Options{Windows: []Window{{Requests: 100, Per: time.Minute, Action: "deny"}}, MaxClients: 1000, Now: c.Now})
 	c.advance(59 * time.Second) // end of a period
 	for i := 0; i < 100; i++ {
-		l.Count(addr("192.0.2.1"), "/", "")
+		l.Count(addr("192.0.2.1"))
 	}
 	c.advance(2 * time.Second) // start of the next
 	passed := 0
 	for i := 0; i < 100; i++ {
-		if !l.Count(addr("192.0.2.1"), "/", "").Over {
+		if !l.Count(addr("192.0.2.1")).Over {
 			passed++
 		}
 	}
@@ -96,7 +96,7 @@ func TestStrictestActionWins(t *testing.T) {
 	}, MaxClients: 1000, Now: c.Now})
 	var got []string
 	for i := 0; i < 6; i++ {
-		got = append(got, l.Count(addr("192.0.2.1"), "/", "").Action)
+		got = append(got, l.Count(addr("192.0.2.1")).Action)
 	}
 	if strings.Join(got, ",") != ",,challenge,challenge,deny,deny" {
 		t.Errorf("actions = %v", got)
@@ -122,8 +122,8 @@ func TestWhatCountsAsOneClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := New(Options{Windows: []Window{{Requests: 1, Per: time.Hour, Action: "deny"}}, ByNetwork: tt.byNetwork, MaxClients: 1000})
-			l.Count(addr(tt.a), "/", "")
-			if got := l.Count(addr(tt.b), "/", "").Over; got != tt.same {
+			l.Count(addr(tt.a))
+			if got := l.Count(addr(tt.b)).Over; got != tt.same {
 				t.Errorf("counted as one client: %v, want %v", got, tt.same)
 			}
 		})
@@ -138,7 +138,7 @@ func TestExemptAndInvalidAddresses(t *testing.T) {
 	})
 	for i := 0; i < 10; i++ {
 		for _, a := range []netip.Addr{addr("192.0.2.77"), addr("::ffff:192.0.2.77"), addr("2001:db8::1"), {}} {
-			if l.Count(a, "/", "").Over {
+			if l.Count(a).Over {
 				t.Fatalf("%v was limited", a)
 			}
 		}
@@ -155,15 +155,15 @@ func TestTableIsBounded(t *testing.T) {
 	c := newClock()
 	l := New(Options{Windows: []Window{{Requests: 3, Per: time.Hour, Action: "deny"}}, MaxClients: 3200, Now: c.Now})
 	for i := 0; i < 50000; i++ {
-		l.Count(netip.AddrFrom4([4]byte{11, byte(i >> 16), byte(i >> 8), byte(i)}), "/", "")
+		l.Count(netip.AddrFrom4([4]byte{11, byte(i >> 16), byte(i >> 8), byte(i)}))
 	}
 	if n := l.Report().Clients; n > 3200 {
 		t.Errorf("%d clients tracked, limit 3200", n)
 	}
 	for i := 0; i < 3; i++ {
-		l.Count(addr("192.0.2.1"), "/", "")
+		l.Count(addr("192.0.2.1"))
 	}
-	if !l.Count(addr("192.0.2.1"), "/", "").Over {
+	if !l.Count(addr("192.0.2.1")).Over {
 		t.Error("the limiter stopped limiting when the table was full")
 	}
 }
@@ -171,9 +171,9 @@ func TestTableIsBounded(t *testing.T) {
 func TestSweepForgetsIdleClients(t *testing.T) {
 	c := newClock()
 	l := New(Options{Windows: []Window{{Requests: 3, Per: time.Minute, Action: "deny"}}, MaxClients: 1000, Now: c.Now})
-	l.Count(addr("192.0.2.1"), "/", "")
+	l.Count(addr("192.0.2.1"))
 	c.advance(90 * time.Second)
-	l.Count(addr("192.0.2.2"), "/", "")
+	l.Count(addr("192.0.2.2"))
 	l.Sweep()
 	if n := l.Report().Clients; n != 2 {
 		t.Fatalf("after 1.5 periods: %d clients, want 2", n)
@@ -187,8 +187,8 @@ func TestSweepForgetsIdleClients(t *testing.T) {
 
 func TestReportHoldsNoAddress(t *testing.T) {
 	l := New(Options{Windows: []Window{{Requests: 1, Per: time.Minute, Action: "deny"}}, MaxClients: 1000})
-	l.Count(addr("192.0.2.1"), "/", "")
-	l.Count(addr("192.0.2.1"), "/", "")
+	l.Count(addr("192.0.2.1"))
+	l.Count(addr("192.0.2.1"))
 	rec := httptest.NewRecorder()
 	l.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/limits", nil))
 	body := rec.Body.String()
@@ -205,7 +205,7 @@ func TestConcurrentUse(t *testing.T) {
 		go func(g int) {
 			defer wg.Done()
 			for i := 0; i < 5000; i++ {
-				l.Count(netip.AddrFrom4([4]byte{11, byte(g), byte(i >> 8), byte(i)}), "/", "")
+				l.Count(netip.AddrFrom4([4]byte{11, byte(g), byte(i >> 8), byte(i)}))
 				if i%500 == 0 {
 					l.Sweep()
 					l.Report()
@@ -219,8 +219,8 @@ func TestConcurrentUse(t *testing.T) {
 func TestCountDoesNotAllocateForAKnownClient(t *testing.T) {
 	l := New(Options{Windows: []Window{{Requests: 1000000, Per: time.Minute, Action: "deny"}, {Requests: 1000000, Per: time.Hour, Action: "deny"}}, MaxClients: 1000})
 	a := addr("192.0.2.1")
-	l.Count(a, "/", "")
-	if n := testing.AllocsPerRun(100, func() { l.Count(a, "/", "") }); n != 0 {
+	l.Count(a)
+	if n := testing.AllocsPerRun(100, func() { l.Count(a) }); n != 0 {
 		t.Errorf("Count allocates %v times", n)
 	}
 }
@@ -229,22 +229,18 @@ func BenchmarkCount(b *testing.B) {
 	l := New(Options{Windows: []Window{{Requests: 300, Per: 10 * time.Minute, Action: "challenge"}, {Requests: 5000, Per: 24 * time.Hour, Action: "deny"}}, MaxClients: 100000})
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		l.Count(netip.AddrFrom4([4]byte{11, 0, byte(i >> 8), byte(i)}), "/", "")
+		l.Count(netip.AddrFrom4([4]byte{11, 0, byte(i >> 8), byte(i)}))
 	}
 }
 
-func TestIsPage(t *testing.T) {
-	pages := []string{"/", "/artikel/42", "/a.html", "/index.php", "/doc.PDF", "/a.b/c", "/feed.xml", "/x.unknownending", "/download.zip", ""}
-	for _, p := range pages {
-		if !IsPage(p) {
-			t.Errorf("%q is not counted as a page", p)
-		}
+// read stands for one request for a page that the website answers with a
+// page: it is checked, and if let through, recorded.
+func read(l *Limiter, a netip.Addr, path, query string) Verdict {
+	v := l.Count(a)
+	if !v.Over || v.Action != "deny" {
+		l.Page(a, path, query)
 	}
-	for _, p := range []string{"/a.css", "/app.JS", "/img/logo.PNG", "/f.woff2", "/a/b.min.js", "/favicon.ico", "/v.mp4"} {
-		if IsPage(p) {
-			t.Errorf("%q is counted as a page", p)
-		}
-	}
+	return v
 }
 
 // A person reads a few pages, each with many images and scripts. A crawler
@@ -254,15 +250,15 @@ func TestLimitOnDifferentPages(t *testing.T) {
 	l := New(Options{Windows: []Window{{Requests: 30, Per: 10 * time.Minute, Action: "challenge", Pages: true}}, MaxClients: 1000, Now: c.Now})
 	reader, crawler := addr("192.0.2.1"), addr("192.0.2.2")
 
-	// Five pages with forty assets each, read again and again.
+	// Five pages with forty other requests each, read again and again.
 	for round := 0; round < 20; round++ {
 		for page := 0; page < 5; page++ {
-			if l.Count(reader, "/artikel/"+string(rune('a'+page)), "").Over {
+			if read(l, reader, "/artikel/"+string(rune('a'+page)), "").Over {
 				t.Fatalf("the reader is over the limit in round %d", round)
 			}
 			for asset := 0; asset < 40; asset++ {
-				if l.Count(reader, "/static/"+string(rune('a'+asset%26))+string(rune('a'+asset/26))+".png", "").Over {
-					t.Fatal("assets pushed the reader over the limit")
+				if l.Count(reader).Over { // not a page: only checked
+					t.Fatal("other requests pushed the reader over the limit")
 				}
 			}
 		}
@@ -272,21 +268,21 @@ func TestLimitOnDifferentPages(t *testing.T) {
 	// crawler must be stopped somewhere near the limit.
 	stoppedAt := 0
 	for i := 1; i <= 100; i++ {
-		if l.Count(crawler, "/artikel", "id="+string(rune('0'+i/10))+string(rune('0'+i%10))).Over {
+		if read(l, crawler, "/artikel", "id="+string(rune('0'+i/10))+string(rune('0'+i%10))).Over {
 			stoppedAt = i
 			break
 		}
 	}
-	if stoppedAt < 25 || stoppedAt > 40 {
+	if stoppedAt < 26 || stoppedAt > 40 {
 		t.Errorf("the crawler was stopped at page %d, limit 30", stoppedAt)
 	}
-	// Once over, its assets are stopped as well.
-	if !l.Count(crawler, "/static/a.png", "").Over {
-		t.Error("an asset request of a client over the page limit is let through")
+	// Once over, its other requests are stopped as well.
+	if !l.Count(crawler).Over {
+		t.Error("another request of a client over the page limit is let through")
 	}
 	// The pages are forgotten after two periods.
 	c.advance(21 * time.Minute)
-	if l.Count(crawler, "/artikel", "id=1").Over {
+	if read(l, crawler, "/artikel", "id=1").Over {
 		t.Error("still over the limit two periods later")
 	}
 	if r := l.Report(); r.Limits[0].Count != "pages" {
@@ -294,11 +290,52 @@ func TestLimitOnDifferentPages(t *testing.T) {
 	}
 }
 
+// Reading the same pages again in the next period must not count them twice.
+func TestTheSamePagesAcrossPeriodsCountOnce(t *testing.T) {
+	c := newClock()
+	l := New(Options{Windows: []Window{{Requests: 60, Per: 10 * time.Minute, Action: "deny", Pages: true}}, MaxClients: 1000, Now: c.Now})
+	a := addr("192.0.2.1")
+	for round := 0; round < 6; round++ {
+		for page := 0; page < 40; page++ {
+			if read(l, a, "/akte/"+string(rune('A'+page)), "").Over {
+				t.Fatalf("round %d, page %d: over a limit of 60 with 40 different pages", round, page)
+			}
+		}
+		c.advance(10 * time.Minute)
+	}
+	// Forty other pages in the next period do add up.
+	over := false
+	for page := 0; page < 40; page++ {
+		over = over || read(l, a, "/neu/"+string(rune('A'+page)), "").Over
+	}
+	if !over {
+		t.Error("80 different pages within the sliding period stayed under a limit of 60")
+	}
+}
+
+// A limit of N lets N pages through and stops at the next.
+func TestSmallPageLimitsAreExact(t *testing.T) {
+	for _, n := range []int{1, 2, 5, 10} {
+		l := New(Options{Windows: []Window{{Requests: n, Per: time.Hour, Action: "deny", Pages: true}}, MaxClients: 1000})
+		stopped := 0
+		for i := 1; i <= n+5 && stopped == 0; i++ {
+			if read(l, addr("192.0.2.1"), "/p/"+string(rune('a'+i)), "").Over {
+				stopped = i
+			}
+		}
+		// The page after the Nth is still served (it cannot be known to
+		// be new before the website answers); the one after that is not.
+		if stopped != n+2 {
+			t.Errorf("limit %d: stopped at page %d", n, stopped)
+		}
+	}
+}
+
 func TestEstimateOfDifferentPages(t *testing.T) {
 	for _, n := range []int{1, 10, 50, 100, 250, 500} {
 		l := New(Options{Windows: []Window{{Requests: MaxPages, Per: time.Hour, Action: "deny", Pages: true}}, MaxClients: 1000})
 		for i := 0; i < n; i++ {
-			l.Count(addr("192.0.2.1"), "/p/"+time.Duration(i).String(), "")
+			l.Page(addr("192.0.2.1"), "/p/"+time.Duration(i).String(), "")
 		}
 		var got float64
 		for i := range l.shards {
@@ -310,6 +347,13 @@ func TestEstimateOfDifferentPages(t *testing.T) {
 			t.Errorf("%d different pages estimated as %.0f", n, got)
 		}
 	}
+	// A full field counts as more than any field with a bit clear.
+	full := [sketchBits / 64]uint64{^uint64(0), ^uint64(0), ^uint64(0), ^uint64(0)}
+	almost := full
+	almost[0] &^= 1
+	if distinct(&full) <= distinct(&almost) {
+		t.Errorf("full field %.0f, one bit clear %.0f", distinct(&full), distinct(&almost))
+	}
 }
 
 func TestRequestsWindowsAreUnchangedByPageWindows(t *testing.T) {
@@ -318,20 +362,38 @@ func TestRequestsWindowsAreUnchangedByPageWindows(t *testing.T) {
 		{Requests: 100, Per: time.Hour, Action: "challenge", Pages: true},
 	}, MaxClients: 1000})
 	for i := 0; i < 3; i++ {
-		if l.Count(addr("192.0.2.1"), "/a.css", "").Over {
+		if l.Count(addr("192.0.2.1")).Over {
 			t.Fatal("over too early")
 		}
 	}
-	if v := l.Count(addr("192.0.2.1"), "/a.css", ""); !v.Over || v.Action != "deny" {
+	if v := l.Count(addr("192.0.2.1")); !v.Over || v.Action != "deny" {
 		t.Errorf("verdict = %+v", v)
 	}
 }
 
-func TestCountWithPagesDoesNotAllocateForAKnownClient(t *testing.T) {
+func TestPagesOfExemptAndInvalidAddressesAreNotRecorded(t *testing.T) {
+	l := New(Options{Windows: []Window{{Requests: 1, Per: time.Hour, Action: "deny", Pages: true}},
+		Exempt: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}, MaxClients: 1000})
+	for i := 0; i < 10; i++ {
+		l.Page(addr("192.0.2.7"), "/p/"+string(rune('a'+i)), "")
+		l.Page(netip.Addr{}, "/p", "")
+	}
+	if r := l.Report(); r.Clients != 0 || r.Exempt != 0 {
+		t.Errorf("report = %+v", r)
+	}
+	// Without a limit on pages, Page does nothing at all.
+	plain := New(Options{Windows: []Window{{Requests: 1, Per: time.Hour, Action: "deny"}}, MaxClients: 1000})
+	plain.Page(addr("203.0.113.1"), "/p", "")
+	if plain.Report().Clients != 0 {
+		t.Error("Page created an entry although no limit counts pages")
+	}
+}
+
+func TestPageDoesNotAllocateForAKnownClient(t *testing.T) {
 	l := New(Options{Windows: []Window{{Requests: 400, Per: time.Minute, Action: "deny", Pages: true}}, MaxClients: 1000})
 	a := addr("192.0.2.1")
-	l.Count(a, "/x", "")
-	if n := testing.AllocsPerRun(100, func() { l.Count(a, "/artikel/42", "seite=2") }); n != 0 {
-		t.Errorf("Count allocates %v times", n)
+	l.Count(a)
+	if n := testing.AllocsPerRun(100, func() { l.Count(a); l.Page(a, "/artikel/42", "seite=2") }); n != 0 {
+		t.Errorf("Count and Page allocate %v times", n)
 	}
 }

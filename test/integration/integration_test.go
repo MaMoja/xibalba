@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -95,6 +96,15 @@ func newWebsite(t *testing.T) *website {
 		w.hits++
 		w.mu.Unlock()
 		rw.Header().Set("X-From-Website", "yes")
+		// Like a real website: pages are HTML, the rest is something else.
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".png"):
+			rw.Header().Set("Content-Type", "image/png")
+		case strings.HasPrefix(r.URL.Path, "/api/"):
+			rw.Header().Set("Content-Type", "application/json")
+		default:
+			rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		}
 		_, _ = fmt.Fprintf(rw, "website says hello to %s", r.URL.Path)
 	}))
 	t.Cleanup(w.Close)
@@ -1561,14 +1571,24 @@ limits:
 			t.Fatalf("the reader was stopped at request %d (%s): %d", i, target, resp.StatusCode)
 		}
 	}
-	stopped := 0
-	for i := 1; i <= 40 && stopped == 0; i++ {
-		if resp, _ := get(t, inst.public+fmt.Sprintf("/liste?seite=%d", i), from("203.0.113.31", browser)); resp.StatusCode == http.StatusTooManyRequests {
-			stopped = i
+	// Answers that are not pages do not count, whatever their address looks like.
+	for i := 0; i < 60; i++ {
+		if resp, _ := get(t, inst.public+fmt.Sprintf("/api/suggest?q=%d", i), from("203.0.113.30", browser)); resp.StatusCode != 200 {
+			t.Fatalf("the reader was stopped at data request %d: %d", i, resp.StatusCode)
 		}
 	}
-	if stopped < 17 || stopped > 27 {
-		t.Errorf("the crawler was stopped at page %d, limit 20", stopped)
+	// Pages do, also when their address is dressed up as an image's.
+	for name, pattern := range map[string]string{"plain": "/liste?seite=%d", "disguised": "/index.php/artikel/%d/x.css"} {
+		client := map[string]string{"plain": "203.0.113.31", "disguised": "203.0.113.32"}[name]
+		stopped := 0
+		for i := 1; i <= 40 && stopped == 0; i++ {
+			if resp, _ := get(t, inst.public+fmt.Sprintf(pattern, i), from(client, browser)); resp.StatusCode == http.StatusTooManyRequests {
+				stopped = i
+			}
+		}
+		if stopped < 18 || stopped > 28 {
+			t.Errorf("%s: the crawler was stopped at page %d, limit 20", name, stopped)
+		}
 	}
 }
 
@@ -1613,5 +1633,52 @@ func TestMetrics(t *testing.T) {
 	// Not on the public side.
 	if resp, _ := get(t, inst.public+"/metrics", language); strings.Contains(resp.Header.Get("Content-Type"), "version=0.0.4") {
 		t.Error("the metrics are served on the public listener")
+	}
+}
+
+// With a limit on pages Xibalba looks at the website's answers. That must
+// not get in the way of upgraded connections (websockets).
+func TestUpgradedConnectionWithALimitOnPages(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "echo") {
+			http.Error(w, "expected an upgrade", http.StatusBadRequest)
+			return
+		}
+		conn, rw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n")
+		_ = rw.Flush()
+		line, _ := rw.ReadString('\n')
+		_, _ = rw.WriteString("echo: " + line)
+		_ = rw.Flush()
+	}))
+	defer upstream.Close()
+	inst := start(t, upstream.URL, "limits:\n  enabled: true\n  windows:\n    - {requests: 50, per: 10m, action: challenge, count: pages}\n")
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(inst.public, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = fmt.Fprintf(conn, "GET /socket HTTP/1.1\r\nHost: example.org\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n")
+	reader := bufio.NewReader(conn)
+	status, _ := reader.ReadString('\n')
+	if !strings.Contains(status, "101") {
+		t.Fatalf("answer to the upgrade: %q", status)
+	}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil || line == "\r\n" {
+			break
+		}
+	}
+	_, _ = fmt.Fprintf(conn, "hello\n")
+	if got, _ := reader.ReadString('\n'); got != "echo: hello\n" {
+		t.Errorf("over the upgraded connection: %q", got)
 	}
 }

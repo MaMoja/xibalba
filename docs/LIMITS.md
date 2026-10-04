@@ -27,6 +27,7 @@ counted.
 |---|---|
 | `limits.enabled` | `true` switches the limits on. |
 | `limits.windows` | One to four limits, each with `requests`, `per` (1s to 24h), `action`, and optionally `count: pages`. |
+| `limits.max_clients` memory | About 15 MB per 100 000 clients; about 40 MB with a limit on pages. |
 | `limits.count_by` | What one client is. `address`: an IPv4 address; for IPv6 the /64, which is one connection. `network`: an IPv4 /24 or an IPv6 /48. |
 | `limits.exempt` | Addresses and networks that are never counted. |
 | `limits.max_clients` | How many clients are tracked at most. |
@@ -51,18 +52,36 @@ limits:
 A client that asks for more than 60 different pages within ten minutes has to
 pass the security check.
 
+- **A page is what your website answers as a page:** a successful answer of
+  type `text/html`. Xibalba goes by the answer, not by what the address
+  looks like. Images, style sheets, scripts, data (JSON) and downloads do
+  not count, and a crawler cannot hide a page behind an address that looks
+  like an image's.
 - A page is an address together with its query: `/liste?seite=2` and
   `/liste?seite=3` are two pages.
-- Images, style sheets, scripts, fonts, audio and video (by the ending of
-  the address) are not pages and do not count.
-- Asking for the same page again does not count again. To catch a client
-  that asks for the same thing again and again, use a limit on requests.
-- The number is an estimate, about one in ten off at worst, and good up to
-  500. That is the highest limit a `pages` limit can have.
+- Asking for the same page again does not count again, also not in the next
+  period. To catch a client that asks for the same thing again and again,
+  use a limit on requests.
+- The number is an estimate: exact for a few pages, usually within a tenth,
+  and up to a fifth off near 500. That is the highest limit a `pages` limit
+  can have.
+- "More than 60" means the 61st page is still served: only the website's
+  answer shows that it is a page. The request after it is stopped.
 - Once a client is over, all its requests are affected, also for images.
-- It needs more memory: about 0.6 KB per counted client instead of 0.1 KB.
+- It needs more memory: about 0.4 KB per counted client instead of 0.15 KB.
 
-One period can have a limit on requests and one on pages.
+One period can have a limit on requests and one on pages. Keep a limit on
+requests next to a limit on pages: it covers what is not a page.
+
+Things that can push a person over a limit on pages:
+
+- A website that puts changing values into the query of its pages (session
+  numbers, search-as-you-type that answers with HTML). Each value is a new
+  page. If your site does that, a limit on pages suits it badly.
+- Another website that makes a visitor's browser load many different pages
+  of yours. The same is possible with limits on requests. With `challenge`
+  the visitor solves the check once and carries on; this is why `challenge`
+  is the action to use with `count: pages`.
 
 ## The two actions
 
