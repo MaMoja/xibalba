@@ -33,6 +33,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/lifecycle"
 	"github.com/MaMoja/xibalba/internal/limit"
 	"github.com/MaMoja/xibalba/internal/logging"
+	"github.com/MaMoja/xibalba/internal/metrics"
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/proxy"
 	"github.com/MaMoja/xibalba/internal/rules"
@@ -289,8 +290,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// Request limits, if switched on.
 	var limitFn func(netip.Addr, string, string) (bool, bool, time.Duration)
+	var limiter *limit.Limiter
 	if cfg.Limits.Enabled {
-		limiter := limit.New(cfg.Limits.Options())
+		limiter = limit.New(cfg.Limits.Options())
 		supervisor.Add(limiter)
 		registry.Register(limiter.Name(), func() health.Status { return health.Status{State: health.OK} })
 		opsMux.Handle("GET /limits", limiter.Handler())
@@ -342,6 +344,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	})
 	registry.Register("rules", decisions.Health)
 	opsMux.Handle("GET /decisions", decisions.Handler())
+
+	// The same numbers for a monitoring system.
+	numbers := metrics.New()
+	collect(numbers, parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare})
+	opsMux.Handle("GET /metrics", numbers.Handler())
 
 	resolver := clientip.New(cfg.Server.TrustedPrefixes())
 	public := httpserver.New(httpserver.Options{

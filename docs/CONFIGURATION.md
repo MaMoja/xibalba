@@ -302,6 +302,7 @@ Endpoints:
 | `GET /limits` | Only while `limits.enabled` is `true`. JSON with the limits, how many clients are being counted and how many requests were over each limit. Holds no address. Example in [LIMITS.md](LIMITS.md#looking-at-what-happens). |
 | `GET /trap` | Only while `trap.enabled` is `true`. JSON with the number of requests that reached the trap and of clients remembered right now. Holds no address. |
 | `GET /crawlers` | JSON with every known crawler: operator, class, source, how it is verified, the state of its address list, and how many requests claimed to be it. Holds no client address. Example in [CRAWLERS.md](CRAWLERS.md#looking-at-what-happens). |
+| `GET /metrics` | The numbers of all the endpoints below in the Prometheus text format, for a monitoring system. See [METRICS.md](METRICS.md). |
 | `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 
 Example health report:

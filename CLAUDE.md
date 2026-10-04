@@ -157,6 +157,7 @@ data/                 built-in crawler definitions and presets (embedded)
 internal/limit/       count requests per client, say when one is over a limit
 internal/geo/         country of an address, from a database file
 internal/trap/        hidden link that catches crawlers; optional maze
+internal/metrics/     the other parts' numbers in the Prometheus text format
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
@@ -170,7 +171,7 @@ test/webserver/       checks behind real nginx and Caddy (not in CI)
 examples/rules/       example rule files, kept valid by a test
 examples/nginx/       tested nginx configuration; the handbook shows it
 examples/caddy/       tested Caddy configuration; the handbook shows it
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, metrics, challenge, development
 docs/de/              operator handbook in German
 ```
 

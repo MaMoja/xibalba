@@ -8,6 +8,9 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- `GET /metrics` on the operations listener: decisions, the security check,
+  crawlers, limits, the trap and the state of every part, in the Prometheus
+  text format. No address, path or user agent.
 - Countries (`countries`). Rule condition `country` with two-letter codes,
   from a database file in `.mmdb` format that the site owner supplies
   (DB-IP IP to Country Lite, MaxMind GeoLite2 Country). A replaced file is

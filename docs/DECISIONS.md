@@ -4,6 +4,13 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Metrics in the Prometheus text format are written by a package of our
+  own, without the Prometheus client library.** Agent. The format is a few
+  lines of text; the library would bring a dozen dependencies. The package
+  knows nothing about what is measured; the parts hand it their numbers.
+- **`/metrics` needs no setting and is on the operations listener only.**
+  Agent. It shows nothing the other endpoints there do not show.
+
 - **Different pages are estimated with a bit field of 256 bits per client,
   limit and period** (linear counting). Agent. Exact counting would need a
   list of addresses per client; the estimate needs 64 bytes, stores no

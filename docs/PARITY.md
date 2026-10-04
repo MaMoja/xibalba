@@ -20,6 +20,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Health endpoint | |
 | Removing the branding for sponsors | |
 | nginx and Caddy guides | |
+| Prometheus metrics | |
 | Checking everything that says it is a browser, with exceptions for well-known paths, robots.txt, favicon, feeds, git | Presets, opt-in; Anubis does it by default |
 | Score for implausible browsers | Preset `weigh-odd-browsers` |
 | Trap link and maze | Maze off by default, made of meaningless syllables |
@@ -50,7 +51,6 @@ documentation only, described in our own words), and where Xibalba stands.
 | Check that the client really loaded a style sheet | Later |
 | Memory-hard proof of work (WebAssembly) | Later |
 | Challenge method and difficulty per rule or threshold | Later |
-| Prometheus metrics | M6 |
 | Storage backends: file, Valkey/Redis, S3 | M6 (file), M9 (shared) |
 | Verdict mode for nginx, Caddy, Traefik (subrequest authentication) with allowed redirect domains | M9 |
 | Docker image, deb, rpm, systemd unit | M9 |

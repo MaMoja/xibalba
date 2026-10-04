@@ -36,6 +36,7 @@ flowchart TD
     main --> crawlers
     main --> limit
     main --> trap
+    main --> metrics
     main --> geo
     config --> geo
     geo --> health
@@ -89,6 +90,7 @@ the same code that later uses them.
 | `internal/limit` | Count requests per client and say when a client is over a limit |
 | `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
+| `internal/metrics` | Serve the numbers of the other parts in the Prometheus text format |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
 | `internal/challenge` | Make a client pass a check, verify its answer, recognise its pass |
@@ -140,6 +142,7 @@ cannot recover from.
 | More clients were caught in the trap than its table holds | Older entries make way and are no longer treated as caught. | `clients` in `/trap` |
 | The country database is missing, damaged or cannot be downloaded | The database already loaded stays in use. If none is loaded, rules with a `country` condition are skipped; everything else works. A damaged file given in the configuration without downloading stops the start, like any wrong setting. | One warning with `component=countries`; `countries` is `degraded` in `/healthz` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
+| A part fails while its numbers are collected for `/metrics` | Its numbers are left out of that answer; the others are served. | Missing series in the monitoring system |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
 

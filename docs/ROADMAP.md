@@ -80,7 +80,7 @@ decision (2026-10-03): all of this comes before statistics.
 ## M6: Statistics
 - [ ] Aggregated counters per hour: by action, rule, crawler, network
 - [ ] Embedded storage with retention
-- [ ] Prometheus metrics endpoint
+- [x] Prometheus metrics endpoint (format checked by tests; not yet tried against a running Prometheus)
 
 ## M7: Web interface, read side
 - [ ] Login, sessions, localhost by default

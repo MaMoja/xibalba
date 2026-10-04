@@ -361,6 +361,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | meine Sponsor-Lizenz eintragen | `license.file` | Abschnitt 8 |
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
+| Xibalba an eine Überwachung (Prometheus) anbinden | nichts einzustellen; Abruf unter `/metrics` am Betriebsport | Abschnitt 9, „Überwachung anbinden“ |
 | mehr oder weniger ins Protokoll schreiben | `log.level`, `log.format` | [Referenz](../CONFIGURATION.md#log) |
 | den Betriebsport ändern | `ops.listen` | [Referenz](../CONFIGURATION.md#ops) |
 
@@ -1264,6 +1265,21 @@ Viel `served` und wenig `solved` ist das Bild eines Crawlers, der die Prüfung
 nicht besteht. Die Zähler beginnen bei jedem Start bei null; dauerhafte
 Statistik ist geplant.
 
+### Überwachung anbinden
+
+Für Überwachungssysteme liefert Xibalba alle Zahlen im Prometheus-Format:
+
+```sh
+curl http://127.0.0.1:9090/metrics
+```
+
+Es sind dieselben Zahlen wie unter `/decisions`, `/crawlers`, `/limits`,
+`/trap` und `/healthz`, ohne Adressen, Pfade oder Kennungen. Eine Einstellung
+ist nicht nötig. Der wichtigste Wert für eine Alarmierung ist
+`xibalba_component_state`: 0 heißt in Ordnung, 1 eingeschränkt, 2
+ausgefallen. Alle Werte und Beispielabfragen stehen in
+[METRICS.md](../METRICS.md) (englisch).
+
 ### Ein Besucher meldet, er sei zu Unrecht blockiert
 
 Auf der Blockseite steht eine Referenz, etwa `5f54bba9`. Sie bezeichnet die
@@ -1397,6 +1413,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
 | [COUNTRIES.md](../COUNTRIES.md) | Länder-Regeln, Datenbanken und ihre Lizenzen | Englisch |
 | [TRAP.md](../TRAP.md) | die Falle und der Irrgarten im Detail | Englisch |
+| [METRICS.md](../METRICS.md) | Zahlen für Überwachungssysteme | Englisch |
 | [LIMITS.md](../LIMITS.md) | Begrenzung der Anfragen im Detail | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |
 | [SPONSORS.md](../SPONSORS.md) | was frei ist, was die Sponsor-Lizenz freischaltet, wie sie geprüft wird | Englisch |

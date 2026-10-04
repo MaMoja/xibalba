@@ -73,7 +73,8 @@ flowchart LR
 | Presets: check everything that says it is a browser; exceptions for feeds, git, robots.txt; score for odd browsers | Built |
 | Trap link for crawlers, optional maze (off by default) | Built |
 | Country conditions in rules, with a database you supply or the free one downloaded for you | Built |
-| Statistics and web interface | Planned |
+| Metrics for monitoring systems (Prometheus format) | Built |
+| Statistics kept by Xibalba itself, web interface | Planned |
 
 The order and the details are in the [roadmap](docs/ROADMAP.md).
 
@@ -196,6 +197,7 @@ configuration xibalba.yaml: 1 problem
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
 | [Countries](docs/COUNTRIES.md) | Rules by country: which database, licences, keeping it current |
 | [Trap](docs/TRAP.md) | The hidden link that catches crawlers, and the optional maze |
+| [Metrics](docs/METRICS.md) | The numbers for a monitoring system |
 | [Challenge](docs/CHALLENGE.md) | The security check: how it works, its settings, what to consider |
 | [Sponsors](docs/SPONSORS.md) | What is free, what the sponsor license adds, how it is checked |
 | [Architecture](docs/ARCHITECTURE.md) | How the program is divided and how failures are contained |

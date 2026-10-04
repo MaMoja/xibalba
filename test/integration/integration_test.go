@@ -1571,3 +1571,47 @@ limits:
 		t.Errorf("the crawler was stopped at page %d, limit 20", stopped)
 	}
 }
+
+// --- metrics ----------------------------------------------------------------
+
+func TestMetrics(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "trap:\n  enabled: true\nlimits:\n  enabled: true\nserver:\n  listen: PUBLIC\n  trusted_proxies: [\"127.0.0.1\"]\n"+testRules)
+	get(t, inst.public+"/", from("203.0.113.40", "Mozilla/5.0 Firefox/130.0"))
+	get(t, inst.public+"/admin", from("203.0.113.40", "Mozilla/5.0 Firefox/130.0"))
+
+	resp, err := http.Get(inst.ops + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	body := string(raw)
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain; version=0.0.4") {
+		t.Errorf("content type = %q", resp.Header.Get("Content-Type"))
+	}
+	for _, want := range []string{
+		`xibalba_build_info{version="`,
+		`xibalba_component_state{component="public"} 0`,
+		`xibalba_component_state{component="limits"} 0`,
+		`xibalba_decisions_total{source="rule:block-admin",action="deny"} 1`,
+		`xibalba_decisions_total{source="default",action="allow"} 1`,
+		`xibalba_challenge_total{result="served"} 0`,
+		`xibalba_crawler_requests_total{crawler="GPTBot",class="training",status="verified"} 0`,
+		`xibalba_limit_clients 1`,
+		`xibalba_limit_over_total{per="1m0s",count="requests",action="challenge"} 0`,
+		`xibalba_trap_hits_total 0`,
+		"# TYPE xibalba_decisions_total counter",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics lacks %s", want)
+		}
+	}
+	if strings.Contains(body, "203.0.113") || strings.Contains(body, "Firefox") || strings.Contains(body, "/admin") {
+		t.Error("/metrics holds an address, a user agent or a path")
+	}
+	// Not on the public side.
+	if resp, _ := get(t, inst.public+"/metrics", language); strings.Contains(resp.Header.Get("Content-Type"), "version=0.0.4") {
+		t.Error("the metrics are served on the public listener")
+	}
+}
