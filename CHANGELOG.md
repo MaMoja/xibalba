@@ -6,6 +6,10 @@ All notable changes are listed here. The format follows
 
 ## Unreleased
 
+## 0.1.0 - 2026-10-04
+
+The first published version.
+
 ### Changed
 
 - Regular expressions in rules have a size limit, per expression and for
