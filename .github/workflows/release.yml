@@ -57,7 +57,7 @@ jobs:
         run: |
           sudo dpkg -i "dist/release/xibalba_${{ steps.version.outputs.version }}_amd64.deb"
           xibalba -version
-          xibalba -check -config /etc/xibalba/xibalba.yaml
+          sudo -u xibalba xibalba -check -config /etc/xibalba/xibalba.yaml
       - name: Check the service file
         run: |
           # What systemd has to say about the unit is shown on the run's page;

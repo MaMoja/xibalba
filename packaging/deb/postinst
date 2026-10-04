@@ -17,7 +17,7 @@ if [ "$1" = "configure" ]; then
     if [ -z "$2" ]; then
         echo "Xibalba is installed but not started."
         echo "  1. Set upstream.url in /etc/xibalba/xibalba.yaml"
-        echo "  2. xibalba -check -config /etc/xibalba/xibalba.yaml"
+        echo "  2. sudo -u xibalba xibalba -check -config /etc/xibalba/xibalba.yaml"
         echo "  3. systemctl enable --now xibalba"
     fi
 fi

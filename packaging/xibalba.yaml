@@ -1,7 +1,7 @@
 # Xibalba's configuration, as installed by the package.
 #
 # 1. Set upstream.url to where your website is reached from this machine.
-# 2. Check:  xibalba -check -config /etc/xibalba/xibalba.yaml
+# 2. Check:  sudo -u xibalba xibalba -check -config /etc/xibalba/xibalba.yaml
 # 3. Start:  systemctl enable --now xibalba
 #
 # Every setting with its default is in /usr/share/doc/xibalba/xibalba.example.yaml.
