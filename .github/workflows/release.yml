@@ -3,9 +3,10 @@ name: Release
 # Builds what a release offers for download and tries it on a real machine:
 # the Debian package is installed and the service started with systemd.
 #
-#   A tag "v1.2.3" publishes the release and the container image.
 #   "Run workflow" by hand builds and tries everything and publishes nothing;
 #   the files are kept with the run for a few days.
+#   "Run workflow" with "publish" ticked, or pushing a tag "v1.2.3", publishes
+#   the release (creating the tag if it is not there) and the container image.
 
 on:
   push:
@@ -13,8 +14,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version for a trial build (nothing is published)"
+        description: "Version, without the v"
         default: "0.0.0-trial"
+      publish:
+        description: "Publish this version (it must have its heading in CHANGELOG.md)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,6 +32,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,6 +51,13 @@ jobs:
           else
             version="$TRIAL"
           fi
+          publish=false
+          if [ "$GITHUB_REF_TYPE" = "tag" ] || [ "${{ inputs.publish }}" = "true" ]; then
+            publish=true
+            # Only what the changelog names is published.
+            grep -q "^## $version - " CHANGELOG.md || { echo "::error::CHANGELOG.md has no heading \"## $version - <date>\""; exit 1; }
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "::notice::Building version $version"
       - name: Tests
@@ -103,16 +116,16 @@ jobs:
           path: dist/release/
           retention-days: 7
       - name: Publish the release
-        if: github.ref_type == 'tag'
+        if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           flags=""
           case "$VERSION" in *-*) flags="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/release/* $flags \
+          gh release create "v$VERSION" dist/release/* $flags --target "$GITHUB_SHA" \
             --title "Xibalba $VERSION" \
-            --notes "What changed: see [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md). How to install: see [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/GETTING-STARTED.md#install). Check a download with \`sha256sum --check SHA256SUMS\`."
+            --notes "What changed: see [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/v$VERSION/CHANGELOG.md). How to install: see [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/v$VERSION/docs/GETTING-STARTED.md#install). Check a download with \`sha256sum --check SHA256SUMS\`."
 
   image:
     name: Container image
@@ -134,7 +147,7 @@ jobs:
           docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 \
             --build-arg VERSION="$VERSION" .
       - name: Publish
-        if: github.ref_type == 'tag'
+        if: needs.packages.outputs.publish == 'true'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

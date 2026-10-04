@@ -126,11 +126,13 @@ new sponsorship; for the $50 tier and above, issue the license with
    service under systemd, builds the image for all three kinds of
    processor, and publishes nothing. The files are kept with the run for
    seven days.
-3. Publish: `git tag v1.2.3 && git push origin v1.2.3`. The same workflow
-   runs again and, if everything passes, creates the release with the files
-   and pushes the image `ghcr.io/mamoja/xibalba:1.2.3` (and `:latest`). A
-   version with a hyphen, such as `v1.2.3-rc1`, becomes a pre-release and
-   does not move `latest`.
+3. Publish: run the workflow again with the version (without the `v`) and
+   "publish" ticked, or push a tag: `git tag v1.2.3 && git push origin
+   v1.2.3`. If everything passes, the workflow creates the release with the
+   files (and the tag, if it is not there) and pushes the image
+   `ghcr.io/mamoja/xibalba:1.2.3` (and `:latest`). Only a version that has
+   its heading in `CHANGELOG.md` is published. A version with a hyphen,
+   such as `1.2.3-rc1`, becomes a pre-release and does not move `latest`.
 
 What a release holds, built by `tools/release.sh` (`make release
 RELEASE=1.2.3` does the same on your machine):
