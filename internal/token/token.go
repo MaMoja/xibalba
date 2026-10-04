@@ -93,6 +93,7 @@ type wire struct {
 type Signer struct {
 	keys    map[Kind][]byte
 	bindKey []byte
+	macKey  []byte
 }
 
 // NewSigner returns a Signer for key, which must be KeySize bytes long.
@@ -108,6 +109,7 @@ func NewSigner(key []byte) (*Signer, error) {
 	return &Signer{
 		keys:    map[Kind][]byte{Challenge: derive("challenge"), Pass: derive("pass")},
 		bindKey: derive("binding"),
+		macKey:  derive("mac"),
 	}, nil
 }
 
@@ -115,7 +117,7 @@ func NewSigner(key []byte) (*Signer, error) {
 // purpose of its own. It is for values handed to a client that the client
 // must show again, where a whole token would be too much.
 func (s *Signer) MAC(purpose, data string) string {
-	mac := hmac.New(sha256.New, s.bindKey)
+	mac := hmac.New(sha256.New, s.macKey)
 	mac.Write([]byte("mac/" + purpose + "\x00" + data))
 	return hex.EncodeToString(mac.Sum(nil)[:12])
 }

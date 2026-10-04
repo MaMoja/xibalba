@@ -87,8 +87,15 @@
 
   var tries = 0;
   function send(solution) {
-    if (form.getAttribute("data-css") && !styleValue() && tries++ < 50) {
-      window.setTimeout(function () { send(solution); }, 100); // the style sheet is still on its way
+    if (form.getAttribute("data-css") && !styleValue()) {
+      if (tries++ < 50) {
+        window.setTimeout(function () { send(solution); }, 100); // the style sheet is still on its way
+      } else {
+        // It never came. Sending the answer without it would only bring
+        // the same page again; say what is wrong and stop.
+        status.setAttribute("role", "alert");
+        status.textContent = form.getAttribute("data-nostyle") || "";
+      }
       return;
     }
     field("method").value = method;
@@ -96,7 +103,6 @@
     if (form.getAttribute("data-css")) { field("css").value = styleValue(); }
     if (form.getAttribute("data-probe")) {
       field("probe").value = probe();
-      field("agent").value = navigator.userAgent;
     }
     status.textContent = form.getAttribute("data-done") || "";
     form.submit();

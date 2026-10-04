@@ -4,6 +4,14 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **A pass earned by waiting has the lowest level**, whatever the task was.
+  Found by the review: the button of the path without JavaScript handed out
+  the level of the calculation. And a check whose button is open asks only
+  for that lowest level, since anyone may pass it by waiting.
+- **`headless` does not compare the browser's name with the request's.**
+  Privacy settings, extensions and proxies in organisations change one side
+  only, and the visitor would have been locked out with no way back.
+
 - **Four kinds of security check, two extra checks, selectable per rule**
   (owner's request). Names are our own: `pow`, `script`, `wait`, `refresh`;
   `css`, `headless`. The kind lives in the signed task, never in the form:

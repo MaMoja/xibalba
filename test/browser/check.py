@@ -151,7 +151,7 @@ async def run(base, axe_source, shots):
         check("no javascript: pressing at once gives a notice, not a dead end", early)
         if shots:
             await page.screenshot(path=os.path.join(shots, "challenge_too_early.png"))
-        await asyncio.sleep(2.3)
+        await asyncio.sleep(3.3)  # the wait is 2s and ends on a full second
         await page.keyboard.press("Tab")
         await page.keyboard.press("Enter")
         try:
@@ -258,7 +258,7 @@ async def run(base, axe_source, shots):
               response.status == 403 and "Weiter" in text and "JavaScript" not in text, text[:200])
         if shots:
             await page.screenshot(path=os.path.join(shots, "challenge_wait.png"))
-        await asyncio.sleep(2.3)
+        await asyncio.sleep(3.3)  # the wait is 2s and ends on a full second
         await page.keyboard.press("Tab")
         await page.keyboard.press("Enter")
         check("wait: after waiting, the button leads to the website", await lands(page))

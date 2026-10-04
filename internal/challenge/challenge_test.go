@@ -651,7 +651,7 @@ func TestExtraChecks(t *testing.T) {
 	full := func(v View) url.Values {
 		sheet := c.get(v.StyleURL)
 		value := regexp.MustCompile(`--xibalba-check:"([0-9a-f]+)"`).FindStringSubmatch(sheet.Body.String())[1]
-		return url.Values{"method": {MethodPoW}, "solution": {solve(v)}, "css": {value}, "probe": {"ok"}, "agent": {agent}}
+		return url.Values{"method": {MethodPoW}, "solution": {solve(v)}, "css": {value}, "probe": {"ok"}}
 	}
 	without := func(v View, drop string, set ...string) url.Values {
 		f := full(v)
@@ -666,8 +666,6 @@ func TestExtraChecks(t *testing.T) {
 		"wrong style value":        func(v View) url.Values { return without(v, "css", "abcdef") },
 		"no report":                func(v View) url.Values { return without(v, "probe") },
 		"report of automation":     func(v View) url.Values { return without(v, "probe", "webdriver") },
-		"another browser's name":   func(v View) url.Values { return without(v, "agent", "Mozilla/5.0 HeadlessChrome") },
-		"no browser name":          func(v View) url.Values { return without(v, "agent") },
 		"the button":               func(v View) url.Values { return url.Values{"method": {answerButton}} },
 		"right checks, wrong work": func(v View) url.Values { return without(v, "solution", "x") },
 	} {
@@ -677,8 +675,8 @@ func TestExtraChecks(t *testing.T) {
 			t.Errorf("%s was accepted", name)
 		}
 	}
-	if s.c.Automated() != 4 {
-		t.Errorf("automated = %d, want 4", s.c.Automated())
+	if s.c.Automated() != 2 {
+		t.Errorf("automated = %d, want 2", s.c.Automated())
 	}
 	v = c.challenge("/")
 	if rec := c.answer(v, full(v)); !passed(rec) {
@@ -741,10 +739,52 @@ func TestAPassCountsForWhatItWasEarnedWith(t *testing.T) {
 	s.want = probing
 	v = c.challenge("/")
 	s.advance(2 * time.Second)
-	if rec := c.answer(v, url.Values{"method": {MethodScript}, "solution": {scriptAnswer(v.Nonce)}, "probe": {"ok"}, "agent": {"Mozilla/5.0"}}); !passed(rec) {
+	if rec := c.answer(v, url.Values{"method": {MethodScript}, "solution": {scriptAnswer(v.Nonce)}, "probe": {"ok"}}); !passed(rec) {
 		t.Fatal("the probing check was not passed")
 	}
 	if !holds(probing) || !holds(hard) || !holds(easy) || holds(harder) {
 		t.Error("after the second check the first pass was lost, or more was gained than earned")
+	}
+}
+
+// A pass earned by waiting says so. It counts where waiting is enough, and
+// nowhere else, whatever the task was that the client waited through.
+func TestAPassEarnedByWaitingCountsOnlyAsThat(t *testing.T) {
+	withButton := &Profile{Method: MethodPoW, Difficulty: 12, Wait: time.Second, AllowButton: true}
+	noButton := &Profile{Method: MethodPoW, Difficulty: 12, Wait: time.Second}
+	script := &Profile{Method: MethodScript, Wait: time.Second}
+	waiting := &Profile{Method: MethodWait, Wait: time.Second}
+
+	s := newSite(t, nil)
+	c := s.client("192.0.2.1:1000", "Mozilla/5.0")
+	s.want = withButton
+	v := c.challenge("/")
+	s.advance(2 * time.Second)
+	if rec := c.answer(v, url.Values{"method": {answerButton}}); !passed(rec) {
+		t.Fatal("the button was not accepted")
+	}
+	holds := func(p *Profile) bool { s.want = p; return c.get("/").Code == 200 }
+	if !holds(withButton) || !holds(waiting) {
+		t.Error("the pass does not count where waiting is enough")
+	}
+	if holds(noButton) || holds(script) {
+		t.Error("a pass earned by waiting opened a check that asks for more")
+	}
+}
+
+// A wait is never shorter than asked for, although tokens keep whole seconds.
+func TestTheWaitIsNotCutShort(t *testing.T) {
+	s := newSite(t, func(o *Options) { o.Default = Profile{Method: MethodWait, Wait: time.Second} })
+	s.advance(999 * time.Millisecond) // the task is issued just before a full second
+	c := s.client("192.0.2.1:1000", "Mozilla/5.0")
+	v := c.challenge("/")
+	s.advance(2 * time.Millisecond)
+	if rec := c.answer(v, url.Values{"method": {answerButton}}); passed(rec) {
+		t.Fatal("accepted two milliseconds after the task was issued")
+	}
+	v = c.challenge("/")
+	s.advance(2 * time.Second)
+	if rec := c.answer(v, url.Values{"method": {answerButton}}); !passed(rec) {
+		t.Error("not accepted after the wait")
 	}
 }

@@ -234,6 +234,8 @@ Text names for `pages.texts`:
 | `challenge_text_wait` | First paragraph with the method `wait` | {operator} protects these pages against automated mass requests. Please wait a few seconds and then choose “Continue”. |
 | `challenge_text_refresh` | First paragraph with the method `refresh` | {operator} protects these pages against automated mass requests. Please wait a few seconds; you are then sent on automatically. If nothing happens, choose “Continue”. |
 | `challenge_automated` | Shown when the `headless` check found signs of automation | This browser reports that it is steered by a program, so the check was not passed. If you are using an ordinary browser, please get in touch with the operator of this website. |
+| `challenge_try_again` | The link on the page shown after a report of automation | Try again |
+| `challenge_no_style` | Shown when the `css` check cannot finish because the style sheet was not loaded | The check could not be finished: your browser did not load a style sheet that belongs to this page. If an extension blocks style sheets, please allow them for this website and reload the page. |
 | `challenge_cookie` | Second paragraph of the security check | Afterwards a cookie is stored that only records that the check was passed. |
 | `challenge_working` | Status while the browser calculates | The check is running … |
 | `challenge_done` | Status when the browser has finished | Check passed. You are being forwarded. |

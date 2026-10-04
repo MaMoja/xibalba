@@ -112,6 +112,12 @@ for a different one; see [A check of its own for a rule](#a-check-of-its-own-for
 Every kind ends the same way: a signed pass in a cookie, and the visitor is
 on the page that was asked for.
 
+**`refresh` and logs.** The forward of `refresh` carries the task in the
+address. The task is useless to anyone but the client it was issued to and
+expires after `challenge_lifetime`, and your website never sees it, but it
+does appear in the access log of a web server in front of Xibalba and in
+the browser's history.
+
 **`refresh` and accessibility.** The page of `refresh` moves the visitor on
 after a time the visitor cannot extend. WCAG 2.1 (success criterion 2.2.1)
 asks not to do that, and the project's accessibility check reports exactly
@@ -128,10 +134,13 @@ lists one.
 | Check | What it does | What it catches | What it does not |
 |---|---|---|---|
 | `css` | The page links a style sheet of Xibalba's own that carries a value belonging to this one task. The script reads the value back from the page once the browser has applied the style sheet, and sends it along. | Programs that fetch the page and solve the task without behaving like a browser: they do not load style sheets | A program that fetches the style sheet on purpose |
-| `headless` | The script looks for signs that a program steers the browser (the browser says so itself, or a known automation tool has left its marks), and reports the browser's own idea of its name, which must be the name the request carries. | Automated browsers used without care, which is most of them | A browser that was prepared to hide these signs. The report comes from the client, and a client can lie. |
+| `headless` | The script looks for signs that a program steers the browser: the browser says so itself, or a known automation tool has left its marks. | Automated browsers used without care, which is most of them | A browser that was prepared to hide these signs. The report comes from the client, and a client can lie. |
 
-A browser that reports automation gets a page that says so and stops there;
-it does not try again by itself. The number of such answers is in the
+A browser that reports automation gets a page that says so and stops there,
+with a link to try again; it does not try again by itself. Only signs that an
+ordinary browser never shows are used, so that people with unusual browsers
+are not locked out. If the style sheet of `css` never arrives (an extension
+that blocks style sheets), the page says so and stops as well. The number of such answers is in the
 counts as `challenge|automated` and in the metrics as
 `xibalba_challenge_total{result="automated"}`.
 
@@ -181,6 +190,17 @@ that earned it. It counts wherever the same or less is asked: a pass from
 `headless` unless the pass was earned with it. A visitor who meets a harder
 check later solves it once and keeps what was earned before. A check that a
 request limit brings about is always the default one.
+
+Two things follow from this:
+
+- **A pass earned by waiting counts only as that.** Where `pow` or `script`
+  leave the path without JavaScript open (`no_javascript: button`), a
+  visitor can pass by waiting and pressing the button. Such a pass opens
+  what `wait` and `refresh` ask for, and other checks whose button is open,
+  but not a check with `no_javascript: deny` or with extra checks. For a
+  rule that must cost a calculation, set `no_javascript: deny` on it.
+- **The length of the wait is not part of a pass.** A pass from a check with
+  `wait: 1s` also counts where a rule asks for `wait: 30s`.
 
 ### Recipes
 

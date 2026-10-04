@@ -149,6 +149,19 @@ func (p Profile) bits() (mask uint8) {
 // button reports whether the path without JavaScript is open.
 func (p Profile) button() bool { return p.usesScript() && p.AllowButton && p.bits() == 0 }
 
+// need is the level a pass must have to count for this check. Where the
+// path without JavaScript is open, waiting is enough to pass, so a pass
+// earned by waiting is enough to count.
+func (p Profile) need() int {
+	if p.button() {
+		return levelWaited
+	}
+	return p.level()
+}
+
+// levelWaited is the level of a pass that was earned by waiting alone.
+const levelWaited = 1
+
 // level orders checks by how much they ask of a client. A pass earned at
 // one level also counts where a lower one is asked for.
 func (p Profile) level() int {
@@ -158,7 +171,7 @@ func (p Profile) level() int {
 	case MethodScript:
 		return 2
 	default:
-		return 1
+		return levelWaited
 	}
 }
 
@@ -264,7 +277,7 @@ func (c *Challenge) Passed(r *http.Request, want *Profile) bool {
 		return false
 	}
 	p := c.profile(want)
-	return claims.Level >= p.level() && claims.Checks&p.bits() == p.bits()
+	return claims.Level >= p.need() && claims.Checks&p.bits() == p.bits()
 }
 
 // Serve answers the request with a challenge page for the check want (nil:
@@ -288,9 +301,15 @@ func (c *Challenge) issue(w http.ResponseWriter, r *http.Request, ret string, ms
 	if p.button() {
 		checks |= bitButton
 	}
+	// Tokens keep whole seconds: round the end of the wait up, so that it
+	// is never shorter than asked for.
+	notBefore := now.Add(p.Wait)
+	if !notBefore.Equal(notBefore.Truncate(time.Second)) {
+		notBefore = notBefore.Truncate(time.Second).Add(time.Second)
+	}
 	task := c.opts.Signer.Sign(token.Challenge, token.Claims{
 		Expires:    now.Add(c.opts.ChallengeLifetime),
-		NotBefore:  now.Add(p.Wait),
+		NotBefore:  notBefore,
 		Binding:    c.binding(r),
 		Nonce:      nonce,
 		Difficulty: p.Difficulty,
@@ -305,7 +324,7 @@ func (c *Challenge) issue(w http.ResponseWriter, r *http.Request, ret string, ms
 		Method:      p.Method,
 		Nonce:       nonce,
 		Difficulty:  p.Difficulty,
-		WaitSeconds: int((p.Wait + time.Second - 1) / time.Second),
+		WaitSeconds: int((notBefore.Sub(now) + time.Second - 1) / time.Second), // what is really left, rounded up
 		AllowButton: p.button() || !p.usesScript(),
 		Headless:    checks&bitHeadless != 0,
 		Message:     msg,
@@ -376,7 +395,7 @@ func (c *Challenge) Handler() http.Handler {
 			return
 		}
 		// What the task was: taken from the signed task, never from the form.
-		p := Profile{Method: claims.Method, Difficulty: claims.Difficulty, Wait: claims.NotBefore.Sub(now),
+		p := Profile{Method: claims.Method, Difficulty: claims.Difficulty, Wait: claims.NotBefore.Sub(now).Truncate(time.Second), // whole seconds, so that a fresh task never waits longer than the first
 			AllowButton: claims.Checks&bitButton != 0}
 		if claims.Checks&bitCSS != 0 {
 			p.Checks = append(p.Checks, CheckCSS)
@@ -389,6 +408,7 @@ func (c *Challenge) Handler() http.Handler {
 		}
 		answer := form.Get("method")
 		early := now.Before(claims.NotBefore)
+		earned := claims.Level // what the pass will say about how it was earned
 
 		switch {
 		case r.Method == http.MethodGet && claims.Method != MethodRefresh:
@@ -405,6 +425,7 @@ func (c *Challenge) Handler() http.Handler {
 				c.reject(w, r, ret, MessageTooEarly, p)
 				return
 			}
+			earned = levelWaited // whatever the task was: this client only waited
 		case answer == MethodPoW && claims.Method == MethodPoW:
 			if !SolvesPoW(claims.Nonce, form.Get("solution"), claims.Difficulty) {
 				c.reject(w, r, ret, MessageRetry, p)
@@ -433,11 +454,8 @@ func (c *Challenge) Handler() http.Handler {
 			}
 		}
 		if claims.Checks&bitHeadless != 0 {
-			// The script reports what it found ("ok" or the signs it saw)
-			// and the browser's own idea of its name, which must be the
-			// name the request carries.
-			report, seen := form.Get("probe"), form.Get("agent")
-			if report != "ok" || seen != r.Header.Get("User-Agent") {
+			// The script reports what it found: "ok" or the signs it saw.
+			if form.Get("probe") != "ok" {
 				c.automated.Add(1)
 				c.reject(w, r, ret, MessageAutomated, p)
 				return
@@ -447,7 +465,7 @@ func (c *Challenge) Handler() http.Handler {
 		// A pass already held keeps what it was earned with: a client that
 		// met a harder check elsewhere is not asked for it again because an
 		// easier one came in between.
-		level, checks := claims.Level, claims.Checks&^bitButton
+		level, checks := earned, claims.Checks&^bitButton
 		if held, ok := c.pass(r); ok {
 			level, checks = max(level, held.Level), checks|held.Checks
 		}

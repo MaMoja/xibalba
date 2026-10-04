@@ -26,5 +26,7 @@
   "challenge_text_script": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Ihr Browser wird dafür kurz geprüft. Das dauert nur wenige Sekunden; Sie müssen nichts tun.",
   "challenge_text_wait": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Bitte warten Sie einige Sekunden und wählen Sie dann „Weiter“.",
   "challenge_text_refresh": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Bitte warten Sie einige Sekunden; Sie werden dann von selbst weitergeleitet. Geschieht nichts, wählen Sie „Weiter“.",
-  "challenge_automated": "Dieser Browser meldet, dass er von einem Programm gesteuert wird; die Prüfung wurde deshalb nicht bestanden. Wenn Sie einen gewöhnlichen Browser benutzen, wenden Sie sich bitte an den Betreiber dieser Website."
+  "challenge_automated": "Dieser Browser meldet, dass er von einem Programm gesteuert wird; die Prüfung wurde deshalb nicht bestanden. Wenn Sie einen gewöhnlichen Browser benutzen, wenden Sie sich bitte an den Betreiber dieser Website.",
+  "challenge_try_again": "Erneut versuchen",
+  "challenge_no_style": "Die Prüfung konnte nicht abgeschlossen werden: Ihr Browser hat ein Stylesheet dieser Seite nicht geladen. Falls eine Erweiterung Stylesheets blockiert, erlauben Sie sie bitte für diese Website und laden Sie die Seite neu."
 }

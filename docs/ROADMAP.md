@@ -134,7 +134,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Extra checks `css` and `headless`
 - [x] Kind of check, difficulty, wait and extra checks per rule and per threshold; a pass counts for what it was earned with
 - [x] Tried in a real browser: every method, both extra checks (the automated test browser is caught by `headless`), accessibility
-- [ ] Security review by a second agent
+- [x] Security review by a second agent (2026-10-04); no high finding. Fixed: a pass earned by waiting at the button counted like one earned by calculating; a wait could be up to a second short; the page after a report of automation offered no way to try again, and the comparison of the browser's name could lock out real browsers (removed); a blocked style sheet made the page try for ever; a key of its own for the style sheet value.
 - [ ] Conditions by network operator (AS number) and address lists from files, for VPN and hosting networks
 - [ ] Proof of work in WebAssembly: decided against for now, see DECISIONS.md
 

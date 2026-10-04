@@ -200,10 +200,12 @@ func (c *compiler) challenge(spec *ChallengeSpec, add func(field, message, hint 
 	if spec.Wait != 0 && (spec.Wait < time.Second || spec.Wait > MaxChallengeWait) {
 		add("wait", fmt.Sprintf("%s is out of range", spec.Wait), `use a duration from "1s" to "1m"`)
 	}
-	if len(spec.Checks) > len(ChallengeChecks) {
-		add("checks", "the list names a check more than once", "name each check once")
-	}
+	named := map[string]bool{}
 	for i, check := range spec.Checks {
+		if named[check] {
+			add(fmt.Sprintf("checks[%d]", i), fmt.Sprintf("%q is named twice", check), "name each check once")
+		}
+		named[check] = true
 		if !known(ChallengeChecks, check) {
 			add(fmt.Sprintf("checks[%d]", i), fmt.Sprintf("%q is not an extra check", check), "use: "+strings.Join(ChallengeChecks, ", "))
 		}
@@ -211,6 +213,10 @@ func (c *compiler) challenge(spec *ChallengeSpec, add func(field, message, hint 
 	if len(spec.Checks) > 0 && (spec.Method == "wait" || spec.Method == "refresh") {
 		add("checks", fmt.Sprintf("extra checks run in JavaScript, and the method %s does without it", spec.Method),
 			"use method pow or script, or remove checks")
+	}
+	if len(spec.Checks) > 0 && spec.NoJavaScript == "button" {
+		add("no_javascript", "extra checks run in JavaScript, so the path without it cannot be open at the same time",
+			"remove no_javascript, or remove checks")
 	}
 	if spec.NoJavaScript != "" && spec.NoJavaScript != "button" && spec.NoJavaScript != "deny" {
 		add("no_javascript", fmt.Sprintf("%q is not a mode", spec.NoJavaScript), "use button or deny")

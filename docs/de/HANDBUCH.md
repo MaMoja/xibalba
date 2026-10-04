@@ -1187,7 +1187,11 @@ Adressbereiche: statt `country` schreiben Sie `ip: ["198.51.100.0/24"]`.
 
 Ein Nachweis gilt überall dort, wo dasselbe oder weniger verlangt wird. Wer
 eine strengere Prüfung bestanden hat, wird für eine leichtere nicht erneut
-geprüft; umgekehrt schon.
+geprüft; umgekehrt schon. Wer bei `pow` oder `script` ohne JavaScript nur
+gewartet und „Weiter“ gedrückt hat, besitzt einen Nachweis fürs Warten: Er
+gilt nicht für eine Regel mit `no_javascript: deny` oder mit
+Zusatzprüfungen. Soll eine Regel wirklich Rechenzeit kosten, setzen Sie bei
+ihr `no_javascript: deny`.
 
 **VPNs:** Xibalba kann nicht von sich aus erkennen, ob eine Adresse zu einem
 VPN gehört; dafür gibt es keine freie, verlässliche Liste. Heute tragen Sie

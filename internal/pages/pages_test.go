@@ -738,7 +738,7 @@ func TestChallengePageForEachMethod(t *testing.T) {
 	}
 
 	body, csp = show(ChallengeView{Method: "pow", Difficulty: 18, StyleURL: "/.xibalba/check.css?n=abc", Headless: true})
-	for _, want := range []string{`<link rel="stylesheet" href="/.xibalba/check.css?n=abc">`, `data-css="1"`, `data-probe="1"`, `name="css"`, `name="probe"`, `name="agent"`} {
+	for _, want := range []string{`<link rel="stylesheet" href="/.xibalba/check.css?n=abc">`, `data-css="1"`, `data-probe="1"`, `name="css"`, `name="probe"`, `data-nostyle="The check could not be finished`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page with extra checks lacks %s", want)
 		}
@@ -748,9 +748,12 @@ func TestChallengePageForEachMethod(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "script", Notice: "automated"})
+	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "script", Notice: "automated", Return: "/"})
 	if !strings.Contains(rec.Body.String(), `role="alert"`) || !strings.Contains(rec.Body.String(), "von einem Programm gesteuert") {
 		t.Error("the notice about automation is missing")
+	}
+	if !strings.Contains(rec.Body.String(), `<a href="/">Erneut versuchen</a>`) {
+		t.Error("the stopped page offers no way to try again")
 	}
 	if strings.Contains(rec.Body.String(), "<script") || strings.Contains(rec.Body.String(), "<form") {
 		t.Error("after a report of automation the page tries again by itself")
