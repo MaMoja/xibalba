@@ -38,7 +38,7 @@ configuration /etc/xibalba/xibalba.yaml: 2 problems
 ## How to become a sponsor
 
 1. Sponsor the project on GitHub: <https://github.com/sponsors/MaMoja>,
-   with the tier of 50 € per month or more.
+   with the tier of $50 per month or more.
 2. You receive a license file for your organisation.
 3. Install it as described below.
 

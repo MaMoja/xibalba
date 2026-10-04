@@ -36,6 +36,7 @@ cross: ## Build for linux/amd64 and linux/arm64 into dist/
 
 wiki: ## Build the wiki pages from docs/ into dist/wiki (also checks the links between documents)
 	python3 tools/wiki.py dist/wiki
+	python3 tools/sponsors_test.py
 
 check: lint test cross wiki ## Everything CI runs
 

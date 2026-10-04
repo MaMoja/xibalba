@@ -236,12 +236,21 @@ Xibalba is free and complete without paying anything. The pages it shows to
 visitors carry a small line, "Protected by Xibalba", with a link to this
 project and to its sponsor page.
 
-Sponsors at 50 € per month or more receive a license file that removes the
+Sponsors at $50 per month or more receive a license file that removes the
 line and lets them put their own name and wording on the pages. The check is
 done offline on your own machine; nothing is sent anywhere, and an expired
 license never takes a website down. Details: [docs/SPONSORS.md](docs/SPONSORS.md).
 
 [Sponsor Xibalba on GitHub](https://github.com/sponsors/MaMoja)
+
+### Sponsors
+
+<!-- sponsors:start -->
+No public sponsors yet. [Be the first.](https://github.com/sponsors/MaMoja)
+<!-- sponsors:end -->
+
+This list is kept up to date automatically from GitHub Sponsors. Sponsors
+who chose to stay private there are not shown.
 
 ## Contributing and security
 

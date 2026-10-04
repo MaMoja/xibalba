@@ -1,0 +1,37 @@
+name: Sponsors
+
+# Keeps the list of sponsors in README.md up to date. GitHub does not start
+# a workflow when someone becomes a sponsor, so this asks once a day.
+# Needs the repository secret SPONSORS_TOKEN (see docs/MAINTAINING.md);
+# without it the job does nothing.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sponsors
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask GitHub and rewrite the list
+        env:
+          SPONSORS_TOKEN: ${{ secrets.SPONSORS_TOKEN }}
+        run: python3 tools/sponsors.py
+      - name: Commit if the list changed
+        run: |
+          if git diff --quiet -- README.md; then
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Sponsors: update the list in the README" -- README.md
+          git push

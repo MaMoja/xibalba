@@ -82,3 +82,37 @@ The unit and integration tests issue licenses with key pairs of their own.
 The integration tests build the binary with their public key
 (`-ldflags -X …/internal/license.publicKeyHex=…`). The real private key is
 never needed to run the tests.
+
+## The list of sponsors in the README
+
+The workflow `Sponsors` asks GitHub once a day who sponsors the project and
+rewrites the list between the two marker lines in `README.md`
+(`tools/sponsors.py`). Nothing has to be collected from sponsors:
+
+| Tier | What happens by itself |
+|---|---|
+| from $10 a month | The name of the sponsor's GitHub account appears under "Backers", linked to the account. |
+| from $25 a month | The picture of the sponsor's GitHub account appears, linked to the account. An organisation's account picture is its logo. |
+| Sponsor chose "private" on GitHub | Never listed, whatever the tier. |
+| Sponsorship ends | The entry disappears at the next run. |
+
+One-time payments are not listed. A sponsor who wants a different picture
+changes the picture of the GitHub account.
+
+**Setting it up, once.** The workflow needs a token of the account that
+receives the sponsorships, because only that account may see the tiers:
+
+1. On GitHub: Settings, Developer settings, Personal access tokens, Tokens
+   (classic), generate a token with the scopes `read:user` and `read:org`.
+2. In the repository: Settings, Secrets and variables, Actions, new
+   repository secret named `SPONSORS_TOKEN` with that token.
+3. Actions, workflow "Sponsors", "Run workflow", to try it.
+
+Without the secret the workflow runs and does nothing. The first real run
+is the test of the question put to GitHub; it has only been tested against
+made-up answers so far.
+
+**What stays by hand: the license file.** It is signed with the private key,
+and that key stays off GitHub (see above). GitHub sends an e-mail for every
+new sponsorship; for the $50 tier and above, issue the license with
+`xibalba-license issue` and send it to the sponsor.

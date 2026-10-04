@@ -1098,7 +1098,7 @@ Blockseite und Zähler funktionieren ohne Einschränkung. Am unteren Rand jeder
 Besucherseite steht dann klein die Zeile „Geschützt durch Xibalba · Projekt
 unterstützen“ mit je einem Link zum Projekt und zu dessen Sponsorenseite.
 
-Wer das Projekt mit 50 € im Monat oder mehr unterstützt, erhält eine
+Wer das Projekt mit 50 US-Dollar im Monat oder mehr unterstützt, erhält eine
 Lizenzdatei. Mit ihr lassen sich die Seiten ganz zu den eigenen machen.
 
 | | Ohne Lizenz | Mit Sponsor-Lizenz |

@@ -4,6 +4,16 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Sponsor names and pictures in the README are taken from GitHub
+  automatically, once a day; licenses stay manual.** The owner asked for
+  automation. Name and picture come from the sponsor's GitHub account, so
+  nothing has to be uploaded and nobody can put a foreign link or image into
+  the README. Private sponsors are never listed. Signing licenses in a
+  workflow would put the private key on GitHub; that is the owner's call
+  and is not done.
+- **The sponsor license tier is $50 a month** (owner's sponsor page; the
+  documents said 50 €).
+
 - **The web interface answers only under known host names** (`localhost`,
   local addresses, the listen host, `admin.hostnames`). Without that, a web
   page could point its own name at 127.0.0.1 and reach the login as its own
