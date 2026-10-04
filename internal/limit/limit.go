@@ -216,7 +216,8 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 		if estimate > float64(w.Requests) {
 			if worst < 0 || (w.Action == "deny" && verdict.Action != "deny") {
 				worst = i
-				verdict = Verdict{Over: true, Action: w.Action, RetryAfter: time.Duration(int64(w.Per) - elapsed)}
+				verdict = Verdict{Over: true, Action: w.Action,
+					RetryAfter: retryAfter(w, float64(c.current[i]), float64(c.previous[i]), elapsed)}
 			}
 		}
 	}
@@ -226,6 +227,27 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 		l.exceeded[worst].Add(1)
 	}
 	return verdict
+}
+
+// retryAfter says how long a client that sends nothing more stays over a
+// limit. current and previous are its counts, elapsed is how far the current
+// period has run.
+func retryAfter(w Window, current, previous float64, elapsed int64) time.Duration {
+	per := float64(w.Per)
+	target := float64(w.Requests) - 1 // leave room for the request that tries again
+	left := per - float64(elapsed)    // until the current period ends
+	if current <= target && previous > 0 {
+		// The share of the previous period still counted has to shrink
+		// until current + previous*share fits.
+		share := (target - current) / previous
+		return time.Duration(left - share*per)
+	}
+	// The current count alone is too much. It becomes the previous one
+	// when the period ends, and then has to fade until it fits.
+	if target <= 0 || current <= 0 {
+		return time.Duration(left + per)
+	}
+	return time.Duration(left + per*(1-target/current))
 }
 
 // makeRoom keeps a shard within its share of MaxClients. Entries not seen

@@ -172,7 +172,7 @@ Request limits per client; explained in [LIMITS.md](LIMITS.md).
 | `limits.max_clients` | `100000` | 1000 to 5000000 | How many clients are tracked at most. About 15 MB per 100000. |
 
 The settings are checked even while `limits.enabled` is `false`. Requests
-that a rule explicitly allows are never counted.
+let through by a rule with `exempt_from_limits: true` are never counted.
 
 ### `challenge`
 
@@ -331,6 +331,8 @@ top-level state is the worst state of any component. A component that is not
 | `public` | The public listener | It stopped listening (`down`). |
 | `crawlers` | Crawler verification. Listed only if a rule or preset has a `crawler` condition. | An address list is missing, out of date or too old (`degraded`). The detail names the list and the reason. The crawlers concerned are not counted as genuine until it is back. |
 | `countries` | The country database. Listed only if a rule has a `country` condition. | No database is loaded, the last file or download was unusable, or the data is over 100 days old (`degraded`). Without a database, rules with a `country` condition are skipped. |
+| `limits` | The request limits. Listed only while `limits.enabled` is `true`. | Never: it keeps no state that can fail. |
+| `trap` | The trap. Listed only while `trap.enabled` is `true`. | Never. |
 | `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |

@@ -609,7 +609,12 @@ func TestTrapLinkIsInertAndOnlyThereWhenAsked(t *testing.T) {
 		t.Error("a page without a trap has a template element")
 	}
 
-	r, err := New(Options{TrapLink: "/.xibalba/trap/0123456789abcdef"})
+	r, err := New(Options{TrapLink: func(req *http.Request) string {
+		if req.Header.Get("X-No-Link") != "" {
+			return ""
+		}
+		return "/.xibalba/trap/0123456789abcdef"
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,5 +637,13 @@ func TestTrapLinkIsInertAndOnlyThereWhenAsked(t *testing.T) {
 		if strings.Count(page, "/.xibalba/trap/") != 1 {
 			t.Errorf("%s: the trap address appears outside the template element", name)
 		}
+	}
+	// No link for this client: no empty link in the page either.
+	req := get("de")
+	req.Header.Set("X-No-Link", "1")
+	rec = httptest.NewRecorder()
+	r.Blocked(rec, req, "a1b2c3d4")
+	if strings.Contains(rec.Body.String(), "<template") {
+		t.Error("a page without a link has a template element")
 	}
 }

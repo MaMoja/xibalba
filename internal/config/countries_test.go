@@ -59,10 +59,18 @@ func TestCountryProblems(t *testing.T) {
 		})
 	}
 
-	// With downloading on, a file that is not there yet is not a mistake.
+	// With downloading on, a file that is not there yet, or is damaged, is
+	// not a mistake: it is fetched at start.
 	path := filepath.Join(dir, "xibalba.yaml")
-	_ = os.WriteFile(path, []byte(base+"countries:\n  database: later.mmdb\n  download: true\n"+rule), 0o600)
-	if _, err := Load(path); err != nil {
-		t.Errorf("download on, file missing: %v", err)
+	for _, file := range []string{"later.mmdb", "broken.mmdb"} {
+		_ = os.WriteFile(path, []byte(base+"countries:\n  database: "+file+"\n  download: true\n"+rule), 0o600)
+		if _, err := Load(path); err != nil {
+			t.Errorf("download on, %s: %v", file, err)
+		}
+	}
+	// The download address is not repeated in a message; it may hold a key.
+	_ = os.WriteFile(path, []byte(base+"countries:\n  download_url: http://example.org/db?key=secret\n"), 0o600)
+	if _, err := Load(path); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Errorf("error = %v", err)
 	}
 }

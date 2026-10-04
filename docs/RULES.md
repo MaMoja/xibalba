@@ -143,6 +143,36 @@ path exactly as the client sent it.
 `prefix: "/admin"` also matches `/administrator`. If you mean the directory,
 write `regex: "^/admin(/|$)"`.
 
+## Rules that let through are strict about the address
+
+A rule that restricts (`deny`, `challenge`, a positive `weigh`) tests the
+normalised path, so no spelling gets past it. A rule that favours a request
+(`allow`, a negative `weigh`) and has a `path` condition does more: it only
+applies if the address was sent in plain form. `/page.php/..;/robots.txt`,
+`//robots.txt`, `/x/../robots.txt` and `/a%2F..%2Frobots.txt` all normalise
+to `/robots.txt`, but your web server may read them as something else, and
+it receives them as sent. Such a request is not let through by the rule; the
+rules after it and the default decide.
+
+Needlessly encoded characters (`/%72obots.txt`) count as roundabout too. A
+browser does not send them.
+
+## Exempting from the request limits
+
+Being let through by an `allow` rule does not exempt a client from the
+[request limits](LIMITS.md). Where it should, say so:
+
+```yaml
+- name: allow-office
+  match:
+    ip: ["192.0.2.0/24"]
+  action: allow
+  exempt_from_limits: true
+```
+
+Use it only where the client cannot choose to match: an address, a verified
+crawler. A rule on a path or user agent can be matched by anyone.
+
 ## What can be trusted
 
 **Only `ip`, `country`, `trapped` and a verified `crawler` are established by Xibalba.** The user
@@ -236,8 +266,8 @@ that decides wins. So list what lets through before what checks or denies.
 | Preset | What it does |
 |---|---|
 | `keep-internet-working` | Lets everyone read `/.well-known/`, `/robots.txt` and `/favicon.ico`. |
-| `allow-feeds` | Lets feed readers fetch feeds: addresses ending in `.rss`, `.atom` or `.xml`, or in `/feed`, `/rss`, `/atom`. |
-| `allow-git-clients` | Lets programs that say they are git use git's own addresses (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`). |
+| `allow-feeds` | Lets feed readers fetch feeds: addresses whose last part is `feed`, `rss` or `atom`, or a file named `index`, `feed`, `rss` or `atom` ending in `.xml`, `.rss` or `.atom`. No earlier part of the address may contain a dot. |
+| `allow-git-clients` | Lets programs that say they are git use git's own addresses with git's own methods (`GET …/info/refs`, `POST …/git-upload-pack`, `POST …/git-receive-pack`). |
 | `block-trapped` | Denies clients that followed the hidden trap link. Needs `trap.enabled`; see [TRAP.md](TRAP.md). |
 | `block-fake-crawlers` | Denies requests that carry a known crawler's name but do not come from its operator. |
 | `block-ai-training` | Denies crawlers that collect pages for AI training. |
@@ -249,13 +279,6 @@ that decides wins. So list what lets through before what checks or denies.
 | `challenge-browsers` | Checks everything whose user agent says "Mozilla" or "Opera": every browser, and every crawler that pretends to be one. Programs that say what they are (curl, git, feed readers) are not affected. |
 
 The crawler presets are explained in [CRAWLERS.md](CRAWLERS.md#presets).
-
-> **Known weakness, not fixed yet (security review of 2026-10-04).** The
-> presets `keep-internet-working`, `allow-feeds` and `allow-git-clients` let
-> requests through by their path. On some web servers a crafted path can make
-> them let through other pages as well, unchecked and uncounted. Until this is
-> fixed, do not rely on them in front of anything that must stay behind the
-> check; `block-trapped` has a weakness of its own, see [TRAP.md](TRAP.md).
 
 A complete protection in one block: wanted crawlers and plain programs pass,
 unwanted crawlers are denied, and whatever claims to be a browser has to
@@ -301,7 +324,11 @@ Things to know:
   preferably by address.
 - `allow-feeds` and `allow-git-clients` open the addresses they name to
   everyone, including crawlers. That is the price of letting programs in
-  that cannot be verified.
+  that cannot be verified. A feed that carries the full text of your
+  articles gives that text to anyone who asks for the feed.
+- Requests let through by these presets are still counted by the
+  [request limits](LIMITS.md). Only the presets for verified crawlers are
+  exempt.
 - The rules of a preset are named `preset.<name>` and are counted in
   `/decisions`. The files are in [`data/presets`](../data/presets).
 

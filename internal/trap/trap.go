@@ -10,6 +10,13 @@
 // Optionally the trap answers with a maze: generated pages of meaningless
 // syllables whose links lead only to more such pages.
 //
+// The link is different for every client and every day: it carries a keyed
+// check value over the client's address. Only the client a link was made
+// for can be caught by it. Another website can therefore not get a visitor
+// caught by making the visitor's browser request the trap: it does not know
+// the visitor's link, and a request that a browser marks as coming from
+// another site is ignored as well.
+//
 // Clients are remembered in memory only, by IPv4 address or IPv6 /64, and
 // forgotten after the configured time.
 package trap
@@ -17,7 +24,10 @@ package trap
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"hash/fnv"
@@ -52,13 +62,14 @@ type Options struct {
 // Trap remembers who followed the hidden link.
 type Trap struct {
 	opts Options
-	link string
+	key  [32]byte // makes the links; new at every start
 
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	clients map[netip.Addr]time.Time // key -> when it is forgotten
 	swept   time.Time
 
-	hits atomic.Uint64
+	hits      atomic.Uint64 // catches
+	strangers atomic.Uint64 // requests under the prefix that were no catch
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -72,15 +83,63 @@ func New(opts Options) (*Trap, error) {
 	if opts.MaxClients < 1 {
 		opts.MaxClients = 1
 	}
-	var id [8]byte
-	if _, err := rand.Read(id[:]); err != nil {
+	t := &Trap{opts: opts, clients: map[netip.Addr]time.Time{}}
+	if _, err := rand.Read(t.key[:]); err != nil {
 		return nil, err
 	}
-	return &Trap{opts: opts, link: Prefix + hex.EncodeToString(id[:]), clients: map[netip.Addr]time.Time{}}, nil
+	return t, nil
 }
 
-// Link is the address to hide in the pages.
-func (t *Trap) Link() string { return t.link }
+// linkLen is the length of a link's check value in hex characters.
+const linkLen = 32
+
+// maxTail bounds what may follow a link in a maze address.
+const maxTail = 32
+
+// link returns the trap address for a client on a day (days since 1970).
+func (t *Trap) link(client netip.Addr, day int64) string {
+	raw := client.As16()
+	var msg [24]byte
+	copy(msg[:16], raw[:])
+	binary.BigEndian.PutUint64(msg[16:], uint64(day))
+	mac := hmac.New(sha256.New, t.key[:])
+	_, _ = mac.Write(msg[:])
+	return Prefix + hex.EncodeToString(mac.Sum(nil))[:linkLen]
+}
+
+// Link is the address to hide in a page shown to the client of r. It is
+// empty if the client's address is not known.
+func (t *Trap) Link(r *http.Request) string {
+	info, ok := clientip.FromContext(r.Context())
+	if !ok {
+		return ""
+	}
+	k, ok := key(info.Client)
+	if !ok {
+		return ""
+	}
+	return t.link(k, t.opts.Now().Unix()/86400)
+}
+
+// own reports whether path is a trap address made for this client, today or
+// yesterday, and returns the link it starts with. A maze address is a link
+// followed by a short tail.
+func (t *Trap) own(path string, client netip.Addr) (string, bool) {
+	if len(path) < len(Prefix)+linkLen || len(path) > len(Prefix)+linkLen+1+maxTail {
+		return "", false
+	}
+	base, tail := path[:len(Prefix)+linkLen], path[len(Prefix)+linkLen:]
+	if tail != "" && tail[0] != '/' {
+		return "", false
+	}
+	day := t.opts.Now().Unix() / 86400
+	for _, d := range []int64{day, day - 1} {
+		if hmac.Equal([]byte(base), []byte(t.link(client, d))) {
+			return base, true
+		}
+	}
+	return "", false
+}
 
 // Name implements lifecycle.Component.
 func (t *Trap) Name() string { return "trap" }
@@ -140,9 +199,9 @@ func (t *Trap) Caught(addr netip.Addr) bool {
 	if !ok {
 		return false
 	}
-	t.mu.Lock()
+	t.mu.RLock()
 	until, found := t.clients[k]
-	t.mu.Unlock()
+	t.mu.RUnlock()
 	return found && t.opts.Now().Before(until)
 }
 
@@ -178,23 +237,38 @@ func (t *Trap) sweep(now time.Time) {
 	}
 }
 
-// Handler answers requests under Prefix. Every request there is a catch.
+// Handler answers requests under Prefix. A request is a catch only if the
+// address is the one made for the requesting client and the browser does
+// not say that another website caused the request. Everything else gets
+// "not found" and no consequence.
 func (t *Trap) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.hits.Add(1)
-		if info, ok := clientip.FromContext(r.Context()); ok {
-			t.catch(info.Client)
-		}
 		h := w.Header()
 		h.Set("Cache-Control", "no-store")
 		h.Set("X-Robots-Tag", "noindex, nofollow")
 		h.Set("X-Content-Type-Options", "nosniff")
+
+		var base string
+		caught := false
+		if info, ok := clientip.FromContext(r.Context()); ok && r.Header.Get("Sec-Fetch-Site") != "cross-site" {
+			if k, valid := key(info.Client); valid {
+				if base, caught = t.own(r.URL.Path, k); caught {
+					t.hits.Add(1)
+					t.catch(info.Client)
+				}
+			}
+		}
+		if !caught {
+			t.strangers.Add(1)
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
 		if !t.opts.Maze {
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
 		var page bytes.Buffer
-		writeMaze(&page, r.URL.Path)
+		writeMaze(&page, base, r.URL.Path)
 		h.Set("Content-Type", "text/html; charset=utf-8")
 		h.Set("Content-Length", strconv.Itoa(page.Len()))
 		h.Set("Content-Security-Policy", "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
@@ -219,7 +293,9 @@ const (
 
 // writeMaze writes the page for one address. The same address always gives
 // the same page; generating it takes a few microseconds and keeps no state.
-func writeMaze(w *bytes.Buffer, path string) {
+// Its links are base followed by a tail, so they are trap addresses of the
+// same client.
+func writeMaze(w *bytes.Buffer, base, path string) {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(path))
 	state := h.Sum64() | 1
@@ -250,7 +326,7 @@ func writeMaze(w *bytes.Buffer, path string) {
 	w.WriteString("<ul>\n")
 	for i := 0; i < mazeLinks; i++ {
 		w.WriteString("<li><a rel=\"nofollow\" href=\"")
-		w.WriteString(template.HTMLEscapeString(Prefix + strconv.FormatUint(next(), 36)))
+		w.WriteString(template.HTMLEscapeString(base + "/" + strconv.FormatUint(next(), 36)))
 		w.WriteString("\">")
 		word()
 		w.WriteString("</a></li>\n")
@@ -260,8 +336,11 @@ func writeMaze(w *bytes.Buffer, path string) {
 
 // Report is the state of the trap at one moment. It holds no address.
 type Report struct {
-	// Hits is how many requests reached the trap since the start.
+	// Hits is how many requests were a catch since the start.
 	Hits uint64 `json:"hits"`
+	// Ignored is how many requests to the trap's addresses were no catch:
+	// not the address made for that client, or caused by another website.
+	Ignored uint64 `json:"ignored"`
 	// Clients is how many clients are remembered right now.
 	Clients int `json:"clients"`
 	// Maze says whether the maze is on.
@@ -271,15 +350,15 @@ type Report struct {
 // Report returns the current state.
 func (t *Trap) Report() Report {
 	now := t.opts.Now()
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	n := 0
 	for _, until := range t.clients {
 		if now.Before(until) {
 			n++
 		}
 	}
-	return Report{Hits: t.hits.Load(), Clients: n, Maze: t.opts.Maze}
+	return Report{Hits: t.hits.Load(), Ignored: t.strangers.Load(), Clients: n, Maze: t.opts.Maze}
 }
 
 // ReportHandler serves the report as JSON for the operations listener.

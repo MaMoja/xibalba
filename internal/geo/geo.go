@@ -112,6 +112,7 @@ func (l *Locator) Start(context.Context) error {
 	go func() {
 		defer close(l.done)
 		l.maybeDownload(ctx)
+		l.reload() // use a fresh download at once, not a minute later
 		ticker := time.NewTicker(watchEvery)
 		defer ticker.Stop()
 		for {
@@ -191,8 +192,14 @@ func ReadFile(path string) (*DB, time.Time, error) {
 	case info.Size() > MaxFileSize:
 		return nil, time.Time{}, fmt.Errorf("the file is larger than %d MiB", MaxFileSize>>20)
 	}
-	data, err := os.ReadFile(path)
+	// The size was checked above, but the file may grow in between.
+	file, err := os.Open(path)
 	if err != nil {
+		return nil, time.Time{}, errors.New("the file cannot be read")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
+	_ = file.Close()
+	if err != nil || len(data) > MaxFileSize {
 		return nil, time.Time{}, errors.New("the file cannot be read")
 	}
 	db, err := Open(data)
@@ -236,7 +243,17 @@ func (l *Locator) maybeDownload(ctx context.Context) {
 	}
 	now := l.opts.Now()
 	if info, err := os.Stat(l.opts.Path); err == nil && now.Sub(info.ModTime()) < refreshAfter {
-		return
+		// Fresh enough, if it is usable. A file that was cut off (a power
+		// cut during the last download, say) is fetched again.
+		l.mu.Lock()
+		usable := l.db.Load() != nil && l.problem == ""
+		l.mu.Unlock()
+		if usable {
+			return
+		}
+		if _, _, err := ReadFile(l.opts.Path); err == nil {
+			return
+		}
 	}
 	l.mu.Lock()
 	wait := downloadEvery
@@ -264,6 +281,7 @@ func (l *Locator) maybeDownload(ctx context.Context) {
 		return
 	}
 	l.attempts = 0
+	l.problem = ""
 	l.log.Info("country database downloaded")
 }
 
@@ -304,6 +322,11 @@ func (l *Locator) download(ctx context.Context, now time.Time) error {
 		body = zr
 	}
 	written, err := io.Copy(tmp, io.LimitReader(body, MaxFileSize+1))
+	// On disk before it takes the place of the old file: after a power cut
+	// there must be the old file or the new one, never half of one.
+	if syncErr := tmp.Sync(); err == nil {
+		err = syncErr
+	}
 	if closeErr := tmp.Close(); err == nil {
 		err = closeErr
 	}

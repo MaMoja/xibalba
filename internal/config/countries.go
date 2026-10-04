@@ -35,7 +35,8 @@ func defaultCountries() Countries {
 func (c *Countries) check(dir string, add func(path, message, hint string)) {
 	c.Path = ""
 	if err := geo.CheckURL(c.DownloadURL); err != nil {
-		add("countries.download_url", fmt.Sprintf("%q cannot be used: %v", c.DownloadURL, err),
+		// The address is not repeated: it may hold an access key.
+		add("countries.download_url", fmt.Sprintf("the address cannot be used: %v", err),
 			"give the https address of a database in .mmdb format; {year} and {month} stand for the current year and month")
 	}
 	if c.Database == "" {
@@ -50,9 +51,10 @@ func (c *Countries) check(dir string, add func(path, message, hint string)) {
 		c.Path = filepath.Join(dir, c.Path)
 	}
 	if _, _, err := geo.ReadFile(c.Path); err != nil {
-		// With downloading on, a missing file is fetched at start. A file
-		// that is there must be usable either way.
-		if c.Download && err.Error() == "the file does not exist" {
+		// With downloading on, a missing or unusable file is fetched again
+		// at start; it must not keep Xibalba from starting (a power cut
+		// during a download can leave a damaged file).
+		if c.Download {
 			return
 		}
 		add("countries.database", fmt.Sprintf("the database %q cannot be used: %v", c.Database, err),

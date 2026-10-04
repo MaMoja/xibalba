@@ -103,6 +103,25 @@ All notable changes are listed here. The format follows
   the language for visitors without a supported preference, and `texts`
   replaces any text per language.
 
+### Security
+
+Found by the independent review of milestone M5 and fixed before any release:
+
+- Allow rules with a path condition could be matched with roundabout
+  addresses that the website reads differently (`/page.php/..;/robots.txt`).
+  Such rules now only apply to addresses sent in plain form. The feed and
+  git presets no longer match behind a script name, and git's addresses only
+  with git's methods.
+- Any request to the trap's addresses was a catch, so another website could
+  get visitors denied. Trap links are now made per client with a keyed
+  check value, and only the client a link was made for can be caught.
+- Requests let through by an allow rule were exempt from the request
+  limits. The exemption is now a choice per rule (`exempt_from_limits`).
+- `Retry-After` was too short for clients far over a limit.
+- A country database damaged during download could keep Xibalba from
+  starting; downloads are synced before they replace the file, and an
+  unusable file is fetched again.
+
 ### Changed
 
 - **`pages.operator` and `pages.texts` now need a sponsor license.** Without

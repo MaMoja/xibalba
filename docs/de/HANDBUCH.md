@@ -525,21 +525,13 @@ und danach, was prüft oder sperrt.
 | Regelgruppe | Wirkung |
 |---|---|
 | `keep-internet-working` | lässt jeden `/.well-known/`, `/robots.txt` und `/favicon.ico` lesen |
-| `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (Adressen auf `.rss`, `.atom`, `.xml` oder `/feed`, `/rss`, `/atom`) |
-| `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen, die git selbst nutzt) |
+| `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (letzter Teil der Adresse `feed`, `rss` oder `atom`, oder eine Datei `index`, `feed`, `rss`, `atom` mit Endung `.xml`, `.rss`, `.atom`) |
+| `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen und Methoden, die git selbst nutzt) |
 | `weigh-odd-browsers` | vergibt Punkte an Anfragen, die sich als Browser ausgeben, denen aber fehlt, was jeder Browser sendet (keine Sprachangabe: +10, keine `Accept`-Angabe: +10, fensterloser Automatik-Browser: +20). Entscheidet selbst nichts; braucht `rules.thresholds` |
 | `block-trapped` | sperrt Anschlüsse, die dem versteckten Fallen-Link gefolgt sind (braucht `trap.enabled`, siehe „Die Falle“) |
 | `challenge-browsers` | prüft alles, was sich als Browser ausgibt (Kennung enthält „Mozilla“ oder „Opera“): jeden Browser und jeden Crawler, der sich als Browser tarnt. Programme, die sagen, was sie sind (curl, git, Feed-Leser), bleiben unberührt |
 
 Dazu kommen die sechs Regelgruppen für Crawler aus dem nächsten Abschnitt.
-
-> **Bekannte Schwäche, noch nicht behoben (Sicherheitsprüfung vom
-> 4.10.2026):** `keep-internet-working`, `allow-feeds` und
-> `allow-git-clients` lassen Anfragen anhand des Pfads durch. Bei manchen
-> Webservern kann ein geschickt gebauter Pfad dazu führen, dass auch andere
-> Seiten ungeprüft und ungezählt durchkommen. Verlassen Sie sich bis zur
-> Behebung nicht auf diese Gruppen, wenn dahinter etwas zwingend geprüft
-> bleiben muss.
 
 **Ein vollständiger Schutz in einem Block:** Erwünschte Crawler und einfache
 Programme kommen durch, unerwünschte Crawler werden gesperrt, und was sich
@@ -572,6 +564,13 @@ rules:
     - keep-internet-working
     - weigh-odd-browsers
 ```
+
+**Durchlass-Regeln sind streng bei der Schreibweise.** Eine Regel, die
+anhand des Pfads durchlässt, gilt nur, wenn die Adresse schlicht geschrieben
+ist. Umwege wie `/seite.php/..;/robots.txt` oder `//robots.txt` werden nicht
+durchgelassen, weil Ihr Webserver sie anders lesen könnte als die Regel.
+Was diese Regelgruppen durchlassen, wird von der Begrenzung der Anfragen
+weiterhin gezählt.
 
 Beachten Sie: Mit `challenge-browsers` wird jeder Besucher einmal pro Woche
 geprüft. Programme, die eine Browser-Kennung senden, aber keine Browser sind
@@ -732,15 +731,35 @@ Büro) wird nie gezählt.
 | `limits.count_by` | `address`: jede Adresse für sich (bei IPv6 der Anschluss, /64). `network`: benachbarte Adressen gemeinsam (IPv4 /24, IPv6 /48) |
 | `limits.max_clients` | wie viele Anschlüsse höchstens gleichzeitig gezählt werden |
 
-**Wer nie begrenzt wird:** die Ausnahmeliste und alles, was eine Ihrer Regeln
-ausdrücklich erlaubt (`action: allow`). Dazu gehören die echten Suchmaschinen
-und KI-Crawler, die Sie über die `allow-`Regelgruppen durchlassen.
+**Wer nie begrenzt wird:** die Ausnahmeliste und die echten Suchmaschinen und
+KI-Crawler, die Sie über die `allow-`Regelgruppen für Crawler durchlassen.
+Eine eigene `allow`-Regel nimmt nur dann von der Begrenzung aus, wenn Sie es
+dazuschreiben:
+
+```yaml
+- name: allow-office
+  match:
+    ip: ["192.0.2.0/24"]
+  action: allow
+  exempt_from_limits: true
+```
+
+Verwenden Sie das nur, wo der Anfragende es sich nicht aussuchen kann: bei
+einer Adresse oder einem geprüften Crawler. Alles andere wird gezählt, auch
+Abrufe von `robots.txt` oder Feeds.
 
 **Die Zahlen wählen**
 
 - Alles zählt, was eine Seite über Xibalba lädt: die Seite selbst, Bilder,
   Stildateien, Skripte. Ein Seitenaufruf kann 50 Anfragen und mehr sein.
 - Beginnen Sie mit `action: challenge` und einer großzügigen Zahl.
+- **Hinter einem Webserver `server.trusted_proxies` setzen** (Schritt 5).
+  Sonst erscheinen alle Besucher unter der Adresse des Webservers und teilen
+  sich einen einzigen Zähler. Xibalba warnt beim Start im Protokoll.
+- **Eine `challenge`-Grenze hält niemanden auf, der die Prüfung bestanden
+  hat.** Für Menschen ist das gewollt. Gegen ein Programm, das die Prüfung
+  einmal löst und dann sehr viel abruft, setzen Sie zusätzlich eine höhere
+  Grenze mit `deny`, wie im Beispiel oben.
 - Mehrere Personen hinter einer Adresse (Büro, Schule, Mobilfunk) teilen sich
   einen Zähler. Bei `challenge` kostet das jede Person eine Prüfung, bei
   `deny` sperrt es alle aus. Setzen Sie `deny` deshalb nur als hohe Obergrenze.
@@ -778,14 +797,6 @@ rules:
 Damit wird ein Anschluss, der dem versteckten Link folgt, für 24 Stunden
 gesperrt.
 
-> **Bekannte Schwäche, noch nicht behoben (Sicherheitsprüfung vom
-> 4.10.2026):** Jeder Abruf der Fallen-Adresse zählt, auch einer, den eine
-> fremde Website im Browser eines Besuchers auslöst (ein eingebettetes Bild
-> genügt). Mit `block-trapped` wäre dieser Besucher dann gesperrt. Setzen
-> Sie `block-trapped` bis zur Behebung nicht auf einer öffentlichen Website
-> ein; vergeben Sie stattdessen Punkte mit `trapped: true` und lassen Sie
-> prüfen, damit ein Mensch trotzdem hereinkommt.
-
 | Einstellung | Bedeutung |
 |---|---|
 | `trap.enabled` | `true` versteckt den Link und merkt sich, wer ihm folgt |
@@ -793,6 +804,15 @@ gesperrt.
 | `trap.maze` | `true` schaltet den Irrgarten ein (siehe unten) |
 | `block-trapped` in `rules.presets` | sperrt gemerkte Anschlüsse |
 | Bedingung `trapped: true` in einer eigenen Regel | für eine andere Folge, etwa Punkte vergeben und prüfen statt sperren |
+
+**Niemand kann andere in die Falle schicken:** Jeder Anschluss erhält einen
+eigenen Link, der nur für ihn gilt. Eine fremde Website kann den Browser
+Ihrer Besucher also nicht dazu bringen, „in die Falle zu treten“; sie kennt
+deren Link nicht.
+
+**Suchmaschinen:** Zählen Sie `block-trapped` nach `allow-search-engines`
+auf, und nehmen Sie in die `robots.txt` Ihrer Website die Zeilen
+`User-agent: *` und `Disallow: /.xibalba/` auf.
 
 **Für Menschen unsichtbar:** Der Link steht in einem Seitenteil, den Browser
 als inaktiv behandeln. Er wird nicht angezeigt, von Vorleseprogrammen nicht
@@ -1266,7 +1286,7 @@ Rechtsberatung.
 | Speichert Xibalba IP-Adressen? | Nicht auf Datenträger. Die Adresse wird während der Bearbeitung einer Anfrage verwendet und in keine Datei geschrieben. Im Arbeitsspeicher gibt es zwei Ausnahmen: die Begrenzung der Anfragen, falls eingeschaltet (nächste Zeile), und die Crawler-Prüfung: Gibt sich eine Anfrage als Crawler aus, der per DNS geprüft wird (Bingbot, Applebot), merkt sich Xibalba das Ergebnis zu dieser Adresse bis zu 24 Stunden, um nicht jedes Mal neu zu fragen. Das betrifft keine gewöhnlichen Besucher und endet mit dem Neustart. |
 | Protokolliert Xibalba, wer was aufruft? | Nein. Es gibt kein Zugriffsprotokoll. Auch die ausführlichste Protokollstufe (`debug`) nennt bei einer Entscheidung nur die Regel, nicht Adresse, Pfad oder Kennung. Eine Ausnahme: Tritt bei der Bearbeitung einer Anfrage ein Programmfehler auf, wird zur Fehlersuche der Pfad dieser einen Anfrage protokolliert, nicht aber die Adresse. |
 | Und bei eingeschalteter Begrenzung der Anfragen? | Dann merkt sich Xibalba die Adressen der Anfragenden im Arbeitsspeicher, um zählen zu können. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. Ein Anschluss, der nichts mehr sendet, wird nach dem Doppelten des längsten eingestellten Zeitraums vergessen: bei einer Grenze je Minute nach zwei Minuten, bei einer Grenze je Tag nach spätestens zwei Tagen. Ein Neustart vergisst alles. Adressen der Ausnahmeliste werden gar nicht gespeichert. |
-| Und bei eingeschalteter Falle? | Xibalba merkt sich im Arbeitsspeicher die Adressen der Anschlüsse, die dem versteckten Link gefolgt sind, für die Dauer von `trap.remember` (Voreinstellung 24 Stunden). Wer dem Link nicht folgt, wird nicht erfasst. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. |
+| Und bei eingeschalteter Falle? | Xibalba merkt sich im Arbeitsspeicher die Adressen der Anschlüsse, die dem versteckten Link gefolgt sind, für die Dauer von `trap.remember` (Voreinstellung 24 Stunden, höchstens 30 Tage). Wer dem Link nicht folgt, wird nicht erfasst. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. |
 | Und bei Länder-Regeln? | Das Land wird auf Ihrem Server aus der Datenbank-Datei gelesen; keine Besucheradresse verlässt dafür den Server. Nur wenn Sie `countries.download` einschalten, ruft Xibalba einmal im Monat die Datenbank beim Anbieter ab; dieser sieht dabei die Adresse Ihres Servers. |
 | Was wird gezählt? | Wie oft jede Regel entschieden hat. Ohne Bezug zu Personen, nur im Arbeitsspeicher, bis zum nächsten Neustart. |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |

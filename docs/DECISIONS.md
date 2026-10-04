@@ -2,6 +2,24 @@
 
 Newest first. One entry per decision: what, why, who decided.
 
+## 2026-10-04
+
+- **Rules that favour a request and test the path only apply to addresses
+  sent in plain form.** Agent, after the security review. Normalising makes
+  more spellings match, which is right for rules that restrict and a hole
+  for rules that let through, because the website receives the address as
+  sent and may read it differently.
+- **Exemption from the request limits is a choice per rule
+  (`exempt_from_limits`), not a consequence of `allow`.** Agent, after the
+  review. Replaces "a request a rule explicitly allows is not counted".
+- **Trap links are made per client and day with a keyed check value.**
+  Agent, after the review. Replaces one link per start. Nothing is stored
+  for it, and nobody can get another client caught.
+- **A `challenge` limit does not restrain a client that holds a pass;
+  documented, with the advice to add a `deny` limit.** Agent. An automatic
+  escalation would need a factor that is a guess; open for the owner if a
+  setting for it is wanted.
+
 ## 2026-10-03
 
 - **Limits and detection (new milestone M5) come before statistics.** Owner.

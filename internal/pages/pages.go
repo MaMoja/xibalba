@@ -106,10 +106,11 @@ type Options struct {
 	// HideAttribution removes the "Protected by Xibalba" line from the
 	// bottom of every page.
 	HideAttribution bool
-	// TrapLink, if set, is hidden in every page inside an inert element:
+	// TrapLink, if set, returns the address to hide in a page for the client
+	// of a request, or "" for none. It is put inside an inert element:
 	// invisible and unreachable for people, found by programs that collect
 	// every address in the page text (see internal/trap).
-	TrapLink string
+	TrapLink func(*http.Request) string
 }
 
 // Problem is one mistake in Options.
@@ -206,7 +207,7 @@ type Renderer struct {
 	fallback string // language used without a usable preference
 	contact  string
 	hideAttr bool
-	trap     string
+	trap     func(*http.Request) string
 	locales  map[string]map[string]string
 }
 
@@ -306,6 +307,13 @@ func New(opts Options) (*Renderer, error) {
 	return r, nil
 }
 
+func (r *Renderer) trapFor(req *http.Request) string {
+	if r.trap == nil {
+		return ""
+	}
+	return r.trap(req)
+}
+
 // Unavailable tells the visitor that the website cannot be reached right now.
 // status is the HTTP status to send, normally 502, 503 or 504.
 func (r *Renderer) Unavailable(w http.ResponseWriter, req *http.Request, status int) {
@@ -382,7 +390,7 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
 	texts := r.locales[primary]
 	p := challengePage{
-		Trap: r.trap,
+		Trap: r.trapFor(req),
 		CSS:  r.css, Script: r.script, ChallengeView: v, Attribution: r.attributionFor(primary),
 		Working: texts["challenge_working"], Done: texts["challenge_done"],
 		Manual: texts["challenge_manual"], Button: texts["challenge_button"],
@@ -431,7 +439,7 @@ type view struct {
 
 func (r *Renderer) write(w http.ResponseWriter, req *http.Request, status int, kind, reference string) {
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
-	v := view{Trap: r.trap, CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
+	v := view{Trap: r.trapFor(req), CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
 	if kind == "blocked" || kind == "limited" {
 		v.Contact = r.contact
 	}

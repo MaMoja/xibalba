@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -187,8 +188,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			log.Error("start-up failed", "error", err.Error(), "component", "trap")
 			return exitFailed
 		}
-		pageOptions.TrapLink = snare.Link()
+		pageOptions.TrapLink = snare.Link
 		supervisor.Add(snare)
+		registry.Register(snare.Name(), func() health.Status { return health.Status{State: health.OK} })
 		opsMux.Handle("GET /trap", snare.ReportHandler())
 	}
 
@@ -283,6 +285,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if cfg.Limits.Enabled {
 		limiter := limit.New(cfg.Limits.Options())
 		supervisor.Add(limiter)
+		registry.Register(limiter.Name(), func() health.Status { return health.Status{State: health.OK} })
 		opsMux.Handle("GET /limits", limiter.Handler())
 		limitFn = func(client netip.Addr) (bool, bool, time.Duration) {
 			v := limiter.Count(client)
@@ -309,7 +312,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	var trapped func(netip.Addr) bool
 	own := check.Handler()
 	if snare != nil {
-		trapped = snare.Caught
+		if engine.UsesTrap() { // nobody asks otherwise; spare every request the lookup
+			trapped = snare.Caught
+		}
 		own = withTrap(snare.Handler(), own)
 	}
 
@@ -374,6 +379,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			log.Warn("the sponsor license has expired: the pages use the standard wording and show the Xibalba line",
 				"component", "license", "licensee", found.Licensee, "expired", found.Expires,
 				"settings_not_applied", strings.Join(cfg.SponsorSettings(), ", "))
+		}
+	}
+	if cfg.Limits.Enabled && len(cfg.Server.TrustedProxies) == 0 {
+		if host, _, err := net.SplitHostPort(cfg.Server.Listen); err == nil {
+			if addr, err := netip.ParseAddr(host); host == "localhost" || (err == nil && (addr.IsLoopback() || addr.IsPrivate())) {
+				log.Warn("request limits are on, Xibalba listens on an internal address, and server.trusted_proxies is empty: "+
+					"if a web server stands in front, all visitors appear as that one address and share one limit",
+					"component", "limits", "listen", cfg.Server.Listen)
+			}
 		}
 	}
 	if cfg.Rules.DryRun {

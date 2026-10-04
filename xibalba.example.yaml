@@ -137,8 +137,9 @@ trap:
 
 # Request limits per client. Off by default. A client that sends more than a
 # limit allows has to pass the security check, or is refused for a while.
-# Requests that one of your rules explicitly allows (action: allow) are never
-# limited; that includes verified crawlers let through by a preset.
+# Not counted: the addresses under "exempt", and requests let through by a
+# rule that says exempt_from_limits: true (the presets for verified crawlers
+# do).
 # See docs/LIMITS.md.
 limits:
   enabled: false

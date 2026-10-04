@@ -30,7 +30,7 @@ func TestLimit(t *testing.T) {
 		}
 	}
 	v := l.Count(addr("192.0.2.1"))
-	if !v.Over || v.Action != "challenge" || v.RetryAfter <= 0 || v.RetryAfter > time.Minute {
+	if !v.Over || v.Action != "challenge" || v.RetryAfter <= 0 || v.RetryAfter > 2*time.Minute {
 		t.Fatalf("request 6: %+v", v)
 	}
 	// Another client is not affected.
@@ -41,6 +41,28 @@ func TestLimit(t *testing.T) {
 	c.advance(2 * time.Minute)
 	if l.Count(addr("192.0.2.1")).Over {
 		t.Error("still over the limit two periods later")
+	}
+}
+
+// Retry-After must be the moment at which trying again really helps.
+func TestRetryAfterIsWhenTheClientIsBelowTheLimitAgain(t *testing.T) {
+	for _, sent := range []int{6, 11, 50, 3000} {
+		c := newClock()
+		l := New(Options{Windows: []Window{{Requests: 5, Per: time.Minute, Action: "deny"}}, MaxClients: 1000, Now: c.Now})
+		c.advance(20 * time.Second)
+		var v Verdict
+		for i := 0; i < sent; i++ {
+			v = l.Count(addr("192.0.2.1"))
+		}
+		if !v.Over || v.RetryAfter <= 0 || v.RetryAfter > 2*time.Minute || (sent == 3000 && v.RetryAfter < 90*time.Second) {
+			t.Fatalf("%d sent: %+v", sent, v)
+		}
+		// At that moment the next request is let through, although it is
+		// counted as well.
+		c.advance(v.RetryAfter + time.Second)
+		if got := l.Count(addr("192.0.2.1")); got.Over {
+			t.Errorf("%d sent: still over the limit %v after the announced %v", sent, got.RetryAfter, v.RetryAfter)
+		}
 	}
 }
 

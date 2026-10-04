@@ -1229,7 +1229,7 @@ func TestRequestLimits(t *testing.T) {
 	}
 	resp, body := get(t, inst.public+"/", from("203.0.113.9", browser))
 	retry, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
-	if resp.StatusCode != 429 || !strings.Contains(body, "Too many requests") || retry < 1 || retry > 7200 {
+	if resp.StatusCode != 429 || !strings.Contains(body, "Too many requests") || retry < 1 || retry > 14400 {
 		t.Errorf("refused request: %d, Retry-After %q, body:\n%.300s", resp.StatusCode, resp.Header.Get("Retry-After"), body)
 	}
 
@@ -1273,6 +1273,14 @@ func TestRequestLimits(t *testing.T) {
 func TestBrowserGetsPastAChallengeLimit(t *testing.T) {
 	site := newWebsite(t)
 	inst := start(t, site.URL, "limits:\n  enabled: true\n  windows:\n    - {requests: 2, per: 1h, action: challenge}\nchallenge:\n  difficulty: 10\n")
+	// Behind a web server without trusted_proxies everyone would share one
+	// limit; Xibalba says so at start.
+	if !strings.Contains(inst.logs.String(), "share one limit") {
+		t.Errorf("no warning about shared limits:\n%s", inst.logs.String())
+	}
+	if _, report := health(t, inst); report.Components["limits"].State != "ok" {
+		t.Errorf("health = %+v", report)
+	}
 	v := newVisitor(t)
 	var page string
 	for i := 0; i < 3; i++ {
@@ -1342,7 +1350,7 @@ rules:
 
 // --- trap -------------------------------------------------------------------
 
-var trapLinkRE = regexp.MustCompile(`<template><a href="(/\.xibalba/trap/[0-9a-f]{16})" rel="nofollow">`)
+var trapLinkRE = regexp.MustCompile(`<template><a href="(/\.xibalba/trap/[0-9a-f]{32})" rel="nofollow">`)
 
 func TestTrapCatchesWhoFollowsTheHiddenLink(t *testing.T) {
 	site := newWebsite(t)
@@ -1384,13 +1392,19 @@ rules:
 	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "This request was blocked") {
 		t.Errorf("after following the link: %d", resp.StatusCode)
 	}
-	// Other clients are not affected.
+	// Other clients are not affected, and cannot be made to step into the
+	// trap by someone who knows a link: a link only works for its own client.
+	for _, path := range []string{m[1], "/.xibalba/trap/x", "/.xibalba/trap/"} {
+		if resp, _ := get(t, inst.public+path, from("203.0.113.21", browser)); resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s for another client: %d", path, resp.StatusCode)
+		}
+	}
 	if resp, _ := get(t, inst.public+"/", from("203.0.113.21", browser)); resp.StatusCode != 200 {
 		t.Errorf("another client: %d", resp.StatusCode)
 	}
 
 	_, report := get(t, inst.ops+"/trap", nil)
-	if !strings.Contains(report, `"hits": 1`) || !strings.Contains(report, `"clients": 1`) || strings.Contains(report, "203.0.113") {
+	if !strings.Contains(report, `"hits": 1`) || !strings.Contains(report, `"ignored": 3`) || !strings.Contains(report, `"clients": 1`) || strings.Contains(report, "203.0.113") {
 		t.Errorf("/trap = %s", report)
 	}
 	if strings.Contains(inst.logs.String(), "203.0.113") {
@@ -1411,10 +1425,11 @@ func TestMazeAndTrapAreOffByDefault(t *testing.T) {
 	}
 
 	maze := start(t, site.URL, "trap:\n  enabled: true\n  maze: true\n")
-	resp, page := get(t, maze.public+"/.xibalba/trap/abc", language)
-	if resp.StatusCode != 200 || strings.Count(page, `href="/.xibalba/trap/`) != 5 || !strings.Contains(resp.Header.Get("X-Robots-Tag"), "noindex") {
-		t.Errorf("maze: %d\n%.400s", resp.StatusCode, page)
+	// An address nobody was given is not the maze's.
+	if resp, _ := get(t, maze.public+"/.xibalba/trap/abc", language); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("maze, unknown address: %d", resp.StatusCode)
 	}
+	_ = page
 }
 
 // --- countries --------------------------------------------------------------
@@ -1471,5 +1486,26 @@ func TestCountryDatabaseIsIdleWithoutCountryRules(t *testing.T) {
 	inst := start(t, site.URL, "countries:\n  database: \""+database+"\"\n")
 	if _, report := health(t, inst); report.Components["countries"].State != "" {
 		t.Errorf("the countries component runs without a country rule: %+v", report)
+	}
+}
+
+func TestMazeBehindTheHiddenLink(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, "trap:\n  enabled: true\n  maze: true\n"+challengeRules)
+	_, page := get(t, inst.public+"/wiki/a", language)
+	m := trapLinkRE.FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("no trap link in the check page:\n%s", page)
+	}
+	resp, maze := get(t, inst.public+m[1], language)
+	if resp.StatusCode != 200 || strings.Count(maze, `href="`+m[1]+`/`) != 5 || !strings.Contains(resp.Header.Get("X-Robots-Tag"), "noindex") {
+		t.Fatalf("maze: %d\n%.400s", resp.StatusCode, maze)
+	}
+	next := regexp.MustCompile(`href="([^"]+)"`).FindStringSubmatch(maze)[1]
+	if resp, deeper := get(t, inst.public+next, language); resp.StatusCode != 200 || deeper == maze {
+		t.Errorf("one step deeper: %d", resp.StatusCode)
+	}
+	if site.hitCount() != 0 {
+		t.Error("the maze reached the website")
 	}
 }

@@ -7,13 +7,6 @@ program of that kind, and is remembered.
 
 The trap is off by default.
 
-> **Known weakness, not fixed yet (security review of 2026-10-04).** Any
-> request to the trap's addresses counts, also one that another website makes
-> a visitor's browser send (an image tag is enough). With `block-trapped`,
-> that visitor's address is then denied. Until this is fixed, do not use
-> `block-trapped` with `deny` on a public site; use the `weigh` variant below
-> with a check, so that a person can still get in.
-
 ## Switching it on
 
 ```yaml
@@ -70,8 +63,34 @@ It sits inside a `template` element. Browsers treat the content of that
 element as inert: it is not displayed, not announced by screen readers, not
 reachable with the keyboard, and not part of the page's links. A person would
 have to open the page source and copy the address by hand. The link is
-marked `nofollow`, the pages are marked `noindex`, and its address changes
-with every start of Xibalba.
+marked `nofollow` and the pages are marked `noindex`.
+
+## Nobody can get someone else caught
+
+Every client gets a link of its own. It carries a check value, made with a
+key that only the running Xibalba knows, over the client's address and the
+day. A request is a catch only if the address requested is the one made for
+the client that requests it, today or yesterday. Anything else under
+`/.xibalba/trap/` is answered "not found" and has no consequence.
+
+So another website cannot get your visitors caught by making their browsers
+request the trap (an image tag would be enough for that): it does not know
+their links. As a second safeguard, a request that the browser marks as
+caused by another site is never a catch.
+
+## Search engines
+
+A search engine that reads pages properly does not see the link. To be safe
+against one that does not:
+
+- List `block-trapped` after `allow-search-engines`, so a verified search
+  engine is let through before the trap is asked.
+- Add this to your website's robots.txt:
+
+  ```text
+  User-agent: *
+  Disallow: /.xibalba/
+  ```
 
 A crawler that reads pages the way a browser does will not follow it either.
 The trap catches the careless ones.
@@ -87,6 +106,7 @@ end. A crawler that keeps following wastes its time on nothing.
 - The pages are marked `noindex, nofollow`, load nothing, and are a few
   kilobytes each. Generating one takes a few microseconds and stores nothing.
 - Every request into the maze renews the catch.
+- Only the client a link was made for gets into its maze.
 
 The maze is off by default. Decide for yourself whether serving such pages
 suits your organisation.
@@ -94,13 +114,15 @@ suits your organisation.
 ## Looking at what happens
 
 `GET /trap` on the operations listener (only while the trap is on) shows how
-many requests reached the trap since the start and how many clients are
+many requests were a catch since the start (`hits`), how many requests to
+the trap's addresses were not (`ignored`), and how many clients are
 remembered right now. It holds no address.
 
 ## Privacy
 
 - A caught client is remembered by its IPv4 address or IPv6 /64, in memory
-  only, for `trap.remember`. Nothing is written to a file or a log.
+  only, for `trap.remember`: 24 hours by default, 30 days at most. Nothing
+  is written to a file or a log.
 - Clients that never follow the link are not recorded at all.
 - A restart forgets everything.
 

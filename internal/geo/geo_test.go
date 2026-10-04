@@ -323,6 +323,27 @@ func TestDownload(t *testing.T) {
 	}
 }
 
+// A file that is fresh but damaged (a power cut during the last download)
+// is fetched again instead of being kept for a month.
+func TestDamagedFileIsDownloadedAgain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(geotest.Build(map[string]string{"192.0.2.0/24": "DE"}, geotest.Options{}))
+	}))
+	defer server.Close()
+	path := filepath.Join(t.TempDir(), "countries.mmdb")
+	write(t, path, []byte{}, time.Now())
+	l := New(Options{Path: path, Download: true, DownloadURL: server.URL})
+	l.reload()
+	l.maybeDownload(context.Background())
+	l.reload()
+	if got := l.Country(addr("192.0.2.1")).String(); got != "DE" {
+		t.Errorf("after a damaged file: %q (%+v)", got, l.Health())
+	}
+	if h := l.Health(); h.State != health.OK {
+		t.Errorf("health = %+v", h)
+	}
+}
+
 func TestDownloadIsOffUnlessAsked(t *testing.T) {
 	hit := false
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit = true }))

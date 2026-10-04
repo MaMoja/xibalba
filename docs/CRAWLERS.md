@@ -70,7 +70,8 @@ rules:
 | `allow-ai-search` | Lets verified crawlers of class `ai-search` through. |
 | `allow-ai-user-fetch` | Lets verified fetchers of class `user-fetch` through. |
 
-Nothing is switched on by default.
+Nothing is switched on by default. The three `allow-` presets also exempt the
+verified crawlers from the [request limits](LIMITS.md).
 
 Order: the rules in `rules.list` come first, then the presets in the order you
 list them, then the files in `rules.files`. A rule of your own in `rules.list`

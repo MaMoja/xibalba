@@ -63,15 +63,17 @@ decision (2026-10-03): all of this comes before statistics.
 - [ ] Patterns: one client fetching very many different pages, or the same page again and again
 - [x] Country condition in rules, with a country database the operator supplies or the free DB-IP database downloaded on request
 - [ ] Confirm the DB-IP download against the live server (not reachable from the development environment)
-- [x] Security review of the milestone by a second agent (2026-10-04). Its findings are open and listed here; M5 is not closed until the first two are fixed:
-  - [ ] **High.** The presets `keep-internet-working`, `allow-feeds` and `allow-git-clients` can be used to get round the check and the limits. Rules test the normalised path, the website receives the path as sent; a web server that treats `..;` as an ordinary name, or runs a script with extra path behind it (`/page.php/feed`), serves other content than the rule assumed. `allow-git-clients` has no restriction on the method. Fix: an allowing rule with a path condition only matches a path that was sent in canonical form; stricter patterns for feeds and git; methods for git.
-  - [ ] **High.** Trap poisoning: every request under `/.xibalba/trap/` counts as a catch, so another website can make a visitor's browser request it (an image is enough) and get that visitor's address denied by `block-trapped`. Fix: a link bound to the client that is only valid for that client; ignore cross-site requests; never catch a verified crawler.
-  - [ ] Medium. Requests allowed by a rule are not counted by the limits, so the allow presets are a path without limits. Make the exemption a choice per rule.
-  - [ ] Medium. Over a `challenge` limit, a client that holds a pass is not limited at all. Require a fresh pass or escalate.
-  - [ ] Medium. `Retry-After` is too short when the client was far over the limit.
-  - [ ] Medium. A country file damaged by a power cut during download stops the start. Sync before rename; with downloading on, treat an unusable file as missing.
-  - [ ] Medium. Warn at start when limits are on and every visitor would share one address (behind a web server without `trusted_proxies`).
-  - [ ] Low. Trap and limit tables: evict the oldest instead of any; trap lookup only when a rule uses it, without one global lock; reload right after a download; bound the size of the country file read; do not echo the download address in messages; health entries for `limits` and `trap`; say in the privacy text that the trap may remember for up to 30 days.
+- [x] Security review of the milestone by a second agent (2026-10-04), and its findings fixed:
+  - [x] High: allow presets could be bypassed with roundabout addresses. Allowing rules with a path condition now need an address sent in plain form; feed and git presets tightened.
+  - [x] High: the trap could be poisoned by other websites. Links are now per client with a keyed check value.
+  - [x] Medium: requests let through by an allow rule were not counted by the limits. Now a choice per rule.
+  - [x] Medium: `Retry-After` too short.
+  - [x] Medium: a damaged country file stopped the start.
+  - [x] Medium: warning when all visitors would share one limit.
+  - [x] Low: trap lookup only when a rule asks, read lock; reload right after a download; bounded read of the country file; download address not echoed; health entries for `limits` and `trap`; privacy text names the 30 days.
+  - [ ] Medium, documented only: a `challenge` limit does not restrain a client that holds a pass (advice: add a `deny` limit). Owner to say whether an automatic escalation is wanted.
+  - [ ] Low, open: evict the oldest instead of any entry when the trap or limit table is full; cap the country file size lower for small machines.
+- [ ] Second review of the fixes
 
 ## M6: Statistics
 - [ ] Aggregated counters per hour: by action, rule, crawler, network
