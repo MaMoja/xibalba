@@ -84,7 +84,8 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Counters per network of origin (IPv4 /24, IPv6 /48), as an option, off by default, own time limit (owner's decision 2026-10-04)
 - [x] English guides (getting started, operations, privacy, FAQ, visitors) and the wiki, built from `docs/`
 - [x] Storage on disk with a time limit (plain files, one line per hour; no database)
-- [ ] Security review of the milestone by a second agent
+- [x] Security review of the milestone by a second agent (2026-10-04); no high finding. Fixed: counts lost in a flood of networks, network counts left on disk after switching off, time limit exact to the day instead of the month, running hour reduced earlier, `Retry-After` the longest of the exceeded limits, `deny_at` visible in metrics and statistics, an hour written twice after a failed sync, an over-long line ending the reading of a file, warning for an operations listener that is not local, workflow token not kept by the checkout.
+  - [ ] Low, open: GitHub actions pinned by commit instead of tag; a fairer table than first-come for networks within one minute.
 - [x] Prometheus metrics endpoint (format checked by tests; not yet tried against a running Prometheus)
 
 ## M7: Web interface, read side

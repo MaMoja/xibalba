@@ -434,3 +434,19 @@ func TestWithoutDenyAtAChallengeLimitNeverRefuses(t *testing.T) {
 		}
 	}
 }
+
+// Over two limits with the same action, the wait is the longer one.
+func TestRetryAfterIsTheLongestOfTheExceededLimits(t *testing.T) {
+	c := newClock()
+	l := New(Options{Windows: []Window{
+		{Requests: 2, Per: time.Minute, Action: "deny"},
+		{Requests: 3, Per: 24 * time.Hour, Action: "deny"},
+	}, MaxClients: 1000, Now: c.Now})
+	var v Verdict
+	for i := 0; i < 6; i++ {
+		v = l.Count(addr("192.0.2.1"))
+	}
+	if v.Action != "deny" || v.RetryAfter < time.Hour {
+		t.Errorf("verdict = %+v", v)
+	}
+}

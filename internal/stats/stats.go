@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -38,9 +39,6 @@ const (
 	MaxKeepDays = 3650
 	// maxLine is the longest line read from a month's file.
 	maxLine = 4 << 20
-	// reduceAt is the number of names from which an hour is reduced before
-	// it is over, if there is a Reduce.
-	reduceAt = 5000
 	// maxNames is how many different names one hour may hold.
 	maxNames = 20000
 )
@@ -66,6 +64,9 @@ type Options struct {
 	// Reduce, if set, is applied to an hour's counts before the hour is
 	// written to its month's file, for example to keep only the largest.
 	Reduce func(counts map[string]uint64)
+	// ReduceAt is the number of names from which the running hour is
+	// reduced before it is over. Zero means 5000.
+	ReduceAt int
 	// Every is how often Collect is asked. Zero means a minute.
 	Every time.Duration
 	// Log receives the store's messages.
@@ -108,6 +109,9 @@ func New(opts Options) *Store {
 	}
 	if opts.Log == nil {
 		opts.Log = slog.New(slog.DiscardHandler)
+	}
+	if opts.ReduceAt <= 0 {
+		opts.ReduceAt = 5000
 	}
 	if opts.Name == "" {
 		opts.Name = "statistics"
@@ -214,14 +218,15 @@ func (s *Store) Sample() {
 	}
 	s.last = totals
 	for name, n := range added {
-		if n > 0 && (len(s.current.Counts) < maxNames || s.current.Counts[name] > 0) {
+		// With a Reduce everything is taken in first and reduced below, so
+		// nothing counted is lost: what does not stay is summed up there.
+		if n > 0 && (s.opts.Reduce != nil || len(s.current.Counts) < maxNames || s.current.Counts[name] > 0) {
 			s.current.Counts[name] += n
 		}
 	}
-	if s.opts.Reduce != nil && len(s.current.Counts) > reduceAt {
+	if s.opts.Reduce != nil && len(s.current.Counts) > s.opts.ReduceAt {
 		// Too many names for one hour, such as requests from thousands of
-		// networks: reduce early, so the hour stays small and the largest
-		// are not crowded out by the first.
+		// networks: reduce early, so the hour stays small.
 		s.opts.Reduce(s.current.Counts)
 	}
 	if err := writeCheckpoint(s.checkpointPath(), s.current); err != nil {
@@ -278,15 +283,15 @@ func (s *Store) appendHour(b Bucket) error {
 	if err != nil {
 		return errors.New("the month's file cannot be opened for writing")
 	}
-	_, err = f.Write(append(line, '\n'))
-	if syncErr := f.Sync(); err == nil {
-		err = syncErr
-	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	n, err := f.Write(append(line, '\n'))
+	syncErr, closeErr := f.Sync(), f.Close()
+	if err != nil && n == 0 {
 		return errors.New("the month's file cannot be written")
+	}
+	if err != nil || syncErr != nil || closeErr != nil {
+		// The line is in the file, wholly or in part. Writing it again
+		// would count the hour twice; a damaged line costs that hour.
+		s.log.Warn("an hour of statistics may not have reached the disk", "hour", b.Hour.Format(time.RFC3339))
 	}
 	return nil
 }
@@ -309,12 +314,90 @@ func (s *Store) clean() {
 		if err != nil {
 			continue
 		}
-		if month.AddDate(0, 1, 0).Before(oldest) { // the month's last hour is too old
+		switch {
+		case month.AddDate(0, 1, 0).Before(oldest): // the month's last hour is too old
 			if os.Remove(filepath.Join(s.opts.Dir, name)) == nil {
 				s.log.Info("statistics past their time were removed", "month", month.Format("2006-01"))
 			}
+		case month.Before(oldest): // some of its hours are too old
+			s.trim(filepath.Join(s.opts.Dir, name), hourOf(oldest))
 		}
 	}
+}
+
+// trim rewrites a month's file without the hours before oldest. If that
+// fails the file stays as it is and the next day tries again.
+func (s *Store) trim(path string, oldest time.Time) {
+	var kept []byte
+	dropped := false
+	err := eachLine(path, func(line []byte) {
+		var b Bucket
+		if json.Unmarshal(line, &b) == nil && !b.Hour.IsZero() && b.Hour.Before(oldest) {
+			dropped = true
+			return
+		}
+		kept = append(append(kept, line...), '\n')
+	})
+	if err != nil || !dropped {
+		return
+	}
+	tmp := path + ".tmp"
+	if os.WriteFile(tmp, kept, 0o600) != nil || os.Rename(tmp, path) != nil {
+		_ = os.Remove(tmp)
+	}
+}
+
+// eachLine calls fn for every line of the file. A line longer than maxLine
+// is skipped; it does not end the reading.
+func eachLine(path string, fn func(line []byte)) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 64<<10)
+	var line []byte
+	tooLong := false
+	for {
+		part, more, err := r.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		if !tooLong && len(line)+len(part) <= maxLine {
+			line = append(line, part...)
+		} else {
+			tooLong = true
+		}
+		if !more {
+			if !tooLong && len(line) > 0 {
+				fn(line)
+			}
+			line, tooLong = line[:0], false
+		}
+	}
+}
+
+// Remove deletes the statistics files in dir and dir itself if it is then
+// empty. It is for counts that were switched off: they must not stay on
+// disk past their time just because nothing looks after them any more.
+// It reports whether anything was removed.
+func Remove(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "current.json" || (strings.HasPrefix(name, "hours-") && strings.HasSuffix(name, ".jsonl")) {
+			removed = os.Remove(filepath.Join(dir, name)) == nil || removed
+		}
+	}
+	_ = os.Remove(dir) // only succeeds if empty
+	return removed
 }
 
 func readCheckpoint(path string) (*Bucket, error) {
@@ -370,22 +453,15 @@ func (s *Store) Hours(from, to time.Time) []Bucket {
 	from, to = hourOf(from), hourOf(to)
 	var out []Bucket
 	for month := time.Date(from.Year(), from.Month(), 1, 0, 0, 0, 0, time.UTC); !month.After(to); month = month.AddDate(0, 1, 0) {
-		f, err := os.Open(s.monthPath(month))
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 64<<10), maxLine)
-		for scanner.Scan() {
+		_ = eachLine(s.monthPath(month), func(line []byte) {
 			var b Bucket
-			if json.Unmarshal(scanner.Bytes(), &b) != nil || b.Hour.IsZero() {
-				continue // a damaged line costs that hour, not the file
+			if json.Unmarshal(line, &b) != nil || b.Hour.IsZero() {
+				return // a damaged line costs that hour, not the file
 			}
 			if !b.Hour.Before(from) && !b.Hour.After(to) {
 				out = append(out, b)
 			}
-		}
-		_ = f.Close()
+		})
 	}
 	s.mu.Lock()
 	if cur := s.current; len(cur.Counts) > 0 && !cur.Hour.Before(from) && !cur.Hour.After(to) {

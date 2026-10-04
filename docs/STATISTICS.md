@@ -29,6 +29,7 @@ Counts, under names. Nothing else.
 | `failures` | Requests that could not be evaluated |
 | `crawler\|<name>\|verified`, `impostor`, `unverifiable`, `pending` | Requests that carried a known crawler's name |
 | `limit\|<per>\|<count>\|<action>` | Requests that were over a limit |
+| `limit\|<per>\|<count>\|deny_at` | Of those, the requests refused because of `deny_at` |
 | `trap\|hits`, `trap\|ignored` | The trap |
 
 No address, no path, no user agent, no time finer than the hour. The names
@@ -143,11 +144,16 @@ Things to know:
   notice if you switch it on.
 - Behind a web server or load balancer, `server.trusted_proxies` must be
   set, or every request appears to come from that server's network.
-- The top is taken per hour. A network that is never among the largest of
-  an hour only appears in `other`.
-- In an hour with requests from many thousands of networks the list is
-  reduced before the hour is over; counts of small networks are then
-  approximate. The component is `statistics-networks` in `/healthz`.
+- The top is taken per hour, when the hour is over. A network that is never
+  among the largest of an hour only appears in `other`. The hour that is
+  still running can hold more networks: up to three times `top`; beyond
+  that it is reduced at once. Nothing counted is lost by this, it moves to
+  `other`; counts of small networks are then approximate.
+- Within one minute, at most 10000 different networks are told apart; in a
+  flood from more networks, the rest of that minute counts as `other`.
+- **Switching the option off removes the counts per network** that were
+  kept, at the next start. Data that nothing looks after must not stay.
+- The component is `statistics-networks` in `/healthz`.
 
 ## How it is kept
 
@@ -158,9 +164,9 @@ Things to know:
 - A finished hour is appended as one line to that month's file,
   `hours-2026-10.jsonl`. The files are plain text (one JSON object per line)
   and can be read with any tool.
-- Once a day, the files of months that lie wholly before `keep_days` are
-  removed. Removal is by month: an hour is kept for `keep_days` and up to a
-  month longer.
+- Once a day, and at every start, hours older than `keep_days` are removed:
+  whole files of months that are over, and the old lines of the month the
+  limit falls into. An hour is kept for `keep_days` and at most a day longer.
 - The files are readable by Xibalba's user only.
 
 A year of statistics is a few megabytes. No database is involved.

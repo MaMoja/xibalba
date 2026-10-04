@@ -84,6 +84,10 @@ func collect(m *metrics.Registry, p parts) {
 			for _, l := range r.Limits {
 				w.Counter("xibalba_limit_over_total", "Requests that were over a limit.", float64(l.Over),
 					"per", l.Per, "count", l.Count, "action", l.Action)
+				if l.DenyAt > 0 {
+					w.Counter("xibalba_limit_over_deny_at_total", "Of the requests over a challenge limit, those refused because of deny_at.", float64(l.Denied),
+						"per", l.Per, "count", l.Count)
+				}
 			}
 		})
 	}
@@ -119,6 +123,9 @@ func totals(p parts) map[string]uint64 {
 	if p.limiter != nil {
 		for _, l := range p.limiter.Report().Limits {
 			out["limit|"+l.Per+"|"+l.Count+"|"+l.Action] = l.Over
+			if l.DenyAt > 0 {
+				out["limit|"+l.Per+"|"+l.Count+"|deny_at"] = l.Denied
+			}
 		}
 	}
 	if p.snare != nil {

@@ -407,6 +407,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		registry.Register(kept.Name(), kept.Health)
 		supervisor.Add(kept)
 		opsMux.Handle("GET /statistics", kept.Handler())
+		if networks == nil && stats.Remove(cfg.Statistics.NetworksPath()) {
+			log.Info("counts per network are switched off; those kept from earlier were removed", "component", "statistics")
+		}
 		if networks != nil {
 			top := cfg.Statistics.Networks.Top
 			perNetwork := stats.New(stats.Options{
@@ -416,6 +419,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				KeepDays: cfg.Statistics.Networks.KeepDays,
 				Added:    networks.Drain,
 				Reduce:   func(counts map[string]uint64) { origin.Top(counts, top) },
+				ReduceAt: 3 * top * len(origin.Actions),
 				Log:      log,
 			})
 			registry.Register(perNetwork.Name(), perNetwork.Health)
@@ -469,13 +473,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 				"settings_not_applied", strings.Join(cfg.SponsorSettings(), ", "))
 		}
 	}
-	if (cfg.Limits.Enabled || cfg.Trap.Enabled) && len(cfg.Server.TrustedProxies) == 0 {
+	if host, _, err := net.SplitHostPort(cfg.Ops.Listen); err == nil && host != "localhost" {
+		if addr, err := netip.ParseAddr(host); err != nil || !addr.IsLoopback() {
+			log.Warn("the operations listener is reachable from other machines and has no login: "+
+				"make sure only your monitoring can reach it", "component", "ops", "listen", cfg.Ops.Listen)
+		}
+	}
+	if (cfg.Limits.Enabled || cfg.Trap.Enabled || cfg.Statistics.Networks.Enabled) && len(cfg.Server.TrustedProxies) == 0 {
 		if host, _, err := net.SplitHostPort(cfg.Server.Listen); err == nil {
 			addr, err := netip.ParseAddr(host)
 			internal := host == "localhost" || (err == nil && (addr.IsLoopback() || addr.IsPrivate()))
 			if internal || host == "" || (err == nil && addr.IsUnspecified()) {
-				log.Warn("request limits or the trap are on and server.trusted_proxies is empty: "+
-					"if a web server stands in front, all visitors appear as that one address, share one limit and are caught together",
+				log.Warn("request limits, the trap or counts per network are on and server.trusted_proxies is empty: "+
+					"if a web server stands in front, all visitors appear as that one address, share one limit, are caught together and count as one network",
 					"component", "public", "listen", cfg.Server.Listen)
 			}
 		}

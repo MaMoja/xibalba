@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## Unreleased
 
+### Changed
+
+- Statistics are removed exactly when their time is over (to the day), no
+  longer only when a whole month is.
+- `Retry-After` names the longest wait if a client is over several limits.
+- A warning at start if the operations listener is reachable from other
+  machines.
+
 ### Added
 
 - Counts per network of origin (`statistics.networks`): the largest networks

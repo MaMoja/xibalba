@@ -40,6 +40,7 @@ xibalba_decisions_total{source="default",action="allow"} 0
 | `xibalba_limit_clients` | gauge | | Clients being counted by the request limits. Only while limits are on. |
 | `xibalba_limit_exempt_requests_total` | counter | | Requests from exempt addresses. |
 | `xibalba_limit_over_total` | counter | `per`, `count`, `action` | Requests that were over a limit. |
+| `xibalba_limit_over_deny_at_total` | counter | `per`, `count` | Of those, the requests refused because of `deny_at`. Only for limits that have one. |
 | `xibalba_trap_hits_total` | counter | | Requests that followed the hidden link. Only while the trap is on. |
 | `xibalba_trap_ignored_total` | counter | | Requests to the trap's addresses that were no catch. |
 | `xibalba_trap_clients` | gauge | | Clients remembered as caught. May lag by up to a minute. |

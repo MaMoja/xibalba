@@ -269,13 +269,16 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 			if w.DenyAt > 0 && action != "deny" && estimate > limit+float64(w.DenyAt-w.Requests) {
 				action, step = "deny", true
 			}
-			if worst < 0 || (action == "deny" && verdict.Action != "deny") {
+			at := w
+			if step {
+				at.Requests = w.DenyAt // the wait ends when the client is below DenyAt again
+			}
+			wait := retryAfter(at, current, previous, elapsed)
+			// The strictest action wins; among limits with the same
+			// action, the one the client has to wait longest for.
+			if worst < 0 || (action == "deny" && verdict.Action != "deny") || (action == verdict.Action && wait > verdict.RetryAfter) {
 				worst, steppedUp = i, step
-				at := w
-				if step {
-					at.Requests = w.DenyAt // the wait ends when the client is below DenyAt again
-				}
-				verdict = Verdict{Over: true, Action: action, RetryAfter: retryAfter(at, current, previous, elapsed)}
+				verdict = Verdict{Over: true, Action: action, RetryAfter: wait}
 			}
 		}
 	}

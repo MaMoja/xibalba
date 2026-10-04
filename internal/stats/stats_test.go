@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -326,5 +327,93 @@ func TestAddedCountsAndReduce(t *testing.T) {
 	}
 	if h := s.Health(); h.State != "ok" {
 		t.Errorf("health = %+v", h)
+	}
+}
+
+// With a Reduce nothing counted is lost, however many names arrive at once.
+func TestAFloodOfNamesIsReducedNotDropped(t *testing.T) {
+	w := newWorld()
+	var pending map[string]uint64
+	sum := func(m map[string]uint64) (n uint64) {
+		for _, v := range m {
+			n += v
+		}
+		return n
+	}
+	s := New(Options{
+		Dir: t.TempDir(), KeepDays: 30, Now: w.Now, ReduceAt: 100,
+		Added: func() map[string]uint64 { out := pending; pending = nil; return out },
+		Reduce: func(counts map[string]uint64) {
+			for name, n := range counts {
+				if name != "big" && name != "other" {
+					delete(counts, name)
+					counts["other"] += n
+				}
+			}
+		},
+	})
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Stop(context.Background()) }()
+	pending = map[string]uint64{"big": 1500}
+	for i := 0; i < 30000; i++ {
+		pending["n"+strconv.Itoa(i)] = 1
+	}
+	s.Sample()
+	hour := hourOf(w.Now())
+	got := s.Hours(hour, hour)
+	if len(got) != 1 || got[0].Counts["big"] != 1500 || sum(got[0].Counts) != 31500 || len(got[0].Counts) != 2 {
+		t.Errorf("big = %d, sum = %d, names = %d", got[0].Counts["big"], sum(got[0].Counts), len(got[0].Counts))
+	}
+}
+
+// Hours past their time leave the month's file at the daily clean, not only
+// when the whole month is over; a line that is too long costs only itself.
+func TestOldHoursLeaveTheFileAndLongLinesAreSkipped(t *testing.T) {
+	w := newWorld()
+	dir := t.TempDir()
+	now := w.Now().UTC()
+	line := func(hour time.Time) string {
+		return `{"hour":"` + hourOf(hour).Format(time.RFC3339) + `","counts":{"a":1}}` + "\n"
+	}
+	old, recent := now.AddDate(0, 0, -5), now.AddDate(0, 0, -1)
+	if old.Month() != recent.Month() {
+		t.Skip("the test days fall into two months")
+	}
+	path := filepath.Join(dir, "hours-"+recent.Format("2006-01")+".jsonl")
+	content := line(old) + strings.Repeat("x", maxLine+10) + "\n" + line(recent)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{Dir: dir, KeepDays: 3, Now: w.Now, Collect: func() map[string]uint64 { return nil }})
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Stop(context.Background()) }()
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), hourOf(old).Format(time.RFC3339)) || !strings.Contains(string(raw), hourOf(recent).Format(time.RFC3339)) {
+		t.Errorf("file after the clean holds the wrong hours (%d bytes)", len(raw))
+	}
+	if got := s.Hours(old, now); len(got) != 1 || !got[0].Hour.Equal(hourOf(recent)) {
+		t.Errorf("hours = %+v", got)
+	}
+}
+
+func TestRemove(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "networks")
+	if Remove(dir) {
+		t.Error("removed something from a directory that is not there")
+	}
+	_ = os.Mkdir(dir, 0o700)
+	for _, name := range []string{"current.json", "hours-2026-10.jsonl", "notes.txt"} {
+		_ = os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600)
+	}
+	if !Remove(dir) {
+		t.Error("nothing removed")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "notes.txt" {
+		t.Errorf("left = %v", entries)
 	}
 }
