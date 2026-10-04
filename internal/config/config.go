@@ -129,6 +129,13 @@ var NoJavaScriptModes = []string{"button", "deny"}
 
 // Challenge holds the settings of the security check.
 type Challenge struct {
+	// Method is the kind of check: pow (a calculation in the browser),
+	// script (the browser runs a small script and waits), wait (wait, then
+	// press a button; no JavaScript) or refresh (wait, then be sent on; no
+	// JavaScript).
+	Method string `yaml:"method"`
+	// Checks are extra checks on top of pow or script: css, headless.
+	Checks []string `yaml:"checks"`
 	// Difficulty is the proof of work in leading zero bits. Each extra bit
 	// doubles the work a client has to do.
 	Difficulty int `yaml:"difficulty"`
@@ -161,6 +168,19 @@ func (c *Challenge) check(dir string, add func(path, message, hint string)) {
 	if c.Difficulty < challenge.MinDifficulty || c.Difficulty > challenge.MaxDifficulty {
 		add("challenge.difficulty", fmt.Sprintf("%d is out of range", c.Difficulty),
 			fmt.Sprintf("use a value from %d to %d; 18 suits most sites", challenge.MinDifficulty, challenge.MaxDifficulty))
+	}
+	if !contains(challenge.Methods, c.Method) {
+		add("challenge.method", fmt.Sprintf("%q is not a kind of security check", c.Method),
+			"use one of: "+strings.Join(challenge.Methods, ", "))
+	}
+	for i, check := range c.Checks {
+		if !contains(challenge.Checks, check) {
+			add(fmt.Sprintf("challenge.checks[%d]", i), fmt.Sprintf("%q is not an extra check", check), "use: "+strings.Join(challenge.Checks, ", "))
+		}
+	}
+	if len(c.Checks) > 0 && (c.Method == challenge.MethodWait || c.Method == challenge.MethodRefresh) {
+		add("challenge.checks", fmt.Sprintf("extra checks run in JavaScript, and the method %s does without it", c.Method),
+			"use method pow or script, or remove the checks")
 	}
 	if !contains(NoJavaScriptModes, c.NoJavaScript) {
 		add("challenge.no_javascript", fmt.Sprintf("%q is not a mode", c.NoJavaScript),
@@ -311,6 +331,8 @@ func Default() Config {
 		Statistics: defaultStatistics(),
 		Challenge: Challenge{
 			Difficulty:        18,
+			Method:            "pow",
+			Checks:            []string{},
 			NoJavaScript:      "button",
 			Wait:              3 * time.Second,
 			ChallengeLifetime: 5 * time.Minute,

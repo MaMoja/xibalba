@@ -8,9 +8,23 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Kinds of security check besides the calculation (`challenge.method`):
+  `script` (the browser runs a small script and waits), `wait` (wait, then a
+  button; no JavaScript) and `refresh` (wait, then be sent on; no JavaScript).
+- Extra checks on top of `pow` and `script` (`challenge.checks`): `css` (the
+  browser has to load and apply a style sheet) and `headless` (signs that a
+  program steers the browser).
+- A check of its own for a rule or threshold: `challenge:` with method,
+  difficulty, wait, checks. A pass counts wherever the same or less is asked.
+
 - Links to your imprint and privacy policy at the bottom of every page
   Xibalba shows (`pages.imprint_url`, `pages.privacy_url`). No license needed.
 - Advice on `Content-Security-Policy` in `docs/CHALLENGE.md`.
+
+### Changed
+
+- Passes handed out by version 0.1.0 are not recognised: every visitor is
+  checked once more after the update.
 
 ## 0.1.0 - 2026-10-04
 

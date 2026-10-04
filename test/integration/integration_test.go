@@ -2117,3 +2117,67 @@ func TestChangesInTheWebInterface(t *testing.T) {
 		t.Errorf("the log names a listed address:\n%s", text)
 	}
 }
+
+// A rule can ask for a security check of its own. The kinds that need no
+// JavaScript are tried here end to end; the others in the browser check.
+func TestSecurityCheckPerRule(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, `challenge:
+  wait: 1s
+rules:
+  list:
+    - name: gentle
+      match: {path: {prefix: "/gentle"}}
+      action: challenge
+      challenge: {method: refresh}
+    - name: strict
+      match: {path: {prefix: "/strict"}}
+      action: challenge
+      challenge: {method: pow, difficulty: 10, checks: [css]}
+`)
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	fetch := func(path string) (*http.Response, string) {
+		req, _ := http.NewRequest("GET", inst.public+path, nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (test)")
+		req.Header.Set("Accept-Language", "en")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, _ := io.ReadAll(resp.Body)
+		return resp, string(body)
+	}
+
+	// The gentle rule: the page sends the browser on by itself.
+	resp, body := fetch("/gentle/page")
+	m := regexp.MustCompile(`http-equiv="refresh" content="1;url=([^"]+)"`).FindStringSubmatch(body)
+	if resp.StatusCode != http.StatusForbidden || m == nil || strings.Contains(body, "<script") {
+		t.Fatalf("gentle page: %d\n%s", resp.StatusCode, body)
+	}
+	forward := html.UnescapeString(m[1])
+	if resp, _ := fetch(forward); resp.StatusCode == http.StatusSeeOther && resp.Header.Get("Location") == "/gentle/page" {
+		t.Error("the forward counted before the wait was over")
+	}
+	_, body = fetch("/gentle/page")
+	forward = html.UnescapeString(regexp.MustCompile(`content="1;url=([^"]+)"`).FindStringSubmatch(body)[1])
+	time.Sleep(1100 * time.Millisecond)
+	if resp, _ := fetch(forward); resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/gentle/page" {
+		t.Fatalf("the forward after the wait: %d to %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if resp, _ := fetch("/gentle/page"); resp.StatusCode != 200 {
+		t.Errorf("gentle page with the pass: %d", resp.StatusCode)
+	}
+
+	// The pass earned the easy way does not open what asks for more.
+	resp, body = fetch("/strict/page")
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, `data-method="pow"`) || !strings.Contains(body, `data-difficulty="10"`) ||
+		!strings.Contains(body, "/.xibalba/check.css?n=") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "style-src 'self'") {
+		t.Fatalf("strict page with the easy pass: %d\n%s", resp.StatusCode, body)
+	}
+	sheet := regexp.MustCompile(`href="(/\.xibalba/check\.css\?n=[^"]+)"`).FindStringSubmatch(body)
+	if resp, css := fetch(html.UnescapeString(sheet[1])); resp.StatusCode != 200 || !strings.Contains(css, "--xibalba-check:") {
+		t.Errorf("style sheet: %d %q", resp.StatusCode, css)
+	}
+}

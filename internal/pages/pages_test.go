@@ -696,3 +696,63 @@ func TestImprintAndPrivacyLinks(t *testing.T) {
 		}
 	}
 }
+
+// Each kind of check gets the page it needs, and the page may do no more
+// than that kind needs.
+func TestChallengePageForEachMethod(t *testing.T) {
+	r, err := New(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	show := func(v ChallengeView) (string, string) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Accept-Language", "en")
+		v.Action, v.Token, v.Return, v.Nonce = "/.xibalba/verify", "tok", "/", "abc"
+		r.Challenge(rec, req, v)
+		return rec.Body.String(), rec.Header().Get("Content-Security-Policy")
+	}
+
+	body, csp := show(ChallengeView{Method: "pow", Difficulty: 18, AllowButton: true})
+	if !strings.Contains(body, "<script>") || !strings.Contains(csp, "script-src 'sha256-") || strings.Contains(csp, "'self' 'sha256") ||
+		!strings.Contains(body, "solving a short calculation") || !strings.Contains(body, `data-method="pow"`) {
+		t.Errorf("pow page or policy is wrong: %s", csp)
+	}
+
+	body, _ = show(ChallengeView{Method: "script", WaitSeconds: 2})
+	if !strings.Contains(body, "<script>") || !strings.Contains(body, "being checked briefly") || !strings.Contains(body, `data-wait="2"`) || strings.Contains(body, "<button") {
+		t.Error("script page is wrong")
+	}
+
+	body, csp = show(ChallengeView{Method: "wait", WaitSeconds: 3, AllowButton: true})
+	if strings.Contains(body, "<script") || strings.Contains(csp, "script-src") || !strings.Contains(csp, "form-action 'self'") ||
+		!strings.Contains(body, "<button") || !strings.Contains(body, "then choose") || strings.Contains(body, "does not run JavaScript") || strings.Contains(body, "http-equiv") {
+		t.Errorf("wait page or policy is wrong: %s", csp)
+	}
+
+	body, csp = show(ChallengeView{Method: "refresh", WaitSeconds: 4, AllowButton: true, RefreshURL: `/.xibalba/verify?token=a.b&return=%2F"><x>`})
+	if strings.Contains(body, "<script") || strings.Contains(csp, "script-src") ||
+		!strings.Contains(body, `<meta http-equiv="refresh" content="4;url=/.xibalba/verify?token=a.b&amp;return=%2F&#34;&gt;&lt;x&gt;">`) ||
+		!strings.Contains(body, "<button") || !strings.Contains(body, "sent on automatically") {
+		t.Errorf("refresh page or policy is wrong:\n%s", body[:600])
+	}
+
+	body, csp = show(ChallengeView{Method: "pow", Difficulty: 18, StyleURL: "/.xibalba/check.css?n=abc", Headless: true})
+	for _, want := range []string{`<link rel="stylesheet" href="/.xibalba/check.css?n=abc">`, `data-css="1"`, `data-probe="1"`, `name="css"`, `name="probe"`, `name="agent"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page with extra checks lacks %s", want)
+		}
+	}
+	if !strings.Contains(csp, "style-src 'self' 'sha256-") {
+		t.Errorf("policy with the css check: %s", csp)
+	}
+
+	rec := httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "script", Notice: "automated"})
+	if !strings.Contains(rec.Body.String(), `role="alert"`) || !strings.Contains(rec.Body.String(), "von einem Programm gesteuert") {
+		t.Error("the notice about automation is missing")
+	}
+	if strings.Contains(rec.Body.String(), "<script") || strings.Contains(rec.Body.String(), "<form") {
+		t.Error("after a report of automation the page tries again by itself")
+	}
+}

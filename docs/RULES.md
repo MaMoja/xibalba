@@ -170,6 +170,28 @@ therefore never let through by path; use another condition for it.
 A request whose target is not a path at all (`GET http:admin/x`) is refused
 with status 400 before any rule is asked.
 
+## Asking for a particular security check
+
+A rule or threshold with `action: challenge` can say which check it asks
+for: the kind, the difficulty, the wait, extra checks. What it leaves out
+comes from the `challenge` section of the configuration.
+
+```yaml
+rules:
+  list:
+    - name: strict-for-search
+      match:
+        path: {prefix: "/suche"}
+      action: challenge
+      challenge:
+        method: pow
+        difficulty: 20
+        checks: [headless]
+```
+
+The kinds of check, the extra checks, what a pass counts for, and recipes
+(by country, by network) are in [CHALLENGE.md](CHALLENGE.md#a-check-of-its-own-for-a-rule).
+
 ## Exempting from the request limits
 
 Being let through by an `allow` rule does not exempt a client from the

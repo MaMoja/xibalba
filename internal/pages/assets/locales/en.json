@@ -22,5 +22,9 @@
   "attribution_text": "Protected by",
   "attribution_sponsor": "Support the project",
   "imprint_label": "Imprint",
-  "privacy_label": "Privacy policy"
+  "privacy_label": "Privacy policy",
+  "challenge_text_script": "{operator} protects these pages against automated mass requests. Your browser is being checked briefly. It takes only a few seconds; you do not need to do anything.",
+  "challenge_text_wait": "{operator} protects these pages against automated mass requests. Please wait a few seconds and then choose “Continue”.",
+  "challenge_text_refresh": "{operator} protects these pages against automated mass requests. Please wait a few seconds; you are then sent on automatically. If nothing happens, choose “Continue”.",
+  "challenge_automated": "This browser reports that it is steered by a program, so the check was not passed. If you are using an ordinary browser, please get in touch with the operator of this website."
 }

@@ -1098,7 +1098,9 @@ Besucher ohne JavaScript können stattdessen einige Sekunden warten und auf
 
 ```yaml
 challenge:
-  difficulty: 18            # Rechenaufwand, 8 bis 24
+  method: pow               # Art der Prüfung: pow, script, wait, refresh
+  checks: []                # Zusatzprüfungen: css, headless
+  difficulty: 18            # Rechenaufwand bei pow, 8 bis 24
   no_javascript: button     # button oder deny
   wait: 3s                  # Wartezeit ohne JavaScript
   challenge_lifetime: 5m    # Zeit für die Prüfung
@@ -1110,6 +1112,7 @@ challenge:
 
 | Einstellung | Bedeutung | Wann ändern? |
 |---|---|---|
+| `method`, `checks` | Art der Prüfung und Zusatzprüfungen; siehe „Arten der Prüfung“ unten. | Wenn die Rechenaufgabe für Ihre Besucher zu schwer oder für Crawler zu leicht ist. |
 | `difficulty` | Rechenaufwand für den Browser. Jede Stufe verdoppelt ihn. | Erhöhen, wenn Massenabrufe trotz Prüfung durchkommen. Senken, wenn sich Besucher mit alten Geräten über Wartezeit beklagen. |
 | `no_javascript` | `button`: Besucher ohne JavaScript warten und drücken „Weiter“. `deny`: sie erfahren, dass JavaScript nötig ist. | `deny` ist strenger, schließt aber Besucher ohne JavaScript aus. Für öffentliche Stellen empfiehlt sich `button`. |
 | `wait` | Wartezeit, bevor „Weiter“ gilt. | Selten. |
@@ -1129,6 +1132,69 @@ und ältere Rechner sind um ein Mehrfaches langsamer; das ist nicht gemessen.
 | 20 | etwa 0,4 s |
 | 22 | etwa 1,6 s |
 | 24 | etwa 6 s |
+
+### Arten der Prüfung
+
+Ab Werk löst der Browser eine Rechenaufgabe (`pow`). Es gibt drei weitere
+Arten; Sie wählen mit `challenge.method`:
+
+| `method` | Was der Browser des Besuchers tut | Braucht JavaScript | Wofür |
+|---|---|---|---|
+| `pow` | löst eine Rechenaufgabe; `difficulty` bestimmt den Aufwand | ja (mit `no_javascript: button` warten Besucher ohne JavaScript und drücken „Weiter“) | die Voreinstellung; macht Massenabrufe teuer |
+| `script` | führt ein kleines Skript aus und wartet; gerechnet wird nichts | ja | schonend für alte Telefone; für Anfragen mit geringem Verdacht |
+| `wait` | nichts; der Besucher wartet und drückt „Weiter“ | nein | wo JavaScript nicht verlangt werden darf; eher Bremse als Hürde |
+| `refresh` | nichts; nach der Wartezeit leitet die Seite von selbst weiter | nein | wie `wait`, ohne Klick |
+
+**Hinweis zur Barrierefreiheit:** Bei `refresh` wird der Besucher nach einer
+Zeit weitergeleitet, die er nicht verlängern kann. Das widerspricht WCAG 2.1
+(Erfolgskriterium 2.2.1). Muss Ihre Website BITV oder WCAG erfüllen, nehmen
+Sie `wait`, `script` oder `pow`.
+
+Zusätzlich lassen sich zu `pow` und `script` zwei Zusatzprüfungen
+einschalten (`challenge.checks`); beide brauchen JavaScript:
+
+| Zusatzprüfung | Was sie tut | Grenze |
+|---|---|---|
+| `css` | Der Browser muss ein Stylesheet laden und anwenden; das Skript liest einen Wert daraus zurück. Programme, die nur die Seite abrufen, laden keine Stylesheets. | Ein Programm, das das Stylesheet gezielt abruft, besteht. |
+| `headless` | Das Skript sucht nach Anzeichen, dass ein Programm den Browser steuert. Meldet der Browser das, wird die Prüfung nicht bestanden, und die Seite sagt es. | Erkennt nachlässig eingesetzte automatisierte Browser, also die meisten. Ein dafür präparierter Browser kann die Anzeichen verbergen. |
+
+### Eine eigene Prüfung je Regel
+
+Jede Regel und jede Schwelle mit `action: challenge` kann beschreiben,
+welche Prüfung sie verlangt. Was sie weglässt, kommt aus dem Abschnitt
+`challenge`. So bekommt zum Beispiel alles außerhalb Europas eine strengere
+Prüfung (dafür brauchen Sie eine Länder-Datenbank, Abschnitt 6 „Länder“):
+
+```yaml
+countries:
+  database: countries.mmdb
+rules:
+  list:
+    - name: pruefung-ausserhalb-europas
+      match:
+        not:
+          country: ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO", "CH", "GB"]
+      action: challenge
+      challenge:
+        method: pow
+        difficulty: 20
+        checks: [headless]
+```
+
+Die Liste enthält die EU sowie Island, Liechtenstein, Norwegen, die Schweiz
+und das Vereinigte Königreich; passen Sie sie an. Genauso geht es für
+Adressbereiche: statt `country` schreiben Sie `ip: ["198.51.100.0/24"]`.
+
+Ein Nachweis gilt überall dort, wo dasselbe oder weniger verlangt wird. Wer
+eine strengere Prüfung bestanden hat, wird für eine leichtere nicht erneut
+geprüft; umgekehrt schon.
+
+**VPNs:** Xibalba kann nicht von sich aus erkennen, ob eine Adresse zu einem
+VPN gehört; dafür gibt es keine freie, verlässliche Liste. Heute tragen Sie
+die Netze, die Sie kennen, mit `ip` ein. Bedingungen nach Netzbetreiber
+(AS-Nummer) und Adresslisten aus Dateien sind geplant.
+
+Einzelheiten: [CHALLENGE.md](../CHALLENGE.md).
 
 ### Was die Prüfung leistet und was nicht
 

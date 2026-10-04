@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>{{.Primary.Title}}</title>
+{{- if .RefreshURL}}
+<meta http-equiv="refresh" content="{{.WaitSeconds}};url={{.RefreshURL}}">
+{{- end}}
 <style>{{.CSS}}</style>
+{{- if .StyleURL}}
+<link rel="stylesheet" href="{{.StyleURL}}">
+{{- end}}
 </head>
 <body>
 <main>
@@ -13,17 +19,27 @@
 {{- if .Notice}}
 <p role="alert" class="notice">{{.Notice}}</p>
 {{- end}}
+{{- if not .Stopped}}
 <p>{{.Primary.Text}}</p>
 <p>{{.Primary.Cookie}}</p>
-<form id="xibalba-form" method="post" action="{{.Action}}" data-nonce="{{.Nonce}}" data-difficulty="{{.Difficulty}}" data-working="{{.Working}}" data-done="{{.Done}}">
+<form id="xibalba-form" method="post" action="{{.Action}}" data-method="{{.Method}}" data-nonce="{{.Nonce}}" data-difficulty="{{.Difficulty}}" data-wait="{{.WaitSeconds}}"{{if .StyleURL}} data-css="1"{{end}}{{if .Headless}} data-probe="1"{{end}} data-working="{{.Working}}" data-done="{{.Done}}">
 <input type="hidden" name="token" value="{{.Token}}">
 <input type="hidden" name="return" value="{{.Return}}">
 <input type="hidden" name="method" value="button">
 <input type="hidden" name="solution" value="">
+{{- if .StyleURL}}
+<input type="hidden" name="css" value="">
+{{- end}}
+{{- if .Headless}}
+<input type="hidden" name="probe" value="">
+<input type="hidden" name="agent" value="">
+{{- end}}
 <p id="xibalba-status" role="status" aria-live="polite" hidden></p>
 <div id="xibalba-manual">
 {{- if .AllowButton}}
+{{- if .Scripted}}
 <p>{{.Manual}}</p>
+{{- end}}
 <p><button type="submit">{{.Button}}</button></p>
 {{- else}}
 <p>{{.NeedsScript}}</p>
@@ -37,6 +53,7 @@
 <p>{{.Text}}</p>
 <p>{{.Cookie}}</p>
 </details>
+{{- end}}
 {{- end}}
 </main>
 {{- if or .Attribution .Legal}}
@@ -52,6 +69,8 @@
 {{- if .Trap}}
 <template><a href="{{.Trap}}" rel="nofollow">-</a></template>
 {{- end}}
+{{- if and .Scripted (not .Stopped)}}
 <script>{{.Script}}</script>
+{{- end}}
 </body>
 </html>

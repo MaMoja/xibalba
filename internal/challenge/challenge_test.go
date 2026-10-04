@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ func solve(nonce string, difficulty int) string {
 
 // site is a Challenge in front of a fake website, wired as in the real program.
 type site struct {
+	want    *Profile // the check the site's rule asks for; nil is the default
 	t       *testing.T
 	c       *Challenge
 	handler http.Handler
@@ -48,9 +50,7 @@ func newSite(t *testing.T, change func(*Options)) *site {
 	s := &site{t: t, now: time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)}
 	opts := Options{
 		Signer:            signer,
-		Difficulty:        MinDifficulty,
-		AllowButton:       true,
-		Wait:              3 * time.Second,
+		Default:           Profile{Method: MethodPoW, Difficulty: MinDifficulty, AllowButton: true, Wait: 3 * time.Second},
 		ChallengeLifetime: 5 * time.Minute,
 		PassLifetime:      24 * time.Hour,
 		BindNetwork:       true,
@@ -75,10 +75,10 @@ func newSite(t *testing.T, change func(*Options)) *site {
 		switch {
 		case strings.HasPrefix(r.URL.Path, Prefix):
 			s.c.Handler().ServeHTTP(w, r)
-		case s.c.Passed(r):
+		case s.c.Passed(r, s.want):
 			website.ServeHTTP(w, r)
 		default:
-			s.c.Serve(w, r)
+			s.c.Serve(w, r, s.want)
 		}
 	})
 	s.handler = clientip.Middleware(clientip.New([]netip.Prefix{netip.MustParsePrefix("10.0.0.1/32")}), router)
@@ -119,7 +119,15 @@ func (c *client) do(method, target string, form url.Values) *httptest.ResponseRe
 	}
 	rec := httptest.NewRecorder()
 	c.s.handler.ServeHTTP(rec, req)
-	c.cookies = append(c.cookies, rec.Result().Cookies()...)
+	for _, fresh := range rec.Result().Cookies() { // a browser keeps one cookie per name
+		kept := c.cookies[:0]
+		for _, old := range c.cookies {
+			if old.Name != fresh.Name {
+				kept = append(kept, old)
+			}
+		}
+		c.cookies = append(kept, fresh)
+	}
 	return rec
 }
 
@@ -176,7 +184,7 @@ func TestButtonFlow(t *testing.T) {
 	v := c.challenge("/")
 
 	// Pressed at once: too early. The client gets a new task and a note.
-	rec := c.do(http.MethodPost, VerifyPath, answer(v, MethodButton, ""))
+	rec := c.do(http.MethodPost, VerifyPath, answer(v, answerButton, ""))
 	if rec.Code != http.StatusForbidden || len(c.cookies) != 0 {
 		t.Fatalf("early press: status %d, %d cookies; want another challenge and no pass", rec.Code, len(c.cookies))
 	}
@@ -186,7 +194,7 @@ func TestButtonFlow(t *testing.T) {
 	}
 
 	s.advance(4 * time.Second)
-	rec = c.do(http.MethodPost, VerifyPath, answer(again, MethodButton, ""))
+	rec = c.do(http.MethodPost, VerifyPath, answer(again, answerButton, ""))
 	if rec.Code != http.StatusSeeOther || len(c.cookies) != 1 {
 		t.Fatalf("after waiting: status %d, %d cookies; want the pass", rec.Code, len(c.cookies))
 	}
@@ -196,14 +204,14 @@ func TestButtonFlow(t *testing.T) {
 }
 
 func TestButtonCanBeSwitchedOff(t *testing.T) {
-	s := newSite(t, func(o *Options) { o.AllowButton = false })
+	s := newSite(t, func(o *Options) { o.Default.AllowButton = false })
 	c := s.client("203.0.113.5:40000", browser)
 	v := c.challenge("/")
 	if v.AllowButton {
 		t.Error("the page offers the button although it is switched off")
 	}
 	s.advance(10 * time.Second)
-	if rec := c.do(http.MethodPost, VerifyPath, answer(v, MethodButton, "")); rec.Code != http.StatusForbidden || len(c.cookies) != 0 {
+	if rec := c.do(http.MethodPost, VerifyPath, answer(v, answerButton, "")); rec.Code != http.StatusForbidden || len(c.cookies) != 0 {
 		t.Errorf("button answer accepted although switched off: status %d", rec.Code)
 	}
 }
@@ -511,5 +519,232 @@ func TestEachChallengeIsDifferent(t *testing.T) {
 	a, b := c.challenge("/"), c.challenge("/")
 	if a.Nonce == b.Nonce || a.Token == b.Token {
 		t.Error("two challenges share a nonce or a token")
+	}
+}
+
+// answer sends the form of a challenge page back.
+func (c *client) answer(v View, fields url.Values) *httptest.ResponseRecorder {
+	form := url.Values{"token": {v.Token}, "return": {v.Return}}
+	for k, vals := range fields {
+		form[k] = vals
+	}
+	return c.do(http.MethodPost, VerifyPath, form)
+}
+
+func passed(rec *httptest.ResponseRecorder) bool { return rec.Code == http.StatusSeeOther }
+
+func TestMethodScript(t *testing.T) {
+	s := newSite(t, func(o *Options) { o.Default = Profile{Method: MethodScript, Wait: 2 * time.Second} })
+	c := s.client("192.0.2.1:1000", "Mozilla/5.0")
+	v := c.challenge("/")
+	if v.Method != MethodScript || v.WaitSeconds != 2 || v.AllowButton {
+		t.Fatalf("view = %+v", v)
+	}
+	good := url.Values{"method": {MethodScript}, "solution": {scriptAnswer(v.Nonce)}}
+	if rec := c.answer(v, good); passed(rec) || s.views[len(s.views)-1].Message != MessageTooEarly {
+		t.Fatalf("answered before the wait was over: %d", rec.Code)
+	}
+	v = c.challenge("/")
+	s.advance(3 * time.Second)
+	for name, fields := range map[string]url.Values{
+		"wrong value":           {"method": {MethodScript}, "solution": {"00000000"}},
+		"no value":              {"method": {MethodScript}},
+		"the button":            {"method": {answerButton}},
+		"proof of work instead": {"method": {MethodPoW}, "solution": {"1"}},
+		"no method":             {},
+	} {
+		if rec := c.answer(v, fields); passed(rec) {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	if rec := c.answer(v, url.Values{"method": {MethodScript}, "solution": {scriptAnswer(v.Nonce)}}); !passed(rec) {
+		t.Fatalf("the right answer after the wait: %d", rec.Code)
+	}
+	if rec := c.get("/"); rec.Code != 200 {
+		t.Errorf("with the pass: %d", rec.Code)
+	}
+}
+
+func TestMethodsWaitAndRefresh(t *testing.T) {
+	for _, method := range []string{MethodWait, MethodRefresh} {
+		s := newSite(t, func(o *Options) { o.Default = Profile{Method: method, Wait: 2 * time.Second} })
+		c := s.client("192.0.2.1:1000", "Mozilla/5.0")
+		v := c.challenge("/page?x=1")
+		if !v.AllowButton || (method == MethodRefresh) != (v.RefreshURL != "") {
+			t.Fatalf("%s: view = %+v", method, v)
+		}
+		if rec := c.answer(v, url.Values{"method": {answerButton}}); passed(rec) {
+			t.Errorf("%s: the button counted before the wait was over", method)
+		}
+		v = c.challenge("/page?x=1")
+		s.advance(2 * time.Second)
+		if method == MethodRefresh {
+			// The browser follows the page's own forward: a GET.
+			if !strings.HasPrefix(v.RefreshURL, VerifyPath+"?") {
+				t.Fatalf("refresh address = %q", v.RefreshURL)
+			}
+			rec := c.get(v.RefreshURL)
+			if !passed(rec) || rec.Header().Get("Location") != "/page?x=1" {
+				t.Fatalf("refresh: %d to %q", rec.Code, rec.Header().Get("Location"))
+			}
+		} else {
+			// A GET is only for the method refresh.
+			q := url.Values{"token": {v.Token}, "return": {v.Return}}
+			if rec := c.get(VerifyPath + "?" + q.Encode()); passed(rec) && len(rec.Result().Cookies()) > 0 {
+				t.Errorf("wait: a GET earned a pass")
+			}
+			v = c.challenge("/page?x=1")
+			s.advance(2 * time.Second)
+			if rec := c.answer(v, url.Values{"method": {answerButton}}); !passed(rec) {
+				t.Fatalf("wait: the button after the wait: %d", rec.Code)
+			}
+		}
+		if rec := c.get("/page?x=1"); rec.Code != 200 {
+			t.Errorf("%s: with the pass: %d", method, rec.Code)
+		}
+	}
+	// A GET without a task, or with a forged one, is sent home or asked again.
+	s := newSite(t, nil)
+	c := s.client("192.0.2.1:1000", "Mozilla/5.0")
+	if rec := c.get(VerifyPath); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" || len(rec.Result().Cookies()) != 0 {
+		t.Errorf("GET without a task: %d", rec.Code)
+	}
+	if rec := c.get(VerifyPath + "?token=forged&return=/x"); passed(rec) {
+		t.Errorf("GET with a forged task: %d", rec.Code)
+	}
+}
+
+func TestExtraChecks(t *testing.T) {
+	s := newSite(t, func(o *Options) {
+		o.Default = Profile{Method: MethodPoW, Difficulty: MinDifficulty, Wait: time.Second, AllowButton: true, Checks: []string{CheckCSS, CheckHeadless}}
+	})
+	const agent = "Mozilla/5.0 (X11; Linux x86_64)"
+	c := s.client("192.0.2.1:1000", agent)
+	v := c.challenge("/")
+	// Extra checks need the script, so the path without it is closed.
+	if v.AllowButton || v.StyleURL == "" || !v.Headless {
+		t.Fatalf("view = %+v", v)
+	}
+	// The style sheet holds the value; another task's value does not fit.
+	sheet := c.get(v.StyleURL)
+	m := regexp.MustCompile(`--xibalba-check:"([0-9a-f]+)"`).FindStringSubmatch(sheet.Body.String())
+	if sheet.Code != 200 || m == nil || !strings.HasPrefix(sheet.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("style sheet: %d %q", sheet.Code, sheet.Body)
+	}
+	other := c.get(CSSPath + "?n=another")
+	if strings.Contains(other.Body.String(), m[1]) {
+		t.Error("two tasks share a style value")
+	}
+	for _, bad := range []string{CSSPath, CSSPath + "?n=" + strings.Repeat("a", 100)} {
+		if rec := c.get(bad); rec.Code == 200 {
+			t.Errorf("GET %s: 200", bad)
+		}
+	}
+
+	solve := func(v View) string {
+		for n := 0; ; n++ {
+			if SolvesPoW(v.Nonce, strconv.Itoa(n), v.Difficulty) {
+				return strconv.Itoa(n)
+			}
+		}
+	}
+	full := func(v View) url.Values {
+		sheet := c.get(v.StyleURL)
+		value := regexp.MustCompile(`--xibalba-check:"([0-9a-f]+)"`).FindStringSubmatch(sheet.Body.String())[1]
+		return url.Values{"method": {MethodPoW}, "solution": {solve(v)}, "css": {value}, "probe": {"ok"}, "agent": {agent}}
+	}
+	without := func(v View, drop string, set ...string) url.Values {
+		f := full(v)
+		f.Del(drop)
+		if len(set) == 1 {
+			f.Set(drop, set[0])
+		}
+		return f
+	}
+	for name, change := range map[string]func(View) url.Values{
+		"no style value":           func(v View) url.Values { return without(v, "css") },
+		"wrong style value":        func(v View) url.Values { return without(v, "css", "abcdef") },
+		"no report":                func(v View) url.Values { return without(v, "probe") },
+		"report of automation":     func(v View) url.Values { return without(v, "probe", "webdriver") },
+		"another browser's name":   func(v View) url.Values { return without(v, "agent", "Mozilla/5.0 HeadlessChrome") },
+		"no browser name":          func(v View) url.Values { return without(v, "agent") },
+		"the button":               func(v View) url.Values { return url.Values{"method": {answerButton}} },
+		"right checks, wrong work": func(v View) url.Values { return without(v, "solution", "x") },
+	} {
+		v := c.challenge("/")
+		s.advance(2 * time.Second)
+		if rec := c.answer(v, change(v)); passed(rec) {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	if s.c.Automated() != 4 {
+		t.Errorf("automated = %d, want 4", s.c.Automated())
+	}
+	v = c.challenge("/")
+	if rec := c.answer(v, full(v)); !passed(rec) {
+		t.Fatalf("everything right: %d", rec.Code)
+	}
+	if rec := c.get("/"); rec.Code != 200 {
+		t.Errorf("with the pass: %d", rec.Code)
+	}
+}
+
+// What the form says about the kind of check counts for nothing: the kind
+// is in the signed task. And a pass counts where the same or less is asked.
+func TestAPassCountsForWhatItWasEarnedWith(t *testing.T) {
+	easy := &Profile{Method: MethodWait, Wait: time.Second}
+	script := &Profile{Method: MethodScript, Wait: time.Second}
+	hard := &Profile{Method: MethodPoW, Difficulty: 12, Wait: time.Second}
+	harder := &Profile{Method: MethodPoW, Difficulty: 14, Wait: time.Second}
+	probing := &Profile{Method: MethodScript, Wait: time.Second, Checks: []string{CheckHeadless}}
+
+	s := newSite(t, nil)
+	c := s.client("192.0.2.1:1000", "Mozilla/5.0")
+
+	// A task for the proof of work is not answered by waiting, whatever the form says.
+	s.want = hard
+	v := c.challenge("/")
+	s.advance(2 * time.Second)
+	for _, claim := range []string{answerButton, MethodWait, MethodRefresh, MethodScript} {
+		if rec := c.answer(v, url.Values{"method": {claim}, "solution": {scriptAnswer(v.Nonce)}}); passed(rec) {
+			t.Errorf("a proof-of-work task was passed as %q", claim)
+		}
+	}
+
+	// Earn the easy pass.
+	s.want = easy
+	v = c.challenge("/")
+	s.advance(2 * time.Second)
+	if rec := c.answer(v, url.Values{"method": {answerButton}}); !passed(rec) {
+		t.Fatal("the easy check was not passed")
+	}
+	holds := func(p *Profile) bool { s.want = p; return c.get("/").Code == 200 }
+	if !holds(easy) || holds(script) || holds(hard) || holds(probing) {
+		t.Errorf("the easy pass: easy %v, script %v, hard %v, probing %v", holds(easy), holds(script), holds(hard), holds(probing))
+	}
+
+	// Earn the hard one: it also counts for everything below it, but not above, and not for extra checks.
+	s.want = hard
+	v = c.challenge("/")
+	n := 0
+	for !SolvesPoW(v.Nonce, strconv.Itoa(n), v.Difficulty) {
+		n++
+	}
+	if rec := c.answer(v, url.Values{"method": {MethodPoW}, "solution": {strconv.Itoa(n)}}); !passed(rec) {
+		t.Fatal("the hard check was not passed")
+	}
+	if !holds(easy) || !holds(script) || !holds(hard) || holds(harder) || holds(probing) {
+		t.Error("the hard pass does not count as it should")
+	}
+
+	// Earn the probing one: the hard one is kept, not replaced.
+	s.want = probing
+	v = c.challenge("/")
+	s.advance(2 * time.Second)
+	if rec := c.answer(v, url.Values{"method": {MethodScript}, "solution": {scriptAnswer(v.Nonce)}, "probe": {"ok"}, "agent": {"Mozilla/5.0"}}); !passed(rec) {
+		t.Fatal("the probing check was not passed")
+	}
+	if !holds(probing) || !holds(hard) || !holds(easy) || holds(harder) {
+		t.Error("after the second check the first pass was lost, or more was gained than earned")
 	}
 }

@@ -59,6 +59,7 @@ var keys = []string{
 	"reference_label", "contact_label",
 	"imprint_label", "privacy_label",
 	"challenge_title", "challenge_text", "challenge_cookie",
+	"challenge_text_script", "challenge_text_wait", "challenge_text_refresh", "challenge_automated",
 	"challenge_working", "challenge_done",
 	"challenge_manual", "challenge_button", "challenge_needs_script",
 	"challenge_too_early", "challenge_retry",
@@ -224,6 +225,7 @@ type Renderer struct {
 	script   template.JS
 	csp      string
 	chCSP    string // policy of the challenge page: also allows its script and form
+	plainCSP string // policy of the challenge page without a script
 	fallback string // language used without a usable preference
 	contact  string
 	imprint  string
@@ -326,6 +328,8 @@ func New(opts Options) (*Renderer, error) {
 	// The challenge page may additionally run its one script and send its
 	// form back to this website. Nothing else.
 	sum = sha256.Sum256([]byte(script))
+	// The challenge page without a script (methods wait and refresh).
+	r.plainCSP = "default-src 'none'; " + styleSrc + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 	r.chCSP = "default-src 'none'; " + styleSrc + "; script-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) +
 		"'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 	return r, nil
@@ -369,11 +373,27 @@ type ChallengeView struct {
 	// Nonce and Difficulty are the proof of work for the script.
 	Nonce      string
 	Difficulty int
-	// AllowButton offers the path without JavaScript.
+	// AllowButton offers the button: the whole check for the methods
+	// wait and refresh, the path without JavaScript otherwise.
 	AllowButton bool
-	// Notice selects a note about the previous attempt: "", "too_early" or "retry".
+	// Method is the kind of check: "pow", "script", "wait" or "refresh".
+	Method string
+	// WaitSeconds is how long the visitor has to wait.
+	WaitSeconds int
+	// RefreshURL, for the method refresh, is where the page sends the
+	// browser by itself after WaitSeconds.
+	RefreshURL string
+	// StyleURL is a style sheet the page has to load (the css check).
+	StyleURL string
+	// Headless asks the script to report signs of automation.
+	Headless bool
+	// Notice selects a note about the previous attempt: "", "too_early",
+	// "retry" or "automated".
 	Notice string
 }
+
+// scripted reports whether the check is answered by the page's script.
+func (v ChallengeView) scripted() bool { return v.Method != "wait" && v.Method != "refresh" }
 
 type challengeVersion struct {
 	Lang, Name, Title, Text, Cookie string
@@ -421,6 +441,7 @@ type challengePage struct {
 	Others      []challengeVersion
 	ChallengeView
 	Notice                                     string
+	Scripted, Stopped                          bool
 	Working, Done, Manual, Button, NeedsScript string
 }
 
@@ -441,12 +462,34 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 		p.Notice = texts["challenge_too_early"]
 	case "retry":
 		p.Notice = texts["challenge_retry"]
+	case "automated":
+		p.Notice = texts["challenge_automated"]
+		// The page says why the check failed and stops there. Trying again
+		// by itself would only fail again, once a second, for ever.
+		p.Stopped = true
+	}
+	p.Scripted = v.scripted()
+	if p.Stopped {
+		p.Script = ""
+	}
+	// What the page may do, and no more: the script only where the check
+	// is answered by it, a style sheet of our own only for the css check.
+	csp := r.chCSP
+	if !v.scripted() {
+		p.Script, csp = "", r.plainCSP
+	}
+	if v.StyleURL != "" {
+		csp = strings.Replace(csp, "style-src ", "style-src 'self' ", 1)
+	}
+	textKey := "challenge_text"
+	if v.Method == "script" || v.Method == "wait" || v.Method == "refresh" {
+		textKey += "_" + v.Method
 	}
 	for _, lang := range languages {
 		t := r.locales[lang]
 		ver := challengeVersion{
 			Lang: lang, Name: t["language_name"],
-			Title: t["challenge_title"], Text: t["challenge_text"], Cookie: t["challenge_cookie"],
+			Title: t["challenge_title"], Text: t[textKey], Cookie: t["challenge_cookie"],
 		}
 		if lang == primary {
 			p.Primary = ver
@@ -460,7 +503,7 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
-	r.send(w, req, http.StatusForbidden, primary, r.chCSP, &body)
+	r.send(w, req, http.StatusForbidden, primary, csp, &body)
 }
 
 type version struct {

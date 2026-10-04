@@ -11,7 +11,10 @@ documentation only, described in our own words), and where Xibalba stands.
 | Reverse proxy in front of one website | |
 | Rules on user agent, path, host, method, headers, addresses; allow, deny, challenge, weigh; thresholds; imported rule files | Structured conditions instead of an expression language (see DECISIONS.md) |
 | Proof-of-work check, signed pass cookie valid for a week | |
-| Check without JavaScript | Xibalba: wait and button. Anubis: a page that refreshes itself. |
+| Checks without JavaScript | `wait` (wait, then a button) and `refresh` (the page sends the browser on by itself) |
+| A check that only asks the browser to run a script | Method `script`; Anubis uses the Preact library for it, Xibalba forty lines of its own |
+| Kind of check, difficulty and extra checks per rule and per threshold | A pass counts wherever the same or less is asked |
+| Extra checks: style sheet loaded, signs of an automated browser | `checks: [css, headless]`; the second is in Anubis's commercial edition |
 | Signing key that survives a restart | |
 | Verified search crawlers (name plus published addresses or DNS) | Xibalba also verifies AI crawlers and refuses rules that trust a name alone |
 | Blocking named AI crawlers | Presets by purpose |
@@ -46,15 +49,12 @@ documentation only, described in our own words), and where Xibalba stands.
 | Feature in Anubis | Planned in |
 |---|---|
 | Ready-made exceptions for uptime monitors and Google's user-triggered fetchers (git, feeds and registries exist; small browsers pass without JavaScript) | Later |
-| Different strictness of the check by score (Xibalba has one check for all) | Later |
 | Weights for browser headers that depend on HTTPS (client hints) | M5 |
 | Address file of trapped clients for fail2ban | Later |
 | Network-operator (ASN) conditions | Later |
 | Server load as a condition (stricter when the machine is busy) | Later |
 | A solved task cannot be used twice | Later: needs stored state; today a solution can be reused until it expires, by clients of the same network and browser |
-| Check that the client really loaded a style sheet | Later |
-| Memory-hard proof of work (WebAssembly) | Later |
-| Challenge method and difficulty per rule or threshold | Later |
+| Proof of work in WebAssembly (memory-hard functions) | Later: needs a WebAssembly program for the browser and its counterpart on the server, which means a build chain and a dependency |
 | Storage backends for shared state: Valkey/Redis, S3 | M9 |
 | Verdict mode for nginx, Caddy, Traefik (subrequest authentication) with allowed redirect domains | M9 |
 | rpm packages | Later |

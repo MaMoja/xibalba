@@ -397,12 +397,13 @@ challenge:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := Challenge{
+		Method: "pow", Checks: []string{},
 		Difficulty: 20, NoJavaScript: "deny", Wait: 5 * time.Second,
 		ChallengeLifetime: 10 * time.Minute, PassLifetime: 24 * time.Hour,
 		BindNetwork: false, KeyFile: "xibalba.key", CookieName: "site_pass",
 		KeyPath: filepath.Join(dir, "xibalba.key"), // relative to the configuration file
 	}
-	if cfg.Challenge != want {
+	if !reflect.DeepEqual(cfg.Challenge, want) {
 		t.Errorf("got\n%+v\nwant\n%+v", cfg.Challenge, want)
 	}
 	if _, err := os.Stat(want.KeyPath); err == nil {

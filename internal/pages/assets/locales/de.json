@@ -22,5 +22,9 @@
   "attribution_text": "Geschützt durch",
   "attribution_sponsor": "Projekt unterstützen",
   "imprint_label": "Impressum",
-  "privacy_label": "Datenschutzerklärung"
+  "privacy_label": "Datenschutzerklärung",
+  "challenge_text_script": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Ihr Browser wird dafür kurz geprüft. Das dauert nur wenige Sekunden; Sie müssen nichts tun.",
+  "challenge_text_wait": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Bitte warten Sie einige Sekunden und wählen Sie dann „Weiter“.",
+  "challenge_text_refresh": "{operator} schützt diese Seiten vor automatisierten Massenabrufen. Bitte warten Sie einige Sekunden; Sie werden dann von selbst weitergeleitet. Geschieht nichts, wählen Sie „Weiter“.",
+  "challenge_automated": "Dieser Browser meldet, dass er von einem Programm gesteuert wird; die Prüfung wurde deshalb nicht bestanden. Wenn Sie einen gewöhnlichen Browser benutzen, wenden Sie sich bitte an den Betreiber dieser Website."
 }

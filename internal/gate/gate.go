@@ -41,10 +41,12 @@ type Evaluator interface {
 // Challenger makes a client pass a check before it is let through.
 // *challenge.Challenge is the implementation.
 type Challenger interface {
-	// Passed reports whether the request carries a valid pass.
-	Passed(r *http.Request) bool
-	// Serve answers the request with the challenge page.
-	Serve(w http.ResponseWriter, r *http.Request)
+	// Passed reports whether the request carries a valid pass that was
+	// earned with a check at least as demanding as want (nil: the default).
+	Passed(r *http.Request, want *rules.ChallengeSpec) bool
+	// Serve answers the request with the challenge page for the check
+	// want (nil: the default).
+	Serve(w http.ResponseWriter, r *http.Request, want *rules.ChallengeSpec)
 	// Counts returns how many answers were accepted and rejected.
 	Counts() (solved, failed uint64)
 }
@@ -227,6 +229,12 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.opts.Limited(w, r, retryAfter)
 		return
 	}
+	// Which security check: the one the deciding rule asks for. A check
+	// that a request limit brought about is the default one.
+	var want *rules.ChallengeSpec
+	if decision.Action == rules.Challenge {
+		want = set.sources[decision.Source].Challenge
+	}
 	switch action {
 	case rules.Deny:
 		g.opts.Blocked(w, r, set.sources[decision.Source].Reference)
@@ -234,12 +242,12 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case g.opts.Challenge == nil:
 			g.opts.Next.ServeHTTP(w, r)
-		case g.opts.Challenge.Passed(r):
+		case g.opts.Challenge.Passed(r, want):
 			g.challengesPassed.Add(1)
 			g.opts.Next.ServeHTTP(w, r)
 		default:
 			g.challengesServed.Add(1)
-			g.opts.Challenge.Serve(w, r)
+			g.opts.Challenge.Serve(w, r, want)
 		}
 	default:
 		g.opts.Next.ServeHTTP(w, r)

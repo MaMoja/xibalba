@@ -4,6 +4,40 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Four kinds of security check, two extra checks, selectable per rule**
+  (owner's request). Names are our own: `pow`, `script`, `wait`, `refresh`;
+  `css`, `headless`. The kind lives in the signed task, never in the form:
+  what a client claims about the kind of check counts for nothing.
+- **A pass has a level.** It records how demanding the check was and which
+  extra checks it met, and counts wherever the same or less is asked. A new
+  pass keeps what the old one had, so a visitor who moves between rules is
+  not checked back and forth.
+- **`script` uses no library.** Anubis's counterpart loads Preact; what is
+  proven is only that a script ran, and forty lines prove that.
+- **`css` keeps no state.** The style sheet carries a keyed value for the
+  task's number, and the page's script reads it back from the applied
+  style. Anubis records on the server that the style sheet was fetched; we
+  keep nothing, and additionally learn that the style was applied.
+- **`headless` reports only hard signs** (the browser says it is automated,
+  or a known tool left marks). No guesswork about plugins, fonts or window
+  sizes: such guesses lock out real people with unusual browsers. The limit
+  is stated in the docs: a client can lie.
+- **`refresh` is offered although it fails WCAG 2.2.1**, because the owner
+  asked for it and Anubis has it. It is not the default, the docs and the
+  handbook say so, and the accessibility check asserts that this is its
+  only finding.
+- **No WebAssembly proof of work for now.** It needs a WebAssembly program
+  for the browser (a build chain: Rust or TinyGo), the same function on the
+  server (a dependency such as argon2), and a megabyte-sized download or
+  hand-written WebAssembly. That is against "one small program, no build
+  chain". Soteria is part of Anubis's commercial edition and experimental.
+  What a memory-hard function buys (it resists graphics cards) matters only
+  against an attacker who builds a solver for this one program. Reopen if
+  such solvers appear.
+- **Checks for "outside Europe" are a recipe, not a built-in group.** A
+  list of country codes in the rule is explicit and the operator decides
+  what Europe means.
+
 - **Imprint and privacy links are free, not a sponsor feature.** German
   operators are obliged to offer both from every page; that is something a
   visitor needs, not decoration (CLAUDE.md section 12). They are links, not

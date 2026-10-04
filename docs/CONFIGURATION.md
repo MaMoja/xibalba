@@ -183,9 +183,11 @@ consider; this table lists the settings.
 
 | Setting | Default | Allowed values | Meaning |
 |---|---|---|---|
-| `challenge.difficulty` | `18` | `8` to `24` | How much the visitor's browser has to calculate. Each step up doubles the work. |
+| `challenge.method` | `pow` | `pow`, `script`, `wait`, `refresh` | The kind of security check used where a rule asks for none in particular: a calculation, a small script, waiting with a button, or waiting and being sent on. See [CHALLENGE.md](CHALLENGE.md#kinds-of-check). |
+| `challenge.checks` | empty | `css`, `headless` | Extra checks on top of `pow` or `script`. They need JavaScript. See [CHALLENGE.md](CHALLENGE.md#extra-checks). |
+| `challenge.difficulty` | `18` | `8` to `24` | For `pow`: how much the visitor's browser has to calculate. Each step up doubles the work. |
 | `challenge.no_javascript` | `button` | `button`, `deny` | What visitors without JavaScript get: wait and press a button, or a note that JavaScript is needed. |
-| `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor without JavaScript has to wait before the button counts. |
+| `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor has to wait: with `wait`, `refresh` and `script`, and without JavaScript before the button counts. |
 | `challenge.challenge_lifetime` | `5m` | `30s` to `1h`, longer than `wait` | How long a client has to finish before it gets a new task. |
 | `challenge.pass_lifetime` | `168h` | `1m` to `8760h` | How long a client is not asked again after passing. Use hours: a week is `168h`. |
 | `challenge.bind_network` | `true` | `true`, `false` | Tie the pass to the visitor's network as well as their browser. |
@@ -228,6 +230,10 @@ Text names for `pages.texts`:
 | `language_name` | Label of the language switch | English |
 | `challenge_title` | Heading and window title of the security check | A quick security check |
 | `challenge_text` | First paragraph of the security check | {operator} protects these pages against automated mass requests. Your browser is solving a short calculation for this. It usually takes only a few seconds; you do not need to do anything. |
+| `challenge_text_script` | First paragraph with the method `script` | {operator} protects these pages against automated mass requests. Your browser is being checked briefly. It takes only a few seconds; you do not need to do anything. |
+| `challenge_text_wait` | First paragraph with the method `wait` | {operator} protects these pages against automated mass requests. Please wait a few seconds and then choose “Continue”. |
+| `challenge_text_refresh` | First paragraph with the method `refresh` | {operator} protects these pages against automated mass requests. Please wait a few seconds; you are then sent on automatically. If nothing happens, choose “Continue”. |
+| `challenge_automated` | Shown when the `headless` check found signs of automation | This browser reports that it is steered by a program, so the check was not passed. If you are using an ordinary browser, please get in touch with the operator of this website. |
 | `challenge_cookie` | Second paragraph of the security check | Afterwards a cookie is stored that only records that the check was passed. |
 | `challenge_working` | Status while the browser calculates | The check is running … |
 | `challenge_done` | Status when the browser has finished | Check passed. You are being forwarded. |

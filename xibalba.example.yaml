@@ -189,7 +189,22 @@ limits:
 # The security check a client has to pass when a rule or threshold says
 # "challenge". Explained in docs/CHALLENGE.md.
 challenge:
-  # How much the visitor's browser has to calculate: 8 (almost nothing) to 24
+  # The kind of check. A rule can ask for another one (see docs/CHALLENGE.md).
+  #   pow:     the browser solves a calculation. Costs a crawler computing
+  #            time for every pass. Needs JavaScript.
+  #   script:  the browser runs a small script and waits; no calculation.
+  #            Gentle on old phones. Needs JavaScript.
+  #   wait:    wait a few seconds, then press a button. No JavaScript.
+  #   refresh: wait a few seconds, then be sent on by the page itself.
+  #            No JavaScript, no button to press.
+  method: pow
+  # Extra checks on top of pow or script; both need JavaScript, so the path
+  # without JavaScript is closed while one is listed.
+  #   css:      the browser has to load and apply a style sheet.
+  #   headless: the browser reports signs that a program steers it.
+  # Example: [css, headless]
+  checks: []
+  # For pow: how much the visitor's browser has to calculate: 8 (almost nothing) to 24
   # (very much). Each step up doubles the work. 18 takes a fraction of a second
   # on a computer and about a second on a phone.
   difficulty: 18
@@ -197,7 +212,8 @@ challenge:
   # button: they wait a few seconds and press a button.
   # deny:   they are told that JavaScript is needed.
   no_javascript: button
-  # How long a visitor without JavaScript has to wait before the button counts.
+  # How long a visitor has to wait: with wait, refresh and script, and without
+  # JavaScript before the button counts.
   wait: 3s
   # How long a visitor has to finish the check before a new one is issued.
   challenge_lifetime: 5m

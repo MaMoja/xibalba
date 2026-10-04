@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 )
 
 func yes() *bool { b := true; return &b }
@@ -572,5 +573,52 @@ func BenchmarkWorstRegexRuleSet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		e.Evaluate(req)
+	}
+}
+
+func TestChallengeOnARule(t *testing.T) {
+	path := MatchSpec{Path: &StringSpec{Prefix: "/x"}}
+	hard := &ChallengeSpec{Method: "pow", Difficulty: 20, Checks: []string{"headless"}}
+	e, problems := Compile(Spec{
+		DefaultAction: Allow,
+		Thresholds:    []ThresholdSpec{{Weight: 5, Action: Challenge, Challenge: &ChallengeSpec{Method: "wait"}}, {Weight: 9, Action: Deny}},
+		Rules: []RuleSpec{
+			{Name: "hard", Match: path, Action: Challenge, Challenge: hard},
+			{Name: "plain", Match: MatchSpec{Path: &StringSpec{Prefix: "/y"}}, Action: Challenge},
+		},
+	})
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	got := map[string]*ChallengeSpec{}
+	for _, s := range e.Sources() {
+		got[s.ID] = s.Challenge
+	}
+	if got["rule:hard"] != hard || got["rule:plain"] != nil || got["threshold:5"] == nil || got["threshold:5"].Method != "wait" || got["threshold:9"] != nil || got["default"] != nil {
+		t.Errorf("sources = %+v", got)
+	}
+
+	for name, tt := range map[string]struct {
+		rule RuleSpec
+		want string
+	}{
+		"on a deny rule":        {RuleSpec{Action: Deny, Challenge: &ChallengeSpec{Method: "pow"}}, "the action is deny"},
+		"unknown method":        {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "captcha"}}, "not a kind of security check"},
+		"difficulty too high":   {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Difficulty: 99}}, "out of range"},
+		"difficulty for wait":   {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "wait", Difficulty: 12}}, "belongs to the method pow"},
+		"wait too long":         {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Wait: time.Hour}}, "out of range"},
+		"unknown check":         {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Checks: []string{"captcha"}}}, "not an extra check"},
+		"checks without script": {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "refresh", Checks: []string{"css"}}}, "run in JavaScript"},
+		"unknown mode":          {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{NoJavaScript: "maybe"}}, "not a mode"},
+	} {
+		tt.rule.Name, tt.rule.Match = "r", path
+		_, problems := Compile(Spec{DefaultAction: Allow, Rules: []RuleSpec{tt.rule}})
+		if len(problems) != 1 || !strings.Contains(problems[0].Message, tt.want) || !strings.HasPrefix(problems[0].Field, "challenge") {
+			t.Errorf("%s: %+v", name, problems)
+		}
+	}
+	_, problems = Compile(Spec{DefaultAction: Allow, Thresholds: []ThresholdSpec{{Weight: 5, Action: Deny, Challenge: &ChallengeSpec{Method: "pow"}}}})
+	if len(problems) != 1 || !strings.Contains(problems[0].Field, "thresholds[0].challenge") {
+		t.Errorf("challenge on a deny threshold: %+v", problems)
 	}
 }

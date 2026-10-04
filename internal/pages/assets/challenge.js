@@ -1,16 +1,22 @@
 (function () {
   "use strict";
-  // Solves the proof of work for the Xibalba challenge page: find a number n
-  // so that SHA-256(nonce + n) starts with the required number of zero bits,
-  // then send n back. The page works without this script; then the visitor
-  // uses the button instead.
+  // Answers the Xibalba challenge page. Method "pow": find a number n so
+  // that SHA-256(nonce + n) starts with the required number of zero bits,
+  // then send n back. Method "script": wait, then send the hash of the
+  // nonce. Either may come with extra checks: a value from a style sheet the
+  // browser has to load, and a report on whether a program steers the
+  // browser. The page works without this script if the site allows it; then
+  // the visitor uses the button instead.
   var form = document.getElementById("xibalba-form");
   var status = document.getElementById("xibalba-status");
   if (!form || !status || !window.Uint32Array || !Math.clz32) { return; }
 
   var nonce = form.getAttribute("data-nonce") || "";
   var bits = parseInt(form.getAttribute("data-difficulty"), 10);
-  if (nonce.length === 0 || nonce.length > 40 || !(bits >= 1 && bits <= 32)) { return; }
+  var method = form.getAttribute("data-method") || "pow";
+  var wait = parseInt(form.getAttribute("data-wait"), 10) || 0;
+  if (nonce.length === 0 || nonce.length > 40) { return; }
+  if (method === "pow" ? !(bits >= 1 && bits <= 32) : method !== "script") { return; }
 
   // From here on the script takes over: hide the path without JavaScript
   // and tell the visitor, including screen readers, that the check runs.
@@ -56,11 +62,54 @@
   }
 
   var n = 0;
-  function finish() {
-    form.elements.namedItem("method").value = "pow";
-    form.elements.namedItem("solution").value = String(n);
+  function field(name) { return form.elements.namedItem(name); }
+
+  // Signs that a program steers this browser. Only what an ordinary
+  // browser never shows; a careful program can hide all of it.
+  function probe() {
+    var found = [], w = window, d = document, nav = navigator, k;
+    try {
+      if (nav.webdriver === true) { found.push("webdriver"); }
+      if (/HeadlessChrome|PhantomJS|Electron\/.*Headless/.test(nav.userAgent)) { found.push("agent"); }
+      if (w.callPhantom || w._phantom || w.__nightmare || w.domAutomation || w.domAutomationController) { found.push("tool"); }
+      if (d.__selenium_unwrapped || d.__webdriver_evaluate || d.__driver_evaluate || d.documentElement.getAttribute("webdriver") !== null) { found.push("selenium"); }
+      for (k in d) { if (/^\$cdc_|^\$chrome_asyncScriptInfo/.test(k)) { found.push("driver"); break; } }
+    } catch (e) { found.push("error"); }
+    return found.length ? found.join(",") : "ok";
+  }
+
+  // The value the style sheet set, once the browser has applied it.
+  function styleValue() {
+    var v = "";
+    try { v = window.getComputedStyle(document.documentElement).getPropertyValue("--xibalba-check"); } catch (e) {}
+    return String(v || "").replace(/["'\s]/g, "");
+  }
+
+  var tries = 0;
+  function send(solution) {
+    if (form.getAttribute("data-css") && !styleValue() && tries++ < 50) {
+      window.setTimeout(function () { send(solution); }, 100); // the style sheet is still on its way
+      return;
+    }
+    field("method").value = method;
+    field("solution").value = solution;
+    if (form.getAttribute("data-css")) { field("css").value = styleValue(); }
+    if (form.getAttribute("data-probe")) {
+      field("probe").value = probe();
+      field("agent").value = navigator.userAgent;
+    }
     status.textContent = form.getAttribute("data-done") || "";
     form.submit();
+  }
+  function finish() { send(String(n)); }
+
+  if (method === "script") {
+    // Nothing to calculate: running this, and waiting, is the check.
+    window.setTimeout(function () {
+      var word = firstWord(0).toString(16);
+      send("00000000".slice(word.length) + word);
+    }, wait * 1000 + 200);
+    return;
   }
   // Work in short slices so the page stays responsive on slow devices.
   function run() {

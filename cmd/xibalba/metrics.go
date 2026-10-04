@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/MaMoja/xibalba/internal/buildinfo"
+	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/crawlers"
 	"github.com/MaMoja/xibalba/internal/gate"
 	"github.com/MaMoja/xibalba/internal/health"
@@ -21,6 +22,7 @@ type parts struct {
 	crawlers  *crawlers.Registry
 	limiter   *limit.Limiter
 	snare     *trap.Trap
+	check     *challenge.Challenge
 }
 
 // collect hands every part's numbers to the metrics registry. The numbers
@@ -56,6 +58,10 @@ func collect(m *metrics.Registry, p parts) {
 		}{{"served", s.Challenge.Served}, {"passed", s.Challenge.Passed}, {"solved", s.Challenge.Solved}, {"failed", s.Challenge.Failed}} {
 			w.Counter("xibalba_challenge_total",
 				"The security check: pages served, requests let through on a pass, answers solved and failed.", float64(c.n), "result", c.result)
+		}
+		if p.check != nil {
+			w.Counter("xibalba_challenge_total",
+				"The security check: pages served, requests let through on a pass, answers solved and failed.", float64(p.check.Automated()), "result", "automated")
 		}
 		dry := 0.0
 		if s.DryRun {
@@ -114,6 +120,9 @@ func totals(p parts) map[string]uint64 {
 	out["failures"] = s.Failures
 	out["challenge|served"], out["challenge|passed"] = s.Challenge.Served, s.Challenge.Passed
 	out["challenge|solved"], out["challenge|failed"] = s.Challenge.Solved, s.Challenge.Failed
+	if p.check != nil {
+		out["challenge|automated"] = p.check.Automated()
+	}
 	for _, c := range p.crawlers.Reports() {
 		out["crawler|"+c.Name+"|verified"] = c.Requests.Verified
 		out["crawler|"+c.Name+"|impostor"] = c.Requests.Unverified

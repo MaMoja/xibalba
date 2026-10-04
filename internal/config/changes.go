@@ -12,6 +12,7 @@ import (
 	"github.com/goccy/go-yaml/parser"
 
 	"github.com/MaMoja/xibalba/data"
+	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/changes"
 	"github.com/MaMoja/xibalba/internal/rules"
 )
@@ -242,7 +243,51 @@ func (c *Config) compile(state changes.State, now time.Time) (*rules.Engine, []s
 	if len(out) > 0 {
 		return nil, out
 	}
+	// A rule may describe its security check in part and take the rest
+	// from the default. What comes out together must make sense.
+	for _, source := range engine.Sources() {
+		if source.Challenge == nil {
+			continue
+		}
+		p := c.Challenge.Profile(source.Challenge)
+		switch {
+		case len(p.Checks) > 0 && p.Method != challenge.MethodPoW && p.Method != challenge.MethodScript:
+			out = append(out, fmt.Sprintf("%s: the security check has extra checks (%s), which run in JavaScript, and the method %s, which does without it (give the rule method pow or script, or checks: [])",
+				source.ID, strings.Join(p.Checks, ", "), p.Method))
+		case source.Challenge.Difficulty != 0 && p.Method != challenge.MethodPoW:
+			out = append(out, fmt.Sprintf("%s: difficulty belongs to the method pow, but the security check uses %s (give the rule method: pow, or remove difficulty)", source.ID, p.Method))
+		}
+	}
+	if len(out) > 0 {
+		return nil, out
+	}
 	return engine, nil
+}
+
+// Profile returns the security check a rule asks for: what the rule
+// describes, and the default for everything it leaves out. Nil is the default.
+func (c Challenge) Profile(spec *rules.ChallengeSpec) challenge.Profile {
+	p := challenge.Profile{Method: c.Method, Difficulty: c.Difficulty, Wait: c.Wait,
+		Checks: c.Checks, AllowButton: c.NoJavaScript == "button"}
+	if spec == nil {
+		return p
+	}
+	if spec.Method != "" {
+		p.Method = spec.Method
+	}
+	if spec.Difficulty != 0 {
+		p.Difficulty = spec.Difficulty
+	}
+	if spec.Wait != 0 {
+		p.Wait = spec.Wait
+	}
+	if spec.Checks != nil {
+		p.Checks = spec.Checks
+	}
+	if spec.NoJavaScript != "" {
+		p.AllowButton = spec.NoJavaScript == "button"
+	}
+	return p
 }
 
 // checkChanges reads the changes file and makes sure the configuration with
@@ -280,11 +325,12 @@ func (c *Config) checkChanges(dir string, add func(path, message, hint string)) 
 		add("admin.changes_file", fmt.Sprintf("%q holds a change that is not valid: %v", a.ChangesFile, err), hint)
 		return
 	}
-	if state.Empty() {
-		return
-	}
 	if _, problems := c.Compile(state, time.Now()); len(problems) > 0 {
-		add("admin.changes_file", fmt.Sprintf("with the changes in %q the rule set does not work: %s", a.ChangesFile, problems[0]), hint)
+		if state.Empty() {
+			add("rules", problems[0], "see docs/CHALLENGE.md for what a rule may ask of the security check")
+		} else {
+			add("admin.changes_file", fmt.Sprintf("with the changes in %q the rule set does not work: %s", a.ChangesFile, problems[0]), hint)
+		}
 		return
 	}
 	a.Changes = state

@@ -327,10 +327,16 @@ func TestConcurrentRequests(t *testing.T) {
 }
 
 // fakeChallenger passes requests that carry the header X-Pass.
-type fakeChallenger struct{ served int }
+type fakeChallenger struct {
+	served int
+	asked  []*rules.ChallengeSpec // which check each request was asked for
+}
 
-func (f *fakeChallenger) Passed(r *http.Request) bool { return r.Header.Get("X-Pass") == "valid" }
-func (f *fakeChallenger) Serve(w http.ResponseWriter, _ *http.Request) {
+func (f *fakeChallenger) Passed(r *http.Request, want *rules.ChallengeSpec) bool {
+	f.asked = append(f.asked, want)
+	return r.Header.Get("X-Pass") == "valid"
+}
+func (f *fakeChallenger) Serve(w http.ResponseWriter, _ *http.Request, want *rules.ChallengeSpec) {
 	f.served++
 	w.WriteHeader(http.StatusForbidden)
 	_, _ = io.WriteString(w, "challenge page")

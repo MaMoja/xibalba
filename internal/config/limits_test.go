@@ -2,10 +2,12 @@ package config
 
 import (
 	"github.com/MaMoja/xibalba/internal/admin"
+	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/changes"
 	"github.com/MaMoja/xibalba/internal/rules"
 	"net/netip"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -378,6 +380,69 @@ func TestRuleTextThatIsNotPlain(t *testing.T) {
 		}
 		if took := time.Since(start); took > 2*time.Second {
 			t.Errorf("%s took %s", name, took)
+		}
+	}
+}
+
+func TestSecurityCheckPerRule(t *testing.T) {
+	// The rule engine and the security check name the same things.
+	if !reflect.DeepEqual(rules.ChallengeMethods, challenge.Methods) || !reflect.DeepEqual(rules.ChallengeChecks, challenge.Checks) ||
+		rules.MinChallengeDifficulty != challenge.MinDifficulty || rules.MaxChallengeDifficulty != challenge.MaxDifficulty {
+		t.Error("internal/rules and internal/challenge disagree about methods, checks or difficulty")
+	}
+
+	text := base + `challenge:
+  method: script
+  wait: 2s
+rules:
+  thresholds:
+    - {weight: 10, action: challenge, challenge: {method: pow, difficulty: 22}}
+  list:
+    - name: abroad
+      match: {not: {ip: ["192.0.2.0/24"]}}
+      action: challenge
+      challenge:
+        method: pow
+        difficulty: 20
+        checks: [headless]
+        no_javascript: deny
+    - name: gentle
+      match: {path: {prefix: "/a"}}
+      action: challenge
+      challenge: {wait: 5s}
+`
+	cfg, err := Parse("xibalba.yaml", []byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, problems := cfg.Compile(changes.State{}, time.Now())
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	got := map[string]challenge.Profile{}
+	for _, s := range engine.Sources() {
+		got[s.ID] = cfg.Challenge.Profile(s.Challenge)
+	}
+	want := map[string]challenge.Profile{
+		"rule:abroad":  {Method: "pow", Difficulty: 20, Wait: 2 * time.Second, Checks: []string{"headless"}, AllowButton: false},
+		"rule:gentle":  {Method: "script", Difficulty: 18, Wait: 5 * time.Second, Checks: []string{}, AllowButton: true},
+		"threshold:10": {Method: "pow", Difficulty: 22, Wait: 2 * time.Second, Checks: []string{}, AllowButton: true},
+		"default":      {Method: "script", Difficulty: 18, Wait: 2 * time.Second, Checks: []string{}, AllowButton: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("profiles =\n%+v\nwant\n%+v", got, want)
+	}
+
+	for name, tt := range map[string]struct{ yaml, want string }{
+		"unknown default method":             {"challenge:\n  method: captcha\n", "challenge.method"},
+		"unknown default check":              {"challenge:\n  checks: [captcha]\n", "challenge.checks[0]"},
+		"checks with wait":                   {"challenge:\n  method: wait\n  checks: [css]\n", "challenge.checks"},
+		"rule adds checks to wait":           {"challenge:\n  method: wait\nrules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: challenge\n      challenge: {checks: [css]}\n", "run in JavaScript"},
+		"rule's difficulty, default not pow": {"challenge:\n  method: script\nrules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: challenge\n      challenge: {difficulty: 20}\n", "belongs to the method pow"},
+		"challenge on an allow rule":         {"rules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: allow\n      challenge: {method: pow}\n", "the action is allow"},
+	} {
+		if _, err := Parse("xibalba.yaml", []byte(base+tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

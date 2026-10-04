@@ -68,6 +68,13 @@ type Claims struct {
 	Nonce string
 	// Difficulty is the amount of work a challenge asks for.
 	Difficulty int
+	// Method names the kind of check a challenge asks for.
+	Method string
+	// Checks holds the extra checks a challenge asks for, or a pass has
+	// met, one bit each.
+	Checks uint8
+	// Level says how demanding the check was that a pass was earned with.
+	Level int
 }
 
 // wire is the encoded form of Claims. Times are Unix seconds.
@@ -77,6 +84,9 @@ type wire struct {
 	Binding    string `json:"b,omitempty"`
 	Nonce      string `json:"n,omitempty"`
 	Difficulty int    `json:"d,omitempty"`
+	Method     string `json:"m,omitempty"`
+	Checks     uint8  `json:"c,omitempty"`
+	Level      int    `json:"l,omitempty"`
 }
 
 // Signer signs and verifies tokens with one key. It is safe for concurrent use.
@@ -101,9 +111,19 @@ func NewSigner(key []byte) (*Signer, error) {
 	}, nil
 }
 
+// MAC returns a short value only this Signer can compute for data, for a
+// purpose of its own. It is for values handed to a client that the client
+// must show again, where a whole token would be too much.
+func (s *Signer) MAC(purpose, data string) string {
+	mac := hmac.New(sha256.New, s.bindKey)
+	mac.Write([]byte("mac/" + purpose + "\x00" + data))
+	return hex.EncodeToString(mac.Sum(nil)[:12])
+}
+
 // Sign returns a token of the given kind stating c.
 func (s *Signer) Sign(kind Kind, c Claims) string {
-	w := wire{Expires: c.Expires.Unix(), Binding: c.Binding, Nonce: c.Nonce, Difficulty: c.Difficulty}
+	w := wire{Expires: c.Expires.Unix(), Binding: c.Binding, Nonce: c.Nonce, Difficulty: c.Difficulty,
+		Method: c.Method, Checks: c.Checks, Level: c.Level}
 	if !c.NotBefore.IsZero() {
 		w.NotBefore = c.NotBefore.Unix()
 	}
@@ -139,7 +159,8 @@ func (s *Signer) Verify(kind Kind, tok string, now time.Time) (Claims, error) {
 	if err := json.Unmarshal(payload, &w); err != nil {
 		return Claims{}, ErrMalformed
 	}
-	c := Claims{Expires: time.Unix(w.Expires, 0), Binding: w.Binding, Nonce: w.Nonce, Difficulty: w.Difficulty}
+	c := Claims{Expires: time.Unix(w.Expires, 0), Binding: w.Binding, Nonce: w.Nonce, Difficulty: w.Difficulty,
+		Method: w.Method, Checks: w.Checks, Level: w.Level}
 	if w.NotBefore != 0 {
 		c.NotBefore = time.Unix(w.NotBefore, 0)
 	}

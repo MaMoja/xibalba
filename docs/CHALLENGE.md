@@ -86,14 +86,160 @@ All settings are in the `challenge` section of the configuration file.
 
 | Setting | Default | Allowed values | Meaning |
 |---|---|---|---|
-| `challenge.difficulty` | `18` | `8` to `24` | Leading zero bits the hash must have. Each step up doubles the browser's work. |
+| `challenge.method` | `pow` | `pow`, `script`, `wait`, `refresh` | The kind of check; see [Kinds of check](#kinds-of-check). |
+| `challenge.checks` | none | `css`, `headless` | Extra checks on top of `pow` or `script`; see [Extra checks](#extra-checks). |
+| `challenge.difficulty` | `18` | `8` to `24` | For `pow`: leading zero bits the hash must have. Each step up doubles the browser's work. |
 | `challenge.no_javascript` | `button` | `button`, `deny` | What visitors without JavaScript get: wait and press a button, or a note that JavaScript is needed. |
-| `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor without JavaScript has to wait before the button counts. |
+| `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor has to wait: the whole check with `wait` and `refresh`, before the script answers with `script`, and before the button counts for a visitor without JavaScript. |
 | `challenge.challenge_lifetime` | `5m` | `30s` to `1h`, longer than `wait` | How long a client has to finish. After that it simply gets a new task. |
 | `challenge.pass_lifetime` | `168h` | `1m` to `8760h` | How long a client is not asked again after passing. `168h` is one week. Durations use `s`, `m` and `h`; there is no unit for days. |
 | `challenge.bind_network` | `true` | `true`, `false` | Tie the pass to the client's network as well as its user agent. |
 | `challenge.key_file` | empty | Path, relative to the configuration file | Where the signing key is kept. See below. |
 | `challenge.cookie_name` | `xibalba-pass` | Letters, digits, `-`, `_`; up to 64 characters | Name of the pass cookie. |
+
+These settings describe the **default check**. A rule or threshold can ask
+for a different one; see [A check of its own for a rule](#a-check-of-its-own-for-a-rule).
+
+## Kinds of check
+
+| `method` | What the visitor's browser does | Needs JavaScript | What it costs a crawler | Use it for |
+|---|---|---|---|---|
+| `pow` | Solves a calculation; `difficulty` says how much | Yes (with `no_javascript: button`, visitors without it wait and press a button) | Computing time for every pass | The default. Mass fetching becomes expensive. |
+| `script` | Runs a small script and waits `wait`; nothing is calculated | Yes (same path without it as `pow`) | It has to run a real browser, or copy what the script does | Old phones and slow machines; requests you only suspect a little |
+| `wait` | Nothing. The visitor waits `wait` and presses a button | No | Almost nothing: a program can wait and send the form | Places where JavaScript must not be required, as a brake rather than a barrier |
+| `refresh` | Nothing. After `wait` the page sends the browser on by itself | No | Almost nothing | As `wait`, without the click |
+
+Every kind ends the same way: a signed pass in a cookie, and the visitor is
+on the page that was asked for.
+
+**`refresh` and accessibility.** The page of `refresh` moves the visitor on
+after a time the visitor cannot extend. WCAG 2.1 (success criterion 2.2.1)
+asks not to do that, and the project's accessibility check reports exactly
+this one finding for it. The page is one short paragraph and also has a
+button, but if your website has to meet BITV or WCAG, use `wait`, `script`
+or `pow` instead.
+
+## Extra checks
+
+Extra checks are added to `pow` or `script` with `checks`. They run in the
+page's script, so the path without JavaScript is closed for a check that
+lists one.
+
+| Check | What it does | What it catches | What it does not |
+|---|---|---|---|
+| `css` | The page links a style sheet of Xibalba's own that carries a value belonging to this one task. The script reads the value back from the page once the browser has applied the style sheet, and sends it along. | Programs that fetch the page and solve the task without behaving like a browser: they do not load style sheets | A program that fetches the style sheet on purpose |
+| `headless` | The script looks for signs that a program steers the browser (the browser says so itself, or a known automation tool has left its marks), and reports the browser's own idea of its name, which must be the name the request carries. | Automated browsers used without care, which is most of them | A browser that was prepared to hide these signs. The report comes from the client, and a client can lie. |
+
+A browser that reports automation gets a page that says so and stops there;
+it does not try again by itself. The number of such answers is in the
+counts as `challenge|automated` and in the metrics as
+`xibalba_challenge_total{result="automated"}`.
+
+Neither check stores anything, and neither loads anything from another host.
+
+## A check of its own for a rule
+
+Every rule and threshold with `action: challenge` can describe the check it
+asks for. What it leaves out is taken from the default check.
+
+```yaml
+rules:
+  thresholds:
+    - weight: 10
+      action: challenge
+      challenge: {method: pow, difficulty: 22}
+  list:
+    - name: gentle-for-the-archive
+      match:
+        path: {prefix: "/archiv"}
+      action: challenge
+      challenge:
+        method: script
+        wait: 2s
+    - name: strict-for-search
+      match:
+        path: {prefix: "/suche"}
+      action: challenge
+      challenge:
+        method: pow
+        difficulty: 20
+        checks: [css, headless]
+```
+
+| Key under `challenge` | Meaning |
+|---|---|
+| `method` | `pow`, `script`, `wait` or `refresh` |
+| `difficulty` | For `pow`: 8 to 24 |
+| `wait` | `1s` to `1m` |
+| `checks` | `[css]`, `[headless]`, both, or `[]` for none |
+| `no_javascript` | `button` or `deny`, for `pow` and `script` |
+
+**What a pass counts for.** A pass remembers how demanding the check was
+that earned it. It counts wherever the same or less is asked: a pass from
+`pow` with difficulty 20 also opens what asks for `pow` 18, `script`,
+`wait` or `refresh`, but not `pow` 22, and not a check with `css` or
+`headless` unless the pass was earned with it. A visitor who meets a harder
+check later solves it once and keeps what was earned before. A check that a
+request limit brings about is always the default one.
+
+### Recipes
+
+**A harder check for everyone outside Europe.** Needs a country database
+([Countries](COUNTRIES.md)); the list is the EU with Iceland, Liechtenstein,
+Norway, Switzerland and the United Kingdom, change it to what you mean by
+Europe.
+
+```yaml
+countries:
+  database: countries.mmdb
+rules:
+  list:
+    - name: check-outside-europe
+      match:
+        not:
+          country: ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO", "CH", "GB"]
+      action: challenge
+      challenge:
+        method: pow
+        difficulty: 20
+        checks: [headless]
+```
+
+While no country database is loaded, a rule with a country condition is
+skipped. An address the database does not know is in no country, and so
+"outside Europe".
+
+**A check for certain networks.**
+
+```yaml
+rules:
+  list:
+    - name: check-hosting-networks
+      match:
+        ip: ["198.51.100.0/24", "2001:db8:5::/48"]
+      action: challenge
+      challenge: {method: pow, difficulty: 22}
+```
+
+**No check for your own network, a gentle one for everyone else.** Put the
+allow rule first; the first rule that decides wins.
+
+```yaml
+rules:
+  default_action: challenge
+  list:
+    - name: allow-office
+      match:
+        ip: ["192.0.2.0/24"]
+      action: allow
+challenge:
+  method: script
+```
+
+**VPNs and hosting providers.** Xibalba cannot tell by itself whether an
+address belongs to a VPN: there is no free, authoritative list. Today you
+list the networks you know with `ip`, as above. Conditions by network
+operator (AS number) and address lists read from files are **planned**.
 
 ### Difficulty
 

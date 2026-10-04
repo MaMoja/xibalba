@@ -167,6 +167,31 @@ func askHealth(listen string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
+// checker lets the gate ask for the security check a rule describes: it
+// fills in the default for whatever the rule leaves out.
+type checker struct {
+	check    *challenge.Challenge
+	settings config.Challenge
+}
+
+func (c checker) profile(want *rules.ChallengeSpec) *challenge.Profile {
+	if want == nil {
+		return nil
+	}
+	p := c.settings.Profile(want)
+	return &p
+}
+
+func (c checker) Passed(r *http.Request, want *rules.ChallengeSpec) bool {
+	return c.check.Passed(r, c.profile(want))
+}
+
+func (c checker) Serve(w http.ResponseWriter, r *http.Request, want *rules.ChallengeSpec) {
+	c.check.Serve(w, r, c.profile(want))
+}
+
+func (c checker) Counts() (solved, failed uint64) { return c.check.Counts() }
+
 // adminHosts are the names the web interface answers to: those the site
 // owner listed, and the host it listens on if that is a specific one.
 func adminHosts(a config.Admin) []string {
@@ -298,9 +323,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	check := challenge.New(challenge.Options{
 		Signer:            signer,
-		Difficulty:        cfg.Challenge.Difficulty,
-		AllowButton:       cfg.Challenge.NoJavaScript == "button",
-		Wait:              cfg.Challenge.Wait,
+		Default:           cfg.Challenge.Profile(nil),
 		ChallengeLifetime: cfg.Challenge.ChallengeLifetime,
 		PassLifetime:      cfg.Challenge.PassLifetime,
 		BindNetwork:       cfg.Challenge.BindNetwork,
@@ -309,6 +332,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			page.Challenge(w, r, pages.ChallengeView{
 				Action: v.Action, Token: v.Token, Return: v.Return,
 				Nonce: v.Nonce, Difficulty: v.Difficulty,
+				Method: v.Method, WaitSeconds: v.WaitSeconds, RefreshURL: v.RefreshURL,
+				StyleURL: v.StyleURL, Headless: v.Headless,
 				AllowButton: v.AllowButton, Notice: string(v.Message),
 			})
 		},
@@ -405,7 +430,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Limited:     page.Limited,
 		DryRun:      cfg.Rules.DryRun,
 		FailOpen:    cfg.Rules.OnError == "allow",
-		Challenge:   check,
+		Challenge:   checker{check: check, settings: cfg.Challenge},
 		Next:        check.StripPass(upstream), // the website never sees the pass cookie
 		Blocked:     page.Blocked,
 		Unavailable: page.Unavailable,
@@ -416,7 +441,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// The same numbers for a monitoring system.
 	numbers := metrics.New()
-	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare}
+	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare, check: check}
 	collect(numbers, sources)
 	opsMux.Handle("GET /metrics", numbers.Handler())
 

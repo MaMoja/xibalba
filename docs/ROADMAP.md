@@ -129,6 +129,15 @@ decision (2026-10-03): all of this comes before statistics.
 - [ ] Privacy documentation (what is stored, for how long)
 - [x] Releases without Go on the target machine: archives and Debian packages for amd64, arm64 and armhf, a container image for the same three, checksums; built by a workflow that installs the package and starts the service under systemd before anything is published. Two builds of one commit give identical files.
 
+## M9: Kinds of security check (owner's request 2026-10-04)
+- [x] Methods `script`, `wait`, `refresh` besides `pow`
+- [x] Extra checks `css` and `headless`
+- [x] Kind of check, difficulty, wait and extra checks per rule and per threshold; a pass counts for what it was earned with
+- [x] Tried in a real browser: every method, both extra checks (the automated test browser is caught by `headless`), accessibility
+- [ ] Security review by a second agent
+- [ ] Conditions by network operator (AS number) and address lists from files, for VPN and hosting networks
+- [ ] Proof of work in WebAssembly: decided against for now, see DECISIONS.md
+
 ## Later
 - Challenge method and difficulty selectable per rule or threshold
 - Counts per provider (AS number) besides counts per network; needs a second database file

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -81,6 +82,15 @@ func Compile(spec Spec) (*Engine, []Problem) {
 			c.add("action", fmt.Sprintf("%q is not an action", rs.Action), "use one of: allow, deny, challenge, weigh")
 		}
 
+		if rs.Challenge != nil {
+			if rs.Action != Challenge {
+				c.add("challenge", fmt.Sprintf("a security check is described, but the action is %s", rs.Action),
+					"remove challenge, or change the action to challenge")
+			} else {
+				c.challenge(rs.Challenge, func(field, message, hint string) { c.add("challenge."+field, message, hint) })
+			}
+		}
+
 		// A rule that lets requests through, or makes them look better.
 		c.favours = rs.Action == Allow || (rs.Action == Weigh && rs.Weight < 0)
 		c.negated = false
@@ -100,6 +110,7 @@ func Compile(spec Spec) (*Engine, []Problem) {
 
 		if decides(rs.Action) {
 			rule.source = e.addSource("rule:"+rs.Name, rs.Action)
+			e.sources[rule.source].Challenge = rs.Challenge
 			e.sources[rule.source].ExemptFromLimits = rs.ExemptFromLimits && rs.Action == Allow
 		}
 		e.rules = append(e.rules, rule)
@@ -120,6 +131,15 @@ func Compile(spec Spec) (*Engine, []Problem) {
 			ok = false
 		}
 		weights[ts.Weight] = i
+		if ts.Challenge != nil {
+			report := func(sub, message, hint string) { c.global(field+".challenge."+sub, message, hint) }
+			if ts.Action != Challenge {
+				c.global(field+".challenge", fmt.Sprintf("a security check is described, but the action is %s", ts.Action),
+					"remove challenge, or change the action to challenge")
+			} else {
+				c.challenge(ts.Challenge, report)
+			}
+		}
 		if ts.Action != Challenge && ts.Action != Deny {
 			c.global(field+".action", fmt.Sprintf("%q is not an action a threshold can take", ts.Action),
 				"use challenge or deny")
@@ -128,7 +148,7 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		if ok {
 			e.thresholds = append(e.thresholds, threshold{
 				weight: ts.Weight,
-				source: e.addSource("threshold:"+strconv.Itoa(ts.Weight), ts.Action),
+				source: e.addThreshold(ts),
 			})
 		}
 	}
@@ -147,6 +167,55 @@ func Compile(spec Spec) (*Engine, []Problem) {
 }
 
 func decides(a Action) bool { return a == Allow || a == Deny || a == Challenge }
+
+func (e *Engine) addThreshold(ts ThresholdSpec) int {
+	source := e.addSource("threshold:"+strconv.Itoa(ts.Weight), ts.Action)
+	if ts.Action == Challenge {
+		e.sources[source].Challenge = ts.Challenge
+	}
+	return source
+}
+
+// challenge checks the description of a security check. What is left out
+// is filled in from the default later, so only what is written is checked.
+func (c *compiler) challenge(spec *ChallengeSpec, add func(field, message, hint string)) {
+	known := func(list []string, v string) bool {
+		for _, item := range list {
+			if item == v {
+				return true
+			}
+		}
+		return false
+	}
+	if spec.Method != "" && !known(ChallengeMethods, spec.Method) {
+		add("method", fmt.Sprintf("%q is not a kind of security check", spec.Method), "use one of: "+strings.Join(ChallengeMethods, ", "))
+	}
+	if spec.Difficulty != 0 && (spec.Difficulty < MinChallengeDifficulty || spec.Difficulty > MaxChallengeDifficulty) {
+		add("difficulty", fmt.Sprintf("%d is out of range", spec.Difficulty),
+			fmt.Sprintf("use a value from %d to %d; each step doubles the work", MinChallengeDifficulty, MaxChallengeDifficulty))
+	}
+	if spec.Difficulty != 0 && spec.Method != "" && spec.Method != "pow" {
+		add("difficulty", fmt.Sprintf("difficulty belongs to the method pow, but the method is %s", spec.Method), "remove difficulty, or use method: pow")
+	}
+	if spec.Wait != 0 && (spec.Wait < time.Second || spec.Wait > MaxChallengeWait) {
+		add("wait", fmt.Sprintf("%s is out of range", spec.Wait), `use a duration from "1s" to "1m"`)
+	}
+	if len(spec.Checks) > len(ChallengeChecks) {
+		add("checks", "the list names a check more than once", "name each check once")
+	}
+	for i, check := range spec.Checks {
+		if !known(ChallengeChecks, check) {
+			add(fmt.Sprintf("checks[%d]", i), fmt.Sprintf("%q is not an extra check", check), "use: "+strings.Join(ChallengeChecks, ", "))
+		}
+	}
+	if len(spec.Checks) > 0 && (spec.Method == "wait" || spec.Method == "refresh") {
+		add("checks", fmt.Sprintf("extra checks run in JavaScript, and the method %s does without it", spec.Method),
+			"use method pow or script, or remove checks")
+	}
+	if spec.NoJavaScript != "" && spec.NoJavaScript != "button" && spec.NoJavaScript != "deny" {
+		add("no_javascript", fmt.Sprintf("%q is not a mode", spec.NoJavaScript), "use button or deny")
+	}
+}
 
 func (e *Engine) addSource(id string, action Action) int {
 	sum := sha256.Sum256([]byte(id))

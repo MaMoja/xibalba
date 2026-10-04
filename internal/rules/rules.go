@@ -33,6 +33,7 @@ package rules
 import (
 	"net/http"
 	"net/netip"
+	"time"
 )
 
 // Action is what a rule, a threshold or the default does to a request.
@@ -115,7 +116,40 @@ type ThresholdSpec struct {
 	Weight int `yaml:"weight"`
 	// Action is challenge or deny.
 	Action Action `yaml:"action"`
+	// Challenge says which security check a challenge threshold asks for.
+	// Nil: the one configured as the default.
+	Challenge *ChallengeSpec `yaml:"challenge"`
 }
+
+// ChallengeSpec says which security check a rule or threshold asks for.
+// Whatever is left out is taken from the default check of the configuration.
+type ChallengeSpec struct {
+	// Method is the kind of check: pow, script, wait or refresh.
+	Method string `yaml:"method"`
+	// Difficulty is the proof of work in leading zero bits (method pow).
+	Difficulty int `yaml:"difficulty"`
+	// Wait is how long the client has to wait.
+	Wait time.Duration `yaml:"wait"`
+	// Checks are extra checks: css, headless. Nil: those of the default;
+	// an empty list: none.
+	Checks []string `yaml:"checks"`
+	// NoJavaScript says what a visitor without JavaScript gets with pow
+	// and script: "button" or "deny".
+	NoJavaScript string `yaml:"no_javascript"`
+}
+
+// What a ChallengeSpec may hold. The numbers are those of the security
+// check itself (internal/challenge); a test keeps the two in step.
+var (
+	ChallengeMethods = []string{"pow", "script", "wait", "refresh"}
+	ChallengeChecks  = []string{"css", "headless"}
+)
+
+const (
+	MinChallengeDifficulty = 8
+	MaxChallengeDifficulty = 24
+	MaxChallengeWait       = time.Minute
+)
 
 // RuleSpec is one rule.
 type RuleSpec struct {
@@ -129,6 +163,9 @@ type RuleSpec struct {
 	// Weight is added to the score when Action is weigh. It may be negative.
 	// It must be left out for every other action.
 	Weight int `yaml:"weight"`
+	// Challenge, on a challenge rule, says which security check the rule
+	// asks for. Nil: the one configured as the default.
+	Challenge *ChallengeSpec `yaml:"challenge"`
 	// ExemptFromLimits, on an allow rule, says that requests the rule lets
 	// through are not counted by the request limits. Use it only where the
 	// client cannot choose to match: an address, a verified crawler.
@@ -294,6 +331,9 @@ type Source struct {
 	ExemptFromLimits bool
 	// Action is what this source decides.
 	Action Action
+	// Challenge is the security check this source asks for, if its action
+	// is challenge and it asks for a particular one.
+	Challenge *ChallengeSpec
 	// Reference is a short, stable code for this source. It is shown to a
 	// blocked visitor so the site owner can find the responsible rule
 	// without Xibalba having to record who was blocked.

@@ -198,7 +198,80 @@ async def run(base, axe_source, shots):
             await page.screenshot(path=os.path.join(shots, "blocked.png"))
         await ctx.close()
 
-        # 5. Automated accessibility check (WCAG 2.1 A and AA, plus best practices).
+        # 5. The other kinds of check, each asked for by a rule of its own.
+        async def visit(path, javascript=True, lang="en"):
+            ctx = await browser.new_context(locale=lang, java_script_enabled=javascript, viewport={"width": 900, "height": 560},
+                                            extra_http_headers={"Accept-Language": lang})
+            page = await ctx.new_page()
+            seen = {"problems": [], "hosts": set(), "styles": 0}
+            page.on("pageerror", lambda e: seen["problems"].append(str(e)))
+            page.on("console", lambda m: seen["problems"].append(m.text) if "Content Security Policy" in m.text or "Refused" in m.text else None)
+            page.on("request", lambda r: (seen["hosts"].add(re.sub(r"^(https?://[^/]+).*", r"\1", r.url)),
+                                          seen.__setitem__("styles", seen["styles"] + ("/.xibalba/check.css" in r.url))))
+            response = await page.goto(base + path)
+            return ctx, page, seen, response
+
+        async def lands(page, timeout=15000):
+            try:
+                await page.wait_for_selector("text=My website", timeout=timeout)
+                return True
+            except Exception:
+                return False
+
+        ctx, page, seen, response = await visit("/m/script.html")
+        started = time.time()
+        ok = await lands(page)
+        check(f"script: the browser is checked and sent on by itself ({time.time() - started:.1f}s, wait is 2s)",
+              response.status == 403 and ok and time.time() - started >= 1.5, (response.status, ok))
+        check("script: no script error and no policy violation", not seen["problems"], seen["problems"])
+        await ctx.close()
+
+        ctx, page, seen, response = await visit("/m/script.html", javascript=False)
+        text = await page.inner_text("main")
+        check("script, no javascript allowed here: the page says JavaScript is needed, and offers no button",
+              "JavaScript" in text and await page.locator("button").count() == 0, text[:200])
+        await ctx.close()
+
+        ctx, page, seen, response = await visit("/m/css.html")
+        ok = await lands(page)
+        check("css: a browser that loads the style sheet passes", ok and seen["styles"] >= 1, seen)
+        check("css: nothing is loaded from another host, no policy violation", seen["hosts"] == {base} and not seen["problems"], seen)
+        await ctx.close()
+
+        # This check runs in a browser steered by a program, which is exactly
+        # what the headless check looks for: it must not get through.
+        ctx, page, seen, response = await visit("/m/headless.html")
+        try:
+            await page.wait_for_selector("[role=alert]", timeout=15000)
+            caught = await page.inner_text("[role=alert]")
+        except Exception:
+            caught = ""
+        check("headless: a browser steered by a program is told so and not let through",
+              "steered by a program" in caught and not await page.locator("text=My website").count(), caught)
+        if shots:
+            await page.screenshot(path=os.path.join(shots, "challenge_automated.png"))
+        await ctx.close()
+
+        ctx, page, seen, response = await visit("/m/wait.html", javascript=False, lang="de")
+        text = await page.inner_text("main")
+        check("wait: the page asks to wait and offers the button, without mentioning JavaScript",
+              response.status == 403 and "Weiter" in text and "JavaScript" not in text, text[:200])
+        if shots:
+            await page.screenshot(path=os.path.join(shots, "challenge_wait.png"))
+        await asyncio.sleep(2.3)
+        await page.keyboard.press("Tab")
+        await page.keyboard.press("Enter")
+        check("wait: after waiting, the button leads to the website", await lands(page))
+        await ctx.close()
+
+        ctx, page, seen, response = await visit("/m/refresh.html", javascript=False)
+        started = time.time()
+        ok = await lands(page)
+        check(f"refresh: without JavaScript and without a click the visitor is sent on ({time.time() - started:.1f}s, wait is 2s)",
+              response.status == 403 and ok and time.time() - started >= 1.5, (response.status, ok))
+        await ctx.close()
+
+        # 6. Automated accessibility check (WCAG 2.1 A and AA, plus best practices).
         if axe_source:
             strip = lambda html: re.sub(r"<script>.*?</script>", "", html, flags=re.S)
             challenge = strip(fetch(base + "/wiki/a.html", "de"))
@@ -209,7 +282,15 @@ async def run(base, axe_source, shots):
                 "challenge, script working": working,
                 "challenge, English": strip(fetch(base + "/wiki/a.html", "en")),
                 "blocked": fetch(base + "/admin", "de"),
+                "challenge, method script": strip(fetch(base + "/m/script.html", "en")),
+                "challenge, method wait": fetch(base + "/m/wait.html", "de"),
+                "challenge, after a report of automation": strip(fetch(base + "/m/script.html", "de")).replace(
+                    "<h1>", '<p role="alert" class="notice">Dieser Browser meldet, dass er von einem Programm gesteuert wird.</p><h1>', 1),
             }
+            # The method refresh sends the visitor on after a time the visitor
+            # cannot extend. That is what the method is, and what WCAG 2.2.1
+            # asks not to do; the check must find exactly this and nothing else.
+            refresh_page = fetch(base + "/m/refresh.html", "de")
             for scheme in ["light", "dark"]:
                 ctx = await browser.new_context(color_scheme=scheme, bypass_csp=True, viewport={"width": 900, "height": 700})
                 page = await ctx.new_page()
@@ -220,6 +301,12 @@ async def run(base, axe_source, shots):
                     result = await page.evaluate("axe.run(document, {runOnly: ['wcag2a','wcag2aa','wcag21a','wcag21aa','best-practice']})")
                     violations = [(v["id"], v["impact"], v["nodes"][0]["html"][:80]) for v in result["violations"]]
                     check(f"accessibility/{scheme}: {name} ({len(result['passes'])} rules passed)", not violations, violations)
+                await page.set_content(refresh_page.replace('http-equiv="refresh" content="2;', 'http-equiv="refresh" content="900;'))
+                await page.add_script_tag(content=axe_source)
+                result = await page.evaluate("axe.run(document, {runOnly: ['wcag2a','wcag2aa','wcag21a','wcag21aa','best-practice']})")
+                found = sorted(v["id"] for v in result["violations"])
+                check(f"accessibility/{scheme}: challenge, method refresh: only the timed forward itself is found, as documented",
+                      found == ["meta-refresh"], found)
                 await ctx.close()
         else:
             print("SKIP  accessibility check: pass --axe path/to/axe.min.js to run it")
@@ -246,6 +333,10 @@ def main():
         for name in ["start", "other", "working", "noscript", "a"]:
             with open(os.path.join(tmp, "site", "wiki", name + ".html"), "w") as f:
                 f.write("<!doctype html><title>Site</title><h1>My website</h1>")
+        os.makedirs(os.path.join(tmp, "site", "m"))
+        for name in ["script", "css", "headless", "wait", "refresh"]:
+            with open(os.path.join(tmp, "site", "m", name + ".html"), "w") as f:
+                f.write("<!doctype html><title>Site</title><h1>My website</h1>")
         config = os.path.join(tmp, "xibalba.yaml")
         with open(config, "w") as f:
             f.write(f"""upstream:
@@ -268,6 +359,26 @@ rules:
       match:
         path: {{prefix: "/admin"}}
       action: deny
+    - name: m-script
+      match: {{path: {{prefix: "/m/script"}}}}
+      action: challenge
+      challenge: {{method: script, wait: 2s, no_javascript: deny}}
+    - name: m-css
+      match: {{path: {{prefix: "/m/css"}}}}
+      action: challenge
+      challenge: {{method: pow, difficulty: 10, checks: [css]}}
+    - name: m-headless
+      match: {{path: {{prefix: "/m/headless"}}}}
+      action: challenge
+      challenge: {{method: script, wait: 1s, checks: [headless]}}
+    - name: m-wait
+      match: {{path: {{prefix: "/m/wait"}}}}
+      action: challenge
+      challenge: {{method: wait, wait: 2s}}
+    - name: m-refresh
+      match: {{path: {{prefix: "/m/refresh"}}}}
+      action: challenge
+      challenge: {{method: refresh, wait: 2s}}
 """)
         site = subprocess.Popen([sys.executable, "-m", "http.server", str(site_port), "--bind", "127.0.0.1",
                                  "--directory", os.path.join(tmp, "site")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
