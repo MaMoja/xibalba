@@ -6,8 +6,11 @@
 #   cp xibalba.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now xibalba
 #
-# Checked with "systemd-analyze verify"; not started on a machine with
-# systemd by the project's tests.
+# The release build starts this unit on a machine with systemd (with
+# /usr/bin/xibalba, as the Debian package installs it).
+#
+# The service may only write to /var/lib/xibalba. If you use the web
+# interface, keep admin.password_file and admin.changes_file there.
 
 [Unit]
 Description=Xibalba: protects a website from crawlers and bots

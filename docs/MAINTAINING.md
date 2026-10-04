@@ -116,3 +116,30 @@ made-up answers so far.
 and that key stays off GitHub (see above). GitHub sends an e-mail for every
 new sponsorship; for the $50 tier and above, issue the license with
 `xibalba-license issue` and send it to the sponsor.
+
+## Publishing a version
+
+1. Move the entries under "Unreleased" in `CHANGELOG.md` to a heading with
+   the version and the date, and commit.
+2. Try it: Actions, workflow "Release", "Run workflow". This builds
+   everything, installs the Debian package on the build machine, starts the
+   service under systemd, builds the image for all three kinds of
+   processor, and publishes nothing. The files are kept with the run for
+   seven days.
+3. Publish: `git tag v1.2.3 && git push origin v1.2.3`. The same workflow
+   runs again and, if everything passes, creates the release with the files
+   and pushes the image `ghcr.io/mamoja/xibalba:1.2.3` (and `:latest`). A
+   version with a hyphen, such as `v1.2.3-rc1`, becomes a pre-release and
+   does not move `latest`.
+
+What a release holds, built by `tools/release.sh` (`make release
+RELEASE=1.2.3` does the same on your machine):
+
+| File | For |
+|---|---|
+| `xibalba_<version>_linux_{amd64,arm64,armv7}.tar.gz` | any Linux: program, example configuration, service file |
+| `xibalba_<version>_{amd64,arm64,armhf}.deb` | Debian, Ubuntu, Raspberry Pi OS |
+| `SHA256SUMS` | checking a download |
+
+The first time an image is pushed, GitHub creates the package as private:
+open it under the repository's "Packages" and set its visibility to public.

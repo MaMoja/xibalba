@@ -66,7 +66,7 @@ flowchart LR
 | Contact line and default language of the visitor pages adjustable | Built |
 | Own name and wording on the visitor pages, Xibalba line removable (sponsor license) | Built |
 | Tested configurations for nginx, Caddy, Apache, HAProxy and Traefik | Built |
-| Container image (Dockerfile), Compose example, systemd unit, Kubernetes example | Built; images not published yet |
+| Container image (Dockerfile), Compose example, systemd unit, Kubernetes example | Built; packages (`deb`, archives) and images come with each release |
 | Logo and accent colour on visitor pages | Planned |
 | Crawler classes, verified crawler identity (address lists, reverse DNS), presets | Built |
 | Own crawler definitions | Built |

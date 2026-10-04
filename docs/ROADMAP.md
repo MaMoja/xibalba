@@ -127,11 +127,12 @@ decision (2026-10-03): all of this comes before statistics.
 - [ ] Security review by a second agent that has not seen the code being written
 - [ ] Load test on a Raspberry Pi and on a small VPS
 - [ ] Privacy documentation (what is stored, for how long)
+- [x] Releases without Go on the target machine: archives and Debian packages for amd64, arm64 and armhf, a container image for the same three, checksums; built by a workflow that installs the package and starts the service under systemd before anything is published. Two builds of one commit give identical files.
 
 ## Later
 - Challenge method and difficulty selectable per rule or threshold
 - Counts per provider (AS number) besides counts per network; needs a second database file
-- Packaged releases, so operators do not need Go to install (part of M8)
+- Packages in the rpm format; signed releases (provenance)
 - A path test that means "this directory and everything under it", so `/admin` does not also match `/administrator`
 - A text expression language for rules, if `all`/`any`/`not` turn out not to be enough
 - Configurable status code and text for the block page

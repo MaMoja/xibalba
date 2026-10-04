@@ -267,7 +267,10 @@ changes file is plain text:
   Switching `allow_changes` off stops further changes; it does not undo
   earlier ones. To drop them all, delete the file and restart.
 - `xibalba -check` checks the configuration together with the changes file.
-- Xibalba's user must be able to write to the directory of the file.
+- Xibalba's user must be able to write to the directory of the file. Under
+  the systemd service that is only `/var/lib/xibalba`: set
+  `admin.changes_file` and `admin.password_file` to files there, as the
+  configuration of the Debian package does.
 - A change that would give a rule set that does not work is refused and
   explained on the page; for example switching on `block-trapped` while the
   trap is off. A change that cannot be written to the file is taken back.

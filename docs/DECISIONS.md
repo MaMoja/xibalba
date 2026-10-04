@@ -4,6 +4,16 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Packages are built by a shell script and `dpkg-deb`, not by a packaging
+  tool** (goreleaser, nfpm): no new dependency, forty lines, and the same
+  script runs on a developer's machine. rpm is left for when someone asks.
+- **The Debian package starts nothing.** The configuration it brings is
+  valid but points at a placeholder website; starting a proxy in front of
+  nothing helps nobody. An upgrade restarts a service that was running.
+- **The packaged configuration keeps everything Xibalba writes under
+  `/var/lib/xibalba`** (key, crawler cache, web interface password and
+  changes), because the service file makes the rest of the system read-only.
+
 - **Regular expressions are bounded by compiled size and by input length**
   (400 steps each, 2,000 per rule set, 1,024 characters of input). Found by
   the security review of the rule editor: within the old limit of 512

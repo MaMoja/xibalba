@@ -18,7 +18,7 @@ it: the visitor's real address. Everything below is a variation of that.
 | HAProxy | [`examples/haproxy/haproxy.cfg`](../examples/haproxy/haproxy.cfg) | Yes, with HAProxy 2.8 |
 | Traefik | [`examples/traefik/`](../examples/traefik) | Yes, with Traefik 3.1 |
 | Docker, Docker Compose | [`Dockerfile`](../Dockerfile), [`examples/docker/`](../examples/docker) | Built and started by the project's CI at every change |
-| systemd | [`examples/systemd/xibalba.service`](../examples/systemd/xibalba.service) | Checked with `systemd-analyze verify`; not started under systemd |
+| systemd | [`examples/systemd/xibalba.service`](../examples/systemd/xibalba.service), also in the Debian package | The release build installs the package and starts the service under systemd, with the web interface writing its files |
 | Kubernetes | [`examples/kubernetes/xibalba.yaml`](../examples/kubernetes/xibalba.yaml) | No. The configuration in it is checked; it was not run in a cluster. |
 | Behind Cloudflare or another CDN | Described below | No |
 | Windows, macOS, FreeBSD | Described below | The program builds for them; it was not run there. |
@@ -77,7 +77,7 @@ user (65532) and writes only to `/var/lib/xibalba`.
 docker build -t xibalba .
 ```
 
-Images are not published yet (**planned**); build your own.
+Released versions are published as `ghcr.io/mamoja/xibalba:<version>` (and `:latest`), for `amd64`, `arm64` and `arm/v7`. You can also build your own:
 
 - **Configuration:** mount your `xibalba.yaml` at
   `/etc/xibalba/xibalba.yaml`.
@@ -174,4 +174,4 @@ practice:
 - A mode in which the web server only asks Xibalba "may this request pass?"
   (nginx `auth_request`, Caddy `forward_auth`, Traefik `forwardAuth`) is
   **planned** (milestone M9). Today Xibalba is always in the path.
-- Published images and packages (deb, rpm) are **planned**.
+- Packages in the `rpm` format are **planned**; `deb` packages, archives and images exist.

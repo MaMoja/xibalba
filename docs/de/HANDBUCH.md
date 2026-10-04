@@ -69,8 +69,45 @@ Drei Dinge sind wichtig:
 ## 3. Installation
 
 Xibalba ist ein einzelnes Programm ohne weitere Abhängigkeiten zur Laufzeit.
-Fertige Pakete gibt es noch nicht (geplant); derzeit wird es aus dem
-Quelltext gebaut. Dafür brauchen Sie auf dem Rechner, auf dem Sie bauen,
+Veröffentlichte Versionen finden Sie auf der
+[Release-Seite](https://github.com/MaMoja/xibalba/releases). Steht dort noch
+keine Version, bauen Sie aus dem Quelltext (weiter unten).
+
+**Paket für Debian und Ubuntu.** Laden Sie die `.deb`-Datei für Ihre
+Rechnerart (`amd64` für übliche Server, `arm64` und `armhf` für einen
+Raspberry Pi mit 64- oder 32-Bit-System) und die Datei `SHA256SUMS`:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+sudo dpkg -i xibalba_*_amd64.deb
+```
+
+Das Paket installiert das Programm (`/usr/bin/xibalba`), eine
+Konfigurationsdatei als Ausgangspunkt (`/etc/xibalba/xibalba.yaml`), die
+Dienstdatei, einen Benutzer `xibalba` und das Verzeichnis `/var/lib/xibalba`
+für alles, was Xibalba aufbewahrt. Es startet nichts von selbst: Tragen Sie
+`upstream.url` ein, prüfen Sie, und starten Sie dann.
+
+```sh
+sudo -u xibalba xibalba -check -config /etc/xibalba/xibalba.yaml
+sudo systemctl enable --now xibalba
+```
+
+Die Prüfung läuft als Benutzer `xibalba`, weil nur dieser in
+`/var/lib/xibalba` hineinsehen darf. `dpkg -r xibalba` entfernt das Programm
+und behält Konfiguration und Daten; `dpkg --purge xibalba` entfernt auch
+diese. In der Konfiguration des Pakets liegen Schlüsseldatei, Passwort der
+Weboberfläche und Änderungsdatei bereits unter `/var/lib/xibalba`; das
+Passwort setzen Sie dort mit
+`sudo -u xibalba xibalba -set-password -config /etc/xibalba/xibalba.yaml`.
+
+**Archiv für jedes Linux.** `xibalba_<Version>_linux_<Art>.tar.gz` enthält
+das Programm, die Beispielkonfiguration und die Dienstdatei.
+
+**Container-Image.** `ghcr.io/mamoja/xibalba:<Version>` für `amd64`, `arm64`
+und `arm/v7`.
+
+**Aus dem Quelltext.** Dafür brauchen Sie auf dem Rechner, auf dem Sie bauen,
 [Go](https://go.dev/dl/) ab Version 1.24 sowie `git` und `make`.
 
 ```sh

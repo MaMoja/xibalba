@@ -42,10 +42,43 @@ Three things matter:
 
 ## Install
 
-Xibalba is one program with nothing else needed at run time. Packages and
-images are not published yet (**planned**); today it is built from source.
-On the machine you build on you need [Go](https://go.dev/dl/) 1.24 or later,
-`git` and `make`.
+Xibalba is one program with nothing else needed at run time. There are
+three ways to get it. Published versions are on the
+[releases page](https://github.com/MaMoja/xibalba/releases); if no version
+is listed there yet, build from source.
+
+**A package for Debian and Ubuntu.** Download the `.deb` for your kind of
+machine (`amd64` for ordinary servers, `arm64` and `armhf` for a Raspberry
+Pi with a 64-bit or 32-bit system) and the file `SHA256SUMS`, then:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+sudo dpkg -i xibalba_*_amd64.deb
+```
+
+The package installs the program (`/usr/bin/xibalba`), a configuration to
+start from (`/etc/xibalba/xibalba.yaml`), the service file, a user
+`xibalba`, and the directory `/var/lib/xibalba` for what Xibalba keeps. It
+does not start anything: set `upstream.url`, check, then start.
+
+```sh
+sudo -u xibalba xibalba -check -config /etc/xibalba/xibalba.yaml
+sudo systemctl enable --now xibalba
+```
+
+The check runs as the user `xibalba` because only that user may look into
+`/var/lib/xibalba`. `dpkg -r xibalba` removes the program and keeps your
+configuration and data; `dpkg --purge xibalba` removes those too.
+
+**An archive for any Linux.** `xibalba_<version>_linux_<kind>.tar.gz` holds
+the program, the example configuration and the service file. Unpack it and
+copy the program to `/usr/local/bin`.
+
+**A container image.** `ghcr.io/mamoja/xibalba:<version>`, for `amd64`,
+`arm64` and `arm/v7`; see [Environments](ENVIRONMENTS.md#docker).
+
+**From source.** On the machine you build on you need
+[Go](https://go.dev/dl/) 1.24 or later, `git` and `make`.
 
 ```sh
 git clone https://github.com/MaMoja/xibalba.git

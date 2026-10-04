@@ -22,6 +22,10 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Packages: archives and Debian packages for amd64, arm64 and 32-bit ARM,
+  and a container image for the same three, with checksums. The Debian
+  package brings the service file, a user and a configuration to start
+  from, and starts nothing by itself.
 - Changing settings in the web interface (`admin.allow_changes`, off by
   default): switch presets on and off, and keep a list of addresses that
   are let through or blocked, with note and end date. Changes take effect
