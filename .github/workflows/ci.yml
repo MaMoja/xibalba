@@ -25,3 +25,37 @@ jobs:
         run: make bench
       - name: Cross-compile
         run: make cross
+
+  container:
+    name: Container image and compose example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the compose example
+        working-directory: examples/docker
+        run: docker compose up --build --detach --wait --wait-timeout 180
+      - name: The website's content is not served without the check
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -A 'Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0' http://localhost:8080/)
+          test "$status" = 403
+          curl -s -A 'Mozilla/5.0 (X11; Linux x86_64) Firefox/130.0' http://localhost:8080/ | grep -q 'xibalba-form'
+      - name: A plain program reaches the website
+        run: curl -sf -A 'curl/8' http://localhost:8080/ | grep -q 'Hostname'
+      - name: robots.txt is let through
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -A 'Mozilla/5.0 Firefox/130.0' http://localhost:8080/robots.txt)
+          test "$status" = 200
+      - name: The container reports itself healthy and runs unprivileged
+        working-directory: examples/docker
+        run: |
+          docker compose ps
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q xibalba)")" = healthy
+          test "$(docker inspect --format '{{.Config.User}}' "$(docker compose ps -q xibalba)")" = 65532:65532
+      - name: Logs
+        if: always()
+        working-directory: examples/docker
+        run: docker compose logs
+      - name: Other operating systems still build
+        run: |
+          docker run --rm -v "$PWD":/src -w /src -e CGO_ENABLED=0 golang:1.24 sh -c \
+            'for os in windows darwin freebsd; do GOOS=$os GOARCH=amd64 go build -buildvcs=false -o /dev/null ./cmd/xibalba || exit 1; done'

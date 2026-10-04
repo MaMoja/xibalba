@@ -22,7 +22,7 @@ bench: ## Run the benchmarks
 browser-check: build ## Check the visitor pages in a real browser (needs Playwright; AXE=path/to/axe.min.js adds accessibility)
 	python3 test/browser/check.py --binary bin/xibalba $(if $(AXE),--axe $(AXE))
 
-webserver-check: build ## Run Xibalba behind real nginx and Caddy with the example configurations (needs both installed)
+webserver-check: build ## Run Xibalba behind real nginx, Caddy, Apache, HAProxy and Traefik with the example configurations (those installed)
 	python3 test/webserver/check.py --binary bin/xibalba
 
 lint: ## Check formatting and run go vet (and golangci-lint if installed)

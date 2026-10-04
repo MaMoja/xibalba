@@ -1,0 +1,21 @@
+# Xibalba behind Traefik: the routes. Change the site name and the two
+# certificate paths. See traefik.yml.
+
+http:
+  routers:
+    website:
+      rule: "Host(`www.example.org`)"
+      entryPoints: ["websecure"]
+      service: xibalba
+      tls: {}
+
+  services:
+    xibalba:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+
+tls:
+  certificates:
+    - certFile: /etc/ssl/certs/www.example.org.pem
+      keyFile: /etc/ssl/private/www.example.org.key

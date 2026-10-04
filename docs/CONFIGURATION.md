@@ -16,6 +16,7 @@ xibalba -config /etc/xibalba/xibalba.yaml
 |---|---|
 | `-config <path>` | Configuration file. Default: `xibalba.yaml` in the current directory. |
 | `-check` | Validate the file, print the result, and exit without starting. |
+| `-healthcheck` | Ask the running Xibalba of this configuration (at `ops.listen`) whether it is healthy; exit with 0 if so, 1 if not. For container health checks. |
 | `-version` | Print the version and exit. |
 
 ## How mistakes are reported

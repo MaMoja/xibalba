@@ -1,0 +1,25 @@
+# Xibalba behind Traefik: the static configuration.
+#
+# Traefik holds the certificate and passes every request to Xibalba, which
+# listens on 127.0.0.1:8080. This file says where Traefik listens and where
+# it finds the routes (dynamic.yml, next to it). Change the path to
+# dynamic.yml.
+#
+# Traefik tells Xibalba the visitor's address and that the visitor came over
+# HTTPS by itself, removes such headers when a client sends them, and passes
+# websockets through.
+#
+# In xibalba.yaml, tell Xibalba to believe this Traefik:
+#
+#   server:
+#     trusted_proxies: ["127.0.0.1"]
+#
+# Tested with Traefik 3.1 by test/webserver/check.py.
+
+entryPoints:
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yml

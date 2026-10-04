@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Example configurations for Apache, HAProxy and Traefik, each run against
+  the real server by `make webserver-check` (69 checks over five servers).
+- `Dockerfile` (an image with nothing but the program, unprivileged), a
+  Compose example that CI builds and starts, a hardened systemd unit and a
+  Kubernetes example. Flag `-healthcheck` for container health checks.
+- `docs/ENVIRONMENTS.md`.
 - `GET /metrics` on the operations listener: decisions, the security check,
   crawlers, limits, the trap and the state of every part, in the Prometheus
   text format. No address, path or user agent.

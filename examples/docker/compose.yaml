@@ -1,0 +1,32 @@
+# Xibalba in front of a website, both as containers.
+#
+#   docker compose up --build
+#
+# then open http://localhost:8080/. "website" stands for your own website's
+# container; replace it and set upstream.url in xibalba.yaml to its name and
+# port. Put a web server or load balancer with your certificate in front of
+# port 8080 for HTTPS (see the other folders in examples/), and then list
+# its address under server.trusted_proxies in xibalba.yaml.
+#
+# Built and started by the project's CI at every change.
+
+services:
+  xibalba:
+    build: ../..
+    # Once images are published: image: ghcr.io/mamoja/xibalba:<version>
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./xibalba.yaml:/etc/xibalba/xibalba.yaml:ro
+      # Keeps the signing key, so visitors keep their pass across restarts.
+      - xibalba-data:/var/lib/xibalba
+    depends_on:
+      - website
+    restart: unless-stopped
+
+  website:
+    image: traefik/whoami:v1.10
+    restart: unless-stopped
+
+volumes:
+  xibalba-data:

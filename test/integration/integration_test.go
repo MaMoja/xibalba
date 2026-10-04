@@ -1682,3 +1682,30 @@ func TestUpgradedConnectionWithALimitOnPages(t *testing.T) {
 		t.Errorf("over the upgraded connection: %q", got)
 	}
 }
+
+// --- health check for containers --------------------------------------------
+
+func TestHealthCheckFlag(t *testing.T) {
+	site := newWebsite(t)
+	public, ops := freeAddr(t), freeAddr(t)
+	config := filepath.Join(t.TempDir(), "xibalba.yaml")
+	content := fmt.Sprintf("upstream:\n  url: %s\nserver:\n  listen: %s\nops:\n  listen: %s\n", site.URL, public, ops)
+	if err := os.WriteFile(config, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing runs yet: not healthy.
+	if out, err := exec.Command(binary, "-config", config, "-healthcheck").CombinedOutput(); err == nil {
+		t.Errorf("health check without a running Xibalba succeeded: %s", out)
+	}
+	cmd := exec.Command(binary, "-config", config)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Signal(syscall.SIGTERM); _ = cmd.Wait() })
+	resp := waitFor(t, "http://"+ops+"/healthz")
+	_ = resp.Body.Close()
+	out, err := exec.Command(binary, "-config", config, "-healthcheck").CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "ok" {
+		t.Errorf("health check of a running Xibalba: %v, %q", err, out)
+	}
+}

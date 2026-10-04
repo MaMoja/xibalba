@@ -1,0 +1,89 @@
+# Xibalba in Kubernetes, as a container next to your website's container in
+# the same pod. Requests reach Xibalba on port 8080; Xibalba reaches the
+# website on localhost. Point your Service and Ingress at port 8080 instead
+# of the website's port.
+#
+# Not run in a cluster by the project's tests. Change the image names, the
+# website's port and the rules.
+#
+# Behind an ingress controller, list its pod network under
+# server.trusted_proxies, or Xibalba sees every visitor as the ingress.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xibalba
+data:
+  xibalba.yaml: |
+    upstream:
+      url: "http://127.0.0.1:3000"
+    server:
+      listen: "0.0.0.0:8080"
+      trusted_proxies: []
+    ops:
+      listen: "127.0.0.1:9090"
+    rules:
+      presets:
+        - keep-internet-working
+        - challenge-browsers
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: website
+  template:
+    metadata:
+      labels:
+        app: website
+    spec:
+      containers:
+        - name: website
+          image: registry.example.org/website:1.0
+          ports:
+            - containerPort: 3000
+        - name: xibalba
+          image: registry.example.org/xibalba:latest
+          args: ["-config", "/etc/xibalba/xibalba.yaml"]
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            exec:
+              command: ["/xibalba", "-config", "/etc/xibalba/xibalba.yaml", "-healthcheck"]
+            periodSeconds: 30
+          readinessProbe:
+            exec:
+              command: ["/xibalba", "-config", "/etc/xibalba/xibalba.yaml", "-healthcheck"]
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/xibalba
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: xibalba
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: website
+spec:
+  selector:
+    app: website
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

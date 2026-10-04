@@ -207,3 +207,37 @@ func TestCrawlerDocumentationIsComplete(t *testing.T) {
 		}
 	}
 }
+
+// The configuration files shipped with the examples must be valid.
+func TestExampleConfigurationsAreValid(t *testing.T) {
+	root := filepath.Join("..", "..")
+	dir := t.TempDir()
+
+	compose, err := os.ReadFile(filepath.Join(root, "examples", "docker", "xibalba.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The key file lives in the container's own directory; use one that exists here.
+	content := strings.ReplaceAll(string(compose), "/var/lib/xibalba/", dir+"/")
+	if _, err := Parse(filepath.Join(dir, "xibalba.yaml"), []byte(content)); err != nil {
+		t.Errorf("examples/docker/xibalba.yaml: %v", err)
+	}
+
+	// The configuration inside the Kubernetes example.
+	manifest, err := os.ReadFile(filepath.Join(root, "examples", "kubernetes", "xibalba.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(manifest), "  xibalba.yaml: |\n")
+	end := strings.Index(string(manifest), "\n---")
+	if start < 0 || end < start {
+		t.Fatal("no configuration found in the Kubernetes example")
+	}
+	var inner []string
+	for _, line := range strings.Split(string(manifest)[start+len("  xibalba.yaml: |\n"):end], "\n") {
+		inner = append(inner, strings.TrimPrefix(line, "    "))
+	}
+	if _, err := Parse(filepath.Join(dir, "xibalba.yaml"), []byte(strings.Join(inner, "\n"))); err != nil {
+		t.Errorf("examples/kubernetes/xibalba.yaml: %v", err)
+	}
+}

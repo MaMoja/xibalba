@@ -97,13 +97,15 @@ decision (2026-10-03): all of this comes before statistics.
 
 ## M9: Deployment
 - [ ] Verdict mode for nginx, Caddy, Traefik
-- [ ] Docker image, systemd unit, .deb package
+- [x] Dockerfile and Compose example (built and started in CI), systemd unit, Kubernetes example (not run in a cluster)
+- [ ] Published images; .deb and .rpm packages
+- [ ] Trusted proxies loaded from a CDN's published list
 - [ ] Shared storage backend for multiple instances
 
 ## M10: Ready for customers
 - [ ] Admin documentation in German and English, as a documentation site with the breadth of the Anubis documentation and better (owner's request, 2026-10-03):
   - [ ] Design: how the check works, with diagrams
-  - [ ] Guides per environment: nginx and Caddy (exist), Apache, HAProxy, Traefik, Docker Compose, Kubernetes, behind Cloudflare, Windows
+  - [x] Guides per environment (`docs/ENVIRONMENTS.md`): nginx, Caddy, Apache, HAProxy, Traefik with tested examples; Docker Compose tested in CI; systemd; Kubernetes, CDN and Windows described but not tested
   - [ ] Guides per application: WordPress, pages that load parts of themselves (HTMX and similar), Git hosting (Gitea/Forgejo), container registries
   - [ ] Advice for sites with their own Content-Security-Policy
   - [ ] For visitors: "Why do I see this check?", questions and answers, browser extensions known to break the check

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Checks Xibalba behind real web servers, using the example configurations.
 
-The handbook tells operators to put nginx or Caddy in front of Xibalba and
-shows a configuration for each. This script proves those configurations work:
+The handbook tells operators to put a web server in front of Xibalba and
+shows a configuration for nginx, Caddy, Apache, HAProxy and Traefik. This script proves those configurations work:
 it starts a test website, Xibalba, and the web server with the file from
 examples/, and then checks through HTTPS that
 
@@ -15,9 +15,11 @@ examples/, and then checks through HTTPS that
   * an upgraded connection (websocket) passes in both directions.
 
 Only the site name, port and certificate paths of the example files are
-changed for the test; everything else is used as shipped.
+changed for the test; everything else is used as shipped. (For Apache the
+protocol name of the upgraded connection is changed too: the test speaks a
+small protocol of its own over it instead of websocket.)
 
-Requirements: nginx and/or caddy, openssl. A web server that is not
+Requirements: openssl and any of nginx, caddy, apache2, haproxy, traefik. A web server that is not
 installed is skipped.
 
 Usage:
@@ -253,6 +255,61 @@ def caddy_config(tmp, port):
     return path
 
 
+def apache_config(tmp, port, cert, key):
+    with open(os.path.join(ROOT, "examples", "apache", "xibalba.conf")) as f:
+        site = f.read()
+    site = site.replace("<VirtualHost *:443>", f"<VirtualHost 127.0.0.1:{port}>")
+    site = site.replace("/etc/ssl/certs/www.example.org.pem", cert).replace("/etc/ssl/private/www.example.org.key", key)
+    site = site.replace("http://127.0.0.1:8080/", f"http://127.0.0.1:{XIBALBA_PORT}/")
+    site = site.replace("upgrade=websocket", "upgrade=echo")  # the test's own protocol
+    modules = "/usr/lib/apache2/modules"
+    load = "".join(f"LoadModule {name}_module {modules}/mod_{name}.so\n" for name in
+                   ["mpm_event", "authz_core", "ssl", "socache_shmcb", "proxy", "proxy_http", "headers"])
+    path = os.path.join(tmp, "apache.conf")
+    with open(path, "w") as f:
+        f.write(f"""ServerRoot {tmp}
+PidFile {tmp}/apache.pid
+ErrorLog {tmp}/apache-error.log
+Mutex file:{tmp} default
+ServerName localhost
+Listen 127.0.0.1:{port}
+{load}
+{site}
+""")
+    return path
+
+
+def haproxy_config(tmp, port, cert, key):
+    with open(os.path.join(ROOT, "examples", "haproxy", "haproxy.cfg")) as f:
+        site = f.read()
+    pem = os.path.join(tmp, "haproxy.pem")
+    with open(pem, "w") as out:
+        out.write(open(cert).read() + open(key).read())
+    site = site.replace("bind :443 ssl crt /etc/haproxy/certs/www.example.org.pem", f"bind 127.0.0.1:{port} ssl crt {pem}")
+    site = site.replace("127.0.0.1:8080", f"127.0.0.1:{XIBALBA_PORT}")
+    path = os.path.join(tmp, "haproxy.cfg")
+    with open(path, "w") as f:
+        f.write(site)
+    return path
+
+
+def traefik_config(tmp, port, cert, key):
+    with open(os.path.join(ROOT, "examples", "traefik", "dynamic.yml")) as f:
+        dynamic = f.read()
+    dynamic = dynamic.replace("/etc/ssl/certs/www.example.org.pem", cert).replace("/etc/ssl/private/www.example.org.key", key)
+    dynamic = dynamic.replace("http://127.0.0.1:8080", f"http://127.0.0.1:{XIBALBA_PORT}")
+    dynamic_path = os.path.join(tmp, "dynamic.yml")
+    with open(dynamic_path, "w") as f:
+        f.write(dynamic)
+    with open(os.path.join(ROOT, "examples", "traefik", "traefik.yml")) as f:
+        static = f.read()
+    static = static.replace('address: ":443"', f'address: "127.0.0.1:{port}"').replace("/etc/traefik/dynamic.yml", dynamic_path)
+    path = os.path.join(tmp, "traefik.yml")
+    with open(path, "w") as f:
+        f.write(static)
+    return path
+
+
 XIBALBA_PORT = 0
 
 
@@ -306,10 +363,12 @@ rules:
             if not wait_port(ops_port):
                 raise SystemExit("xibalba did not start")
 
-            if shutil.which("nginx") and shutil.which("openssl"):
-                cert, key = os.path.join(tmp, "cert.pem"), os.path.join(tmp, "key.pem")
+            cert, key = os.path.join(tmp, "cert.pem"), os.path.join(tmp, "key.pem")
+            if shutil.which("openssl"):
                 subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
                                 "-days", "1", "-subj", "/CN=www.example.org"], check=True, capture_output=True)
+
+            if shutil.which("nginx") and shutil.which("openssl"):
                 port = free_port()
                 conf = nginx_config(tmp, port, cert, key)
                 test = subprocess.run(["nginx", "-t", "-c", conf], capture_output=True, text=True)
@@ -343,6 +402,38 @@ rules:
                         check("caddy: starts", False)
             else:
                 print("SKIP  caddy: not installed")
+
+            # Apache, HAProxy and Traefik: check the file, start, run the checks.
+            apache = shutil.which("apache2") or shutil.which("httpd")
+            others = [
+                ("apache", apache, apache_config,
+                 lambda conf: [apache, "-t", "-f", conf], lambda conf: [apache, "-X", "-f", conf], [apache, "-v"]),
+                ("haproxy", shutil.which("haproxy"), haproxy_config,
+                 lambda conf: ["haproxy", "-c", "-f", conf], lambda conf: ["haproxy", "-f", conf], ["haproxy", "-v"]),
+                ("traefik", shutil.which("traefik"), traefik_config,
+                 None, lambda conf: ["traefik", "--configFile=" + conf], ["traefik", "version"]),
+            ]
+            for name, found, make, test_cmd, run_cmd, version_cmd in others:
+                if not found or not shutil.which("openssl"):
+                    print(f"SKIP  {name}: not installed (or openssl missing)")
+                    continue
+                port = free_port()
+                conf = make(tmp, port, cert, key)
+                if test_cmd:
+                    test = subprocess.run(test_cmd(conf), capture_output=True, text=True)
+                    check(f"{name}: the example configuration is accepted by the server's own check", test.returncode == 0,
+                          (test.stdout + test.stderr).strip()[-400:])
+                    if test.returncode != 0:
+                        continue
+                version = subprocess.run(version_cmd, capture_output=True, text=True)
+                print("      (" + (version.stdout + version.stderr).strip().splitlines()[0] + ")")
+                log = open(os.path.join(tmp, name + ".log"), "w")
+                procs.append(subprocess.Popen(run_cmd(conf), stdout=log, stderr=log))
+                if wait_port(port):
+                    time.sleep(0.5)
+                    run_checks(name, port)
+                else:
+                    check(f"{name}: starts", False, open(os.path.join(tmp, name + ".log")).read()[-400:])
         finally:
             for p in reversed(procs):
                 p.terminate()

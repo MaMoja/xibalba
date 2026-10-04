@@ -1,0 +1,25 @@
+# Configuration for the compose example. See xibalba.example.yaml in the
+# project for every setting.
+
+upstream:
+  # The website's container, by its name in compose.yaml.
+  url: "http://website:80"
+
+server:
+  # Inside a container, listen on all addresses; compose decides what is
+  # reachable from outside.
+  listen: "0.0.0.0:8080"
+  # Add the address of the web server in front here once there is one.
+  trusted_proxies: []
+
+ops:
+  # Reachable inside the container only; the health check uses it.
+  listen: "127.0.0.1:9090"
+
+challenge:
+  key_file: /var/lib/xibalba/signing.key
+
+rules:
+  presets:
+    - keep-internet-working
+    - challenge-browsers

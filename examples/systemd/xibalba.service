@@ -1,0 +1,51 @@
+# Xibalba as a systemd service.
+#
+#   install -m 755 xibalba /usr/local/bin/xibalba
+#   useradd --system --no-create-home --shell /usr/sbin/nologin xibalba
+#   install -d /etc/xibalba && cp xibalba.yaml /etc/xibalba/
+#   cp xibalba.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now xibalba
+#
+# Checked with "systemd-analyze verify"; not started on a machine with
+# systemd by the project's tests.
+
+[Unit]
+Description=Xibalba: protects a website from crawlers and bots
+Documentation=https://github.com/MaMoja/xibalba
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=xibalba
+Group=xibalba
+ExecStartPre=/usr/local/bin/xibalba -check -config /etc/xibalba/xibalba.yaml
+ExecStart=/usr/local/bin/xibalba -config /etc/xibalba/xibalba.yaml
+Restart=on-failure
+RestartSec=2
+
+# A directory Xibalba may write to: /var/lib/xibalba. Put the signing key,
+# the crawler list cache and the country database there.
+StateDirectory=xibalba
+StateDirectoryMode=0700
+
+# Xibalba needs nothing else from the system.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# To listen on a port below 1024, replace the line above by:
+#   CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+#   AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

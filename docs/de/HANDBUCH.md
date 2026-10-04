@@ -97,28 +97,27 @@ Lassen Sie Xibalba unter einem eigenen Benutzer ohne besondere Rechte laufen.
 Es braucht keine Root-Rechte, solange es nicht auf einem Port unter 1024
 lauscht.
 
-**Als Dienst starten.** Das folgende Beispiel für systemd zeigt die übliche
-Form. Es ist ein Vorschlag und in der Entwicklungsumgebung nicht getestet;
-eine mitgelieferte Dienstdatei ist geplant.
+**Als Dienst starten.** Die Datei
+[`examples/systemd/xibalba.service`](../../examples/systemd/xibalba.service)
+richtet Xibalba als systemd-Dienst ein: eigener Benutzer, Prüfung der
+Konfiguration vor jedem Start, Neustart nach einem Fehler, und dem Programm
+ist alles entzogen, was es nicht braucht. Die Befehle zur Einrichtung stehen
+am Anfang der Datei. Die Datei ist mit `systemd-analyze verify` geprüft,
+aber nicht auf einem Rechner mit systemd gestartet worden.
 
-```ini
-# /etc/systemd/system/xibalba.service   (Beispiel, nicht getestet)
-[Unit]
-Description=Xibalba
-After=network-online.target
-Wants=network-online.target
+**Als Container.** Aus dem mitgelieferten `Dockerfile` entsteht ein Abbild,
+das nur das Programm enthält und ohne besondere Rechte läuft:
 
-[Service]
-User=xibalba
-Group=xibalba
-ExecStartPre=/usr/local/bin/xibalba -check -config /etc/xibalba/xibalba.yaml
-ExecStart=/usr/local/bin/xibalba -config /etc/xibalba/xibalba.yaml
-Restart=on-failure
-StateDirectory=xibalba
-
-[Install]
-WantedBy=multi-user.target
+```sh
+docker build -t xibalba .
 ```
+
+Ein vollständiges Beispiel mit Docker Compose liegt in
+[`examples/docker/`](../../examples/docker). Im Container gilt:
+`server.listen: "0.0.0.0:8080"`, die Konfiguration wird nach
+`/etc/xibalba/xibalba.yaml` eingebunden, und `/var/lib/xibalba` gehört in
+ein Volume (für Schlüsseldatei, Crawler-Listen, Länder-Datenbank). Fertige
+Abbilder zum Herunterladen gibt es noch nicht (geplant).
 
 Xibalba beendet sich bei `SIGTERM` sauber: laufende Anfragen dürfen noch
 fertig werden (Einstellung `shutdown_timeout`).
@@ -199,6 +198,13 @@ curl http://127.0.0.1:9090/healthz   # Zustand
 ```
 
 ### Schritt 4: Ihren Webserver davor schalten
+
+Geprüfte Vorlagen gibt es für **nginx, Caddy, Apache, HAProxy und Traefik**
+im Ordner [`examples/`](../../examples); nginx und Caddy sind unten
+abgedruckt. Jede Vorlage wird mit dem echten Webserver getestet (Seiten,
+echte Besucheradresse, gefälschte Adressen, Sicherheitsprüfung, Websockets).
+Für Container, Kubernetes und den Betrieb hinter einem CDN wie Cloudflare
+siehe [ENVIRONMENTS.md](../ENVIRONMENTS.md) (englisch).
 
 Ihr Webserver nimmt die Anfragen aus dem Internet an und reicht sie an
 Xibalba auf Port 8080 weiter. Er muss Xibalba dabei die echte Adresse des
@@ -1398,7 +1404,10 @@ Damit Sie wissen, woran Sie sind:
   mit `curl` ab.
 - **Keine dauerhafte Statistik.** Die Zähler beginnen bei jedem Start bei null.
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
-- **Keine fertigen Pakete.** Xibalba wird aus dem Quelltext gebaut.
+- **Keine fertigen Pakete und Abbilder.** Xibalba wird aus dem Quelltext
+  gebaut; ein `Dockerfile` und eine systemd-Dienstdatei liegen bei.
+- **Nicht erprobt** auf Windows, in einem Kubernetes-Cluster und hinter
+  einem CDN; beschrieben in ENVIRONMENTS.md.
 - **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).
 - **Keine Länder-Datenbank mitgeliefert;** der Abruf der kostenlosen
   Datenbank ist noch nicht gegen den echten Server erprobt.
@@ -1416,6 +1425,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | Dokument | Inhalt | Sprache |
 |---|---|---|
 | [CONFIGURATION.md](../CONFIGURATION.md) | jede Einstellung mit Voreinstellung und erlaubten Werten | Englisch |
+| [ENVIRONMENTS.md](../ENVIRONMENTS.md) | Webserver, Container, systemd, Kubernetes, CDN: Vorlagen und Prüfstand | Englisch |
 | [RULES.md](../RULES.md) | alles, was Regeln können | Englisch |
 | [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
 | [COUNTRIES.md](../COUNTRIES.md) | Länder-Regeln, Datenbanken und ihre Lizenzen | Englisch |

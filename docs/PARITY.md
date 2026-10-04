@@ -19,7 +19,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Contact shown on the pages | |
 | Health endpoint | |
 | Removing the branding for sponsors | |
-| nginx and Caddy guides | |
+| Guides and tested examples for nginx, Caddy, Apache, HAProxy, Traefik; Docker Compose; health check for containers | See ENVIRONMENTS.md |
 | Prometheus metrics | |
 | Checking everything that says it is a browser, with exceptions for well-known paths, robots.txt, favicon, feeds, git | Presets, opt-in; Anubis does it by default |
 | Score for implausible browsers | Preset `weigh-odd-browsers` |
@@ -53,7 +53,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Challenge method and difficulty per rule or threshold | Later |
 | Storage backends: file, Valkey/Redis, S3 | M6 (file), M9 (shared) |
 | Verdict mode for nginx, Caddy, Traefik (subrequest authentication) with allowed redirect domains | M9 |
-| Docker image, deb, rpm, systemd unit | M9 |
+| Published images, deb, rpm (Dockerfile and systemd unit exist) | M9 |
 | Token that the web server in front can verify itself (HAProxy) | Later |
 | Running under a path prefix; website reached over a unix socket; TLS options towards the website | Later |
 | Imprint and privacy page on the visitor pages | M10 |
@@ -63,7 +63,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Tools: robots.txt to rules, IP list to rules | Later |
 | Headers that tell the website which rule decided | Later |
 | Log to a file with rotation | Later |
-| Guides: Apache, Traefik, HAProxy, Kubernetes, Docker Compose, Cloudflare, Windows, WordPress, HTMX | M10 |
+| Guides tested in a real cluster or on Windows; guides for WordPress, HTMX | M10 |
 | Pages for visitors: why the check appears, known broken browser extensions | M10 |
 | DNS blocklist lookup (off by default in Anubis) | Not planned: sends visitor addresses to a third party |
 | More languages | Later |

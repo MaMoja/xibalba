@@ -140,6 +140,29 @@ func signingKey(path string) (key []byte, note string, err error) {
 	return key, note, nil
 }
 
+// askHealth asks the operations listener of a running Xibalba for its
+// health. It is what a container's health check calls, since the image
+// holds no other program that could make the request.
+func askHealth(listen string, stdout, stderr io.Writer) int {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://" + listen + "/healthz")
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "not reachable:", err)
+		return exitFailed
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var report struct {
+		State string `json:"state"`
+	}
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&report)
+	if resp.StatusCode != http.StatusOK {
+		_, _ = fmt.Fprintf(stderr, "not healthy: status %d, state %q\n", resp.StatusCode, report.State)
+		return exitFailed
+	}
+	_, _ = fmt.Fprintln(stdout, report.State)
+	return exitOK
+}
+
 // run is the whole program. It takes its inputs as arguments so tests can call it.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("xibalba", flag.ContinueOnError)
@@ -147,6 +170,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	configPath := flags.String("config", "xibalba.yaml", "path to the configuration file")
 	checkOnly := flags.Bool("check", false, "validate the configuration file and exit")
 	showVersion := flags.Bool("version", false, "print the version and exit")
+	healthCheck := flags.Bool("healthcheck", false, "ask the running Xibalba of this configuration whether it is healthy, and exit with 0 or 1")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -160,6 +184,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return exitFailed
+	}
+	if *healthCheck {
+		return askHealth(cfg.Ops.Listen, stdout, stderr)
 	}
 	if *checkOnly {
 		_, _ = fmt.Fprintf(stdout, "configuration %s is valid\n", *configPath)

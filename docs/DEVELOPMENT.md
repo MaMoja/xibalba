@@ -17,7 +17,7 @@
 | `make cross` | Build for linux/amd64 and linux/arm64 into `dist/` |
 | `make bench` | Run the benchmarks (rule engine, crawler identification) |
 | `make browser-check` | Check the visitor pages in a real browser (needs Playwright; see below) |
-| `make webserver-check` | Run Xibalba behind real nginx and Caddy with the example configurations |
+| `make webserver-check` | Run Xibalba behind real nginx, Caddy, Apache, HAProxy and Traefik with the example configurations; a server that is not installed is skipped |
 | `make check` | `lint`, `test` and `cross`: everything CI runs |
 | `make clean` | Remove build output |
 

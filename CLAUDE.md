@@ -167,11 +167,14 @@ internal/proxy/       forward to the website, answer when it is unreachable
 internal/buildinfo/   version of the running build
 test/integration/     tests that run the real binary
 test/browser/         checks of the visitor pages in a real browser (not in CI)
-test/webserver/       checks behind real nginx and Caddy (not in CI)
+test/webserver/       checks behind real nginx, Caddy, Apache, HAProxy, Traefik (not in CI)
 examples/rules/       example rule files, kept valid by a test
 examples/nginx/       tested nginx configuration; the handbook shows it
 examples/caddy/       tested Caddy configuration; the handbook shows it
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, metrics, challenge, development
+examples/apache/, haproxy/, traefik/   tested by test/webserver
+examples/docker/, systemd/, kubernetes/  container, service and cluster examples
+Dockerfile            the container image; built and started in CI
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, metrics, environments, challenge, development
 docs/de/              operator handbook in German
 ```
 

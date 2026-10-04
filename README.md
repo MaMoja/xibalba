@@ -65,7 +65,8 @@ flowchart LR
 | Security check: proof of work, a path without JavaScript, signed pass cookie | Built |
 | Contact line and default language of the visitor pages adjustable | Built |
 | Own name and wording on the visitor pages, Xibalba line removable (sponsor license) | Built |
-| Tested configurations for nginx and Caddy | Built |
+| Tested configurations for nginx, Caddy, Apache, HAProxy and Traefik | Built |
+| Container image (Dockerfile), Compose example, systemd unit, Kubernetes example | Built; images not published yet |
 | Logo and accent colour on visitor pages | Planned |
 | Crawler classes, verified crawler identity (address lists, reverse DNS), presets | Built |
 | Own crawler definitions | Built |
@@ -192,6 +193,7 @@ configuration xibalba.yaml: 1 problem
 |---|---|
 | [Configuration](docs/CONFIGURATION.md) | Every setting, its default and its allowed values |
 | [Handbuch (Deutsch)](docs/de/HANDBUCH.md) | Für Betreiber: installieren, einrichten, wo man was einstellt |
+| [Environments](docs/ENVIRONMENTS.md) | Web servers, containers, systemd, Kubernetes, CDNs: example files and how far each is tested |
 | [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
 | [Crawlers](docs/CRAWLERS.md) | Crawler classes, presets, how identity is verified, the crawlers Xibalba knows |
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
