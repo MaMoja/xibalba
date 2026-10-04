@@ -5,3 +5,5 @@ rules:
     match:
       crawler: {class: [search-engine], verified: true}
     action: allow
+    # A verified crawler is who it says it is; the limits are not meant for it.
+    exempt_from_limits: true

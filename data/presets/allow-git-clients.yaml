@@ -1,13 +1,18 @@
 # Let git fetch and push over HTTP. Only the addresses git itself uses are
-# opened, and only to programs that say they are git. Useful in front of a
-# code hosting site when everything else is checked. Anyone can send git's
-# name, so this opens exactly these addresses to everyone who does.
+# opened, only with the method git uses, and only to programs that say they
+# are git. Useful in front of a code hosting site when everything else is
+# checked. Anyone can send git's name, so this opens exactly these addresses
+# to everyone who does. No part of the address before them may contain a dot,
+# except a repository name ending in .git.
 rules:
   - name: preset.allow-git-clients
     match:
       user_agent: {prefix: "git/"}
       any:
-        - path: {suffix: "/info/refs"}
-        - path: {suffix: "/git-upload-pack"}
-        - path: {suffix: "/git-receive-pack"}
+        - method: ["GET"]
+          path: {regex: "^(/[^/.]+|/[^/]+\\.git)+/info/refs$"}
+        - method: ["POST"]
+          path: {regex: "^(/[^/.]+|/[^/]+\\.git)+/git-(upload|receive)-pack$"}
+          header:
+            Content-Type: {prefix: "application/x-git-"}
     action: allow

@@ -71,7 +71,8 @@ type Options struct {
 	// Limit counts a request from a client and reports whether the client
 	// is over a request limit and, if so, whether further requests are
 	// refused (deny) or have to pass the check. If nil, nothing is limited.
-	// Requests that a rule explicitly allows are neither counted nor limited.
+	// Requests let through by a rule marked exempt_from_limits are neither
+	// counted nor limited.
 	Limit func(client netip.Addr) (over, deny bool, retryAfter time.Duration)
 	// Limited writes the page for a request refused by a limit.
 	Limited func(w http.ResponseWriter, r *http.Request, retryAfter time.Duration)
@@ -98,7 +99,7 @@ type Gate struct {
 	log     *slog.Logger
 	sources []rules.Source
 	counts  []atomic.Uint64 // one per source, same order
-	trusted []bool          // per source: a rule that allows
+	trusted []bool          // per source: exempt from the request limits
 	since   time.Time
 
 	challengesServed atomic.Uint64 // challenge pages shown
@@ -118,7 +119,7 @@ func New(opts Options) *Gate {
 	sources := opts.Engine.Sources()
 	trusted := make([]bool, len(sources))
 	for i, s := range sources {
-		trusted[i] = s.Action == rules.Allow && strings.HasPrefix(s.ID, "rule:")
+		trusted[i] = s.ExemptFromLimits
 	}
 	return &Gate{
 		trusted: trusted,
@@ -152,9 +153,9 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	// Request limits. A request that a rule of the site owner explicitly
-	// allows is trusted and not counted; so is nothing else. A limit can
-	// only make the outcome stricter.
+	// Request limits. Only a request let through by a rule that the site
+	// owner marked as exempt is not counted. A limit can only make the
+	// outcome stricter.
 	var over, refuse bool
 	var retryAfter time.Duration
 	if g.opts.Limit != nil && !g.trusted[decision.Source] {
@@ -205,12 +206,13 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 
 	info, _ := clientip.FromContext(r.Context())
 	req := rules.Request{
-		Method:    strings.ToUpper(r.Method),
-		Host:      rules.NormalizeHost(r.Host),
-		Path:      rules.NormalizePath(r.URL.Path),
-		UserAgent: r.Header.Get("User-Agent"),
-		Header:    r.Header,
-		Client:    info.Client,
+		Method:      strings.ToUpper(r.Method),
+		Host:        rules.NormalizeHost(r.Host),
+		Path:        rules.NormalizePath(r.URL.Path),
+		PathAltered: rules.PathAltered(r.URL.Path, r.URL.RawPath),
+		UserAgent:   r.Header.Get("User-Agent"),
+		Header:      r.Header,
+		Client:      info.Client,
 	}
 	req.NoCountryData = true
 	if g.opts.Country != nil {

@@ -113,6 +113,10 @@ type RuleSpec struct {
 	// Weight is added to the score when Action is weigh. It may be negative.
 	// It must be left out for every other action.
 	Weight int `yaml:"weight"`
+	// ExemptFromLimits, on an allow rule, says that requests the rule lets
+	// through are not counted by the request limits. Use it only where the
+	// client cannot choose to match: an address, a verified crawler.
+	ExemptFromLimits bool `yaml:"exempt_from_limits"`
 }
 
 // MatchSpec is a set of conditions that must all hold.
@@ -228,6 +232,14 @@ type Request struct {
 	// two upper-case letters, established by internal/geo. The zero value
 	// means: not known.
 	Country [2]byte
+	// PathAltered reports that Path is not what the client sent: the
+	// address was written in a roundabout way (dot segments, repeated
+	// slashes, backslashes, path parameters, encoded slashes). Rules that
+	// let a request through because of its path are then skipped. The
+	// website receives the address as sent, and may read a roundabout
+	// address differently than the rule did; a rule that restricts is
+	// safe to err on the wide side, a rule that lets through is not.
+	PathAltered bool
 	// NoCountryData reports that no country database is loaded right now.
 	// Rules with a country condition are then skipped altogether: without
 	// data, "in Germany" and "not in Germany" are equally unknown, and a
@@ -256,6 +268,9 @@ type Decision struct {
 type Source struct {
 	// ID is "rule:<name>", "threshold:<weight>" or "default".
 	ID string
+	// ExemptFromLimits reports that requests this source lets through are
+	// not counted by the request limits.
+	ExemptFromLimits bool
 	// Action is what this source decides.
 	Action Action
 	// Reference is a short, stable code for this source. It is shown to a

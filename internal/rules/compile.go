@@ -83,12 +83,19 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		// A rule that lets requests through, or makes them look better.
 		c.favours = rs.Action == Allow || (rs.Action == Weigh && rs.Weight < 0)
 		c.negated = false
-		before := c.countryConditions
+		before, pathsBefore := c.countryConditions, c.pathConditions
 		rule.match = c.match(rs.Match, "match", 1, true)
 		rule.needsCountry = c.countryConditions > before
+		rule.strictPath = c.favours && c.pathConditions > pathsBefore
+
+		if rs.ExemptFromLimits && rs.Action != Allow {
+			c.add("exempt_from_limits", fmt.Sprintf("only an allow rule can exempt from the limits, but the action is %s", rs.Action),
+				"remove exempt_from_limits, or change the action to allow")
+		}
 
 		if decides(rs.Action) {
 			rule.source = e.addSource("rule:"+rs.Name, rs.Action)
+			e.sources[rule.source].ExemptFromLimits = rs.ExemptFromLimits && rs.Action == Allow
 		}
 		e.rules = append(e.rules, rule)
 	}
@@ -153,6 +160,7 @@ type compiler struct {
 	usesCountry bool
 	// countryConditions counts the country conditions compiled so far.
 	countryConditions int
+	pathConditions    int
 	favours           bool // the rule being compiled allows, or lowers the score
 	negated           bool // the conditions being compiled are inside an odd number of "not"
 	usesCrawlers      bool
@@ -204,6 +212,7 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 		}
 	}
 	if spec.Path != nil {
+		c.pathConditions++
 		if sm, ok := c.text(*spec.Path, field+".path", false); ok {
 			parts = append(parts, fieldMatch{field: fieldPath, text: sm})
 		}

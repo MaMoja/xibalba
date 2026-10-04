@@ -1,6 +1,8 @@
 package config
 
 import (
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,5 +194,102 @@ func TestPresetFilesHaveAComment(t *testing.T) {
 		if err != nil || !strings.HasPrefix(string(content), "# ") {
 			t.Errorf("%s: no leading comment (%v)", name, err)
 		}
+	}
+}
+
+// The presets that let requests through must not be a way round the check.
+// These are the requests an attacker who has read the presets would try.
+func TestAllowPresetsCannotBeAbused(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base+`rules:
+  default_action: challenge
+  presets: [keep-internet-working, allow-feeds, allow-git-clients]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, problems := rules.Compile(cfg.Rules.Spec())
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	git := map[string]string{"Content-Type": "application/x-git-upload-pack-request"}
+	tests := []struct {
+		method, target, ua string
+		headers            map[string]string
+		want               rules.Action
+	}{
+		// What the presets are for.
+		{"GET", "/robots.txt", "Mozilla", nil, rules.Allow},
+		{"HEAD", "/favicon.ico", "Mozilla", nil, rules.Allow},
+		{"GET", "/.well-known/security.txt", "Mozilla", nil, rules.Allow},
+		{"GET", "/feed", "Mozilla", nil, rules.Allow},
+		{"GET", "/blog/feed/", "Mozilla", nil, rules.Allow},
+		{"GET", "/blog/index.xml", "Mozilla", nil, rules.Allow},
+		{"GET", "/atom.xml", "Mozilla", nil, rules.Allow},
+		{"GET", "/group/project.git/info/refs", "git/2.43.0", nil, rules.Allow},
+		{"GET", "/group/project/info/refs", "git/2.43.0", nil, rules.Allow},
+		{"POST", "/group/project.git/git-upload-pack", "git/2.43.0", git, rules.Allow},
+
+		// Roundabout addresses: the website may read them differently.
+		{"GET", "/artikel.php/..;/.well-known/x", "Mozilla", nil, rules.Challenge},
+		{"GET", "/artikel.php/..;/robots.txt", "Mozilla", nil, rules.Challenge},
+		{"GET", "/admin/..;x=1/favicon.ico", "Mozilla", nil, rules.Challenge},
+		{"GET", "/.well-known/../admin", "Mozilla", nil, rules.Challenge},
+		{"GET", "/x/../robots.txt", "Mozilla", nil, rules.Challenge},
+		{"GET", "//robots.txt", "Mozilla", nil, rules.Challenge},
+		{"GET", "/a%2F..%2Frobots.txt", "Mozilla", nil, rules.Challenge},
+		{"GET", "/robots.txt;x", "Mozilla", nil, rules.Challenge},
+		// A script with something behind it.
+		{"GET", "/artikel.php/feed", "Mozilla", nil, rules.Challenge},
+		{"GET", "/artikel.php/x.xml", "Mozilla", nil, rules.Challenge},
+		{"GET", "/index.php/rss/", "Mozilla", nil, rules.Challenge},
+		// Any page with a format ending.
+		{"GET", "/users.xml", "Mozilla", nil, rules.Challenge},
+		{"GET", "/intern/akten.atom", "Mozilla", nil, rules.Challenge},
+		// Other methods.
+		{"POST", "/robots.txt", "Mozilla", nil, rules.Challenge},
+		{"POST", "/feed", "Mozilla", nil, rules.Challenge},
+		// git's name on addresses or methods git does not use.
+		{"POST", "/wp-login.php/git-receive-pack", "git/2.40", git, rules.Challenge},
+		{"DELETE", "/api/users/7/info/refs", "git/2", nil, rules.Challenge},
+		{"POST", "/group/project.git/info/refs", "git/2", git, rules.Challenge},
+		{"GET", "/group/project.git/git-upload-pack", "git/2", nil, rules.Challenge},
+		{"POST", "/group/project.git/git-upload-pack", "git/2", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, rules.Challenge},
+		{"GET", "/page.php/info/refs", "git/2", nil, rules.Challenge},
+		{"GET", "/group/project.git/info/refs", "Mozilla/5.0 git/2", nil, rules.Challenge},
+	}
+	for _, tt := range tests {
+		u, err := url.Parse("http://example.org" + tt.target)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.target, err)
+		}
+		header := http.Header{}
+		for k, v := range tt.headers {
+			header.Set(k, v)
+		}
+		req := rules.Request{
+			Method: tt.method, Host: "example.org", UserAgent: tt.ua, Header: header,
+			Path: rules.NormalizePath(u.Path), PathAltered: rules.PathAltered(u.Path, u.RawPath),
+		}
+		if got := engine.Evaluate(&req).Action; got != tt.want {
+			t.Errorf("%s %s (%s): %s, want %s", tt.method, tt.target, tt.ua, got, tt.want)
+		}
+	}
+}
+
+func TestOnlyVerifiedCrawlerPresetsAreExemptFromLimits(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base+"trap:\n  enabled: true\nrules:\n  presets: ["+strings.Join(PresetNames(), ", ")+"]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range cfg.Rules.Spec().Rules {
+		verified := r.Match.Crawler != nil && r.Match.Crawler.Verified != nil && *r.Match.Crawler.Verified
+		if r.ExemptFromLimits != (r.Action == rules.Allow && verified) {
+			t.Errorf("%s: exempt_from_limits = %v", r.Name, r.ExemptFromLimits)
+		}
+	}
+	// On anything but an allow rule it is a mistake.
+	_, err = Parse("xibalba.yaml", []byte(base+"rules:\n  list:\n    - {name: r, match: {path: {prefix: /x}}, action: deny, exempt_from_limits: true}\n"))
+	if err == nil || !strings.Contains(err.Error(), "only an allow rule can exempt") {
+		t.Errorf("error = %v", err)
 	}
 }

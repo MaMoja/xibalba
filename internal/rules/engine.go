@@ -35,6 +35,9 @@ type compiledRule struct {
 	source int // index into Engine.sources; -1 for weigh rules
 	// needsCountry: the rule has a country condition somewhere.
 	needsCountry bool
+	// strictPath: the rule favours the request and tests the path, so it
+	// only applies to an address sent in plain form.
+	strictPath bool
 }
 
 type threshold struct {
@@ -48,6 +51,9 @@ func (e *Engine) Evaluate(req *Request) Decision {
 	for i := range e.rules {
 		rule := &e.rules[i]
 		if rule.needsCountry && req.NoCountryData {
+			continue
+		}
+		if rule.strictPath && req.PathAltered {
 			continue
 		}
 		if !rule.match.match(req) {
@@ -84,6 +90,14 @@ func (e *Engine) Uses(action Action) bool {
 
 // Len returns the number of rules, including weigh rules.
 func (e *Engine) Len() int { return len(e.rules) }
+
+// PathAltered reports whether a request's address was written in a
+// roundabout way. path is the decoded path, raw the encoded form the client
+// sent if it differs from the standard encoding of path (http.Request's
+// URL.RawPath; empty otherwise).
+func PathAltered(path, raw string) bool {
+	return raw != "" || path != NormalizePath(path)
+}
 
 // NormalizePath returns the form of a request path that rules are tested
 // against. The website behind Xibalba may treat "/a//b", "/a/./b", "/x/../a/b"

@@ -1,11 +1,13 @@
 # Let feed readers fetch news feeds. A feed reader is a program and cannot
-# pass the security check. Matches addresses ending in .rss, .atom or .xml,
-# and the usual feed addresses.
+# pass the security check. Matches the usual feed addresses: a last part
+# named feed, rss or atom, or a file named index, feed, rss or atom with the
+# ending .xml, .rss or .atom. No earlier part of the address may contain a
+# dot, so an address such as /page.php/feed is not let through.
 rules:
   - name: preset.allow-feeds
     match:
       method: ["GET", "HEAD"]
       any:
-        - path: {regex: "\\.(rss|atom|xml)$"}
-        - path: {regex: "/(feed|rss|atom)/?$"}
+        - path: {regex: "^(/[^/.]+)*/(feed|rss|atom)/?$"}
+        - path: {regex: "^(/[^/.]+)*/(index|feed|rss|atom)\\.(xml|rss|atom)$"}
     action: allow

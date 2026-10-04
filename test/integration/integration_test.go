@@ -1204,6 +1204,7 @@ rules:
       match:
         ip: ["192.0.2.0/24"]
       action: allow
+      exempt_from_limits: true
 `
 
 func TestRequestLimits(t *testing.T) {
@@ -1232,7 +1233,7 @@ func TestRequestLimits(t *testing.T) {
 		t.Errorf("refused request: %d, Retry-After %q, body:\n%.300s", resp.StatusCode, resp.Header.Get("Retry-After"), body)
 	}
 
-	// Other clients are not affected; exempt addresses and requests allowed by a rule are never limited.
+	// Other clients are not affected; exempt addresses and requests let through by an exempt rule are never limited.
 	for name, addr := range map[string]string{"another client": "203.0.113.10", "exempt address": "198.51.100.7", "allowed by a rule": "192.0.2.7"} {
 		n := 4
 		if name != "another client" {

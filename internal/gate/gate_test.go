@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -28,7 +29,7 @@ func engine(t *testing.T) *rules.Engine {
 		DefaultAction: rules.Allow,
 		Thresholds:    []rules.ThresholdSpec{{Weight: 10, Action: rules.Challenge}},
 		Rules: []rules.RuleSpec{
-			{Name: "office", Match: rules.MatchSpec{IP: []string{"192.0.2.0/24"}}, Action: rules.Allow},
+			{Name: "office", Match: rules.MatchSpec{IP: []string{"192.0.2.0/24"}}, Action: rules.Allow, ExemptFromLimits: true},
 			{Name: "block-bot", Match: rules.MatchSpec{UserAgent: &rules.StringSpec{Contains: "ExampleBot"}}, Action: rules.Deny},
 			{Name: "block-admin", Match: rules.MatchSpec{Path: &rules.StringSpec{Prefix: "/admin"}}, Action: rules.Deny},
 			{Name: "block-host", Match: rules.MatchSpec{Host: &rules.StringSpec{Equals: "internal.example.org"}}, Action: rules.Deny},
@@ -449,6 +450,15 @@ func limitHarness(t *testing.T, over, deny *bool, counted *[]string, change func
 			_, _ = io.WriteString(w, "limited "+retryAfter.String())
 		}
 		o.Challenge = &fakeChallenger{}
+		e, problems := rules.Compile(rules.Spec{DefaultAction: rules.Allow, Rules: []rules.RuleSpec{
+			{Name: "office", Match: rules.MatchSpec{IP: []string{"192.0.2.0/24"}}, Action: rules.Allow, ExemptFromLimits: true},
+			{Name: "public-files", Match: rules.MatchSpec{Path: &rules.StringSpec{Prefix: "/public/"}}, Action: rules.Allow},
+			{Name: "block-admin", Match: rules.MatchSpec{Path: &rules.StringSpec{Prefix: "/admin"}}, Action: rules.Deny},
+		}})
+		if len(problems) > 0 {
+			t.Fatal(problems)
+		}
+		o.Engine = e
 		if change != nil {
 			change(o)
 		}
@@ -489,13 +499,52 @@ func TestRequestLimits(t *testing.T) {
 		t.Errorf("denied by a rule and over the limit: %d %q", rec.Code, rec.Body)
 	}
 
-	// A request a rule explicitly allows is neither counted nor limited.
+	// A request let through by a rule marked as exempt is neither counted nor limited.
 	before := len(counted)
 	if rec := h.do(call{target: "/", remote: "192.0.2.10:1"}); rec.Code != 200 {
-		t.Errorf("allowed by a rule: %d", rec.Code)
+		t.Errorf("allowed by an exempt rule: %d", rec.Code)
 	}
 	if len(counted) != before {
-		t.Error("a request allowed by a rule was counted")
+		t.Error("a request allowed by an exempt rule was counted")
+	}
+	// An ordinary allow rule does not exempt: anyone can ask for that address.
+	if rec := h.do(call{target: "/public/a.css"}); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("allowed by an ordinary rule while over the limit: %d", rec.Code)
+	}
+	if len(counted) != before+1 {
+		t.Error("a request allowed by an ordinary rule was not counted")
+	}
+
+	// A rule that lets through by path does not apply to an address written
+	// in a roundabout way; the website might read it differently.
+	over = false
+	h2 := newHarness(t, func(o *Options) {
+		e, problems := rules.Compile(rules.Spec{DefaultAction: rules.Deny, Rules: []rules.RuleSpec{
+			{Name: "public-files", Match: rules.MatchSpec{Path: &rules.StringSpec{Prefix: "/public/"}}, Action: rules.Allow},
+		}})
+		if len(problems) > 0 {
+			t.Fatal(problems)
+		}
+		o.Engine = e
+	})
+	for target, want := range map[string]int{
+		"/public/a.css": 200, "/public/../public/a.css": 403, "/secret.php/..;/public/a.css": 403,
+		"//public/a.css": 403, "/public/a%2Fb": 403, "/x/%2e%2e/public/a.css": 403,
+		// Needlessly encoded: not what a browser sends, so not trusted either.
+		"/public/%61.css": 403,
+	} {
+		req := httptest.NewRequest("GET", "http://example.org/", nil)
+		u, err := url.Parse("http://example.org" + target) // as sent, nothing resolved
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.URL = u
+		req.RemoteAddr = "203.0.113.5:1"
+		rec := httptest.NewRecorder()
+		h2.handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("%s: %d, want %d", target, rec.Code, want)
+		}
 	}
 }
 
