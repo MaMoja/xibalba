@@ -8,6 +8,12 @@ All notable changes are listed here. The format follows
 
 ### Changed
 
+- Regular expressions in rules have a size limit, per expression and for
+  the rule set, and look at values up to 1,024 characters; a longer value
+  counts against the request. A rule set can no longer be made slow by its
+  expressions. **If you use large expressions with long repeats, `xibalba
+  -check` now tells you**; the expressions that ship with Xibalba are far
+  below the limit. A rule set may hold at most 20,000 groups of conditions.
 - Statistics are removed exactly when their time is over (to the day), no
   longer only when a whole month is.
 - `Retry-After` names the longest wait if a client is over several limits.

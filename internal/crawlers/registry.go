@@ -307,6 +307,17 @@ func (r *Registry) Stop(ctx context.Context) error {
 // Identify says which crawler a request claims to be and whether the claim
 // is true. It never waits for the network: what is not known yet is Pending.
 func (r *Registry) Identify(userAgent string, client netip.Addr) Identity {
+	return r.identify(userAgent, client, false)
+}
+
+// Peek answers like Identify from what is known at this moment, and leaves
+// no trace: nothing is counted and no lookup is started. It is for trying a
+// rule on a made-up request.
+func (r *Registry) Peek(userAgent string, client netip.Addr) Identity {
+	return r.identify(userAgent, client, true)
+}
+
+func (r *Registry) identify(userAgent string, client netip.Addr, quiet bool) Identity {
 	// Only the start of the user agent is searched. Crawlers name
 	// themselves well within it, and a client must not be able to make a
 	// request expensive by sending a huge header.
@@ -336,12 +347,14 @@ func (r *Registry) Identify(userAgent string, client netip.Addr) Identity {
 	}
 	c := r.crawlers[index]
 	client = client.Unmap().WithZone("")
-	status := r.verify(index, c, client)
-	c.counts[status].Add(1)
+	status := r.verify(index, c, client, quiet)
+	if !quiet {
+		c.counts[status].Add(1)
+	}
 	return Identity{Name: c.def.Name, Class: c.def.Class, Status: status}
 }
 
-func (r *Registry) verify(index int, c *crawler, client netip.Addr) Status {
+func (r *Registry) verify(index int, c *crawler, client netip.Addr, quiet bool) Status {
 	v := c.def.Verify
 	if !v.Verifiable() {
 		return Unverifiable
@@ -364,7 +377,7 @@ func (r *Registry) verify(index int, c *crawler, client netip.Addr) Status {
 		}
 	}
 	if len(c.dnsSuffix) > 0 {
-		switch r.dnsStatus(dnsKey{addr: client, crawler: index}) {
+		switch r.dnsStatus(dnsKey{addr: client, crawler: index}, quiet) {
 		case Verified:
 			return Verified
 		case Pending:
@@ -397,7 +410,7 @@ func network(key dnsKey) dnsKey {
 
 // dnsStatus returns the cached result of the reverse DNS check, starting the
 // check in the background if there is none.
-func (r *Registry) dnsStatus(key dnsKey) Status {
+func (r *Registry) dnsStatus(key dnsKey, quiet bool) Status {
 	now := r.opts.Now()
 	r.dnsMu.Lock()
 	defer r.dnsMu.Unlock()
@@ -408,6 +421,9 @@ func (r *Registry) dnsStatus(key dnsKey) Status {
 	net := network(key)
 	if entry, ok := r.dnsOther[net]; ok && now.Before(entry.expires) {
 		return entry.status
+	}
+	if quiet {
+		return Pending // not known, and not to be found out on this occasion
 	}
 	select {
 	case r.dnsJobs <- key:

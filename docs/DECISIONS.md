@@ -4,6 +4,27 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Regular expressions are bounded by compiled size and by input length**
+  (400 steps each, 2,000 per rule set, 1,024 characters of input). Found by
+  the security review of the rule editor: within the old limit of 512
+  characters per pattern, a rule set could cost seconds per request for a
+  visitor who sends a long header. Go's expressions are linear, but linear
+  in size times input. A value too long to search counts against the
+  request (match for a restricting rule, no match for an allowing one), the
+  same polarity as for roundabout paths, so padding neither evades a deny
+  rule nor earns an allow. This changes behaviour for existing rule sets
+  with very large expressions; they are refused with a message.
+- **Rule text from the web interface is plain YAML only**: no anchors,
+  aliases, merge keys, tags or second documents. A few hundred bytes of
+  aliases expanded to gigabytes. The configuration files are not restricted
+  this way (their author owns the machine), but the new limit of 20,000
+  condition groups per rule set applies to every source.
+- **Versions are named by a hash of their content**, not by their position,
+  so a click on an older page cannot restore a different version.
+- **The box to try a request asks the crawler registry without side
+  effects** (`Peek`): no counting, no name lookup for an address someone
+  typed into a form.
+
 - **The rule editor is a text field with the rule file format, not a form
   builder.** A builder for nested conditions (`all`, `any`, `not`) would be
   the largest piece of the interface and need script. The text field reuses

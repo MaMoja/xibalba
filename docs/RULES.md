@@ -449,10 +449,34 @@ xibalba -check -config xibalba.yaml
 | Nesting of `all`, `any`, `not` | 8 levels |
 | Entries in one `ip`, `method`, `header`, `all` or `any` list | 1,024 |
 | Length of a text or regular expression | 512 characters |
+| Groups of conditions in the whole rule set (every entry of every `all` and `any`) | 20,000 |
+| Size of one regular expression | 400 steps when compiled |
+| Size of all regular expressions together | 2,000 steps |
+| How much of a value a regular expression looks at | 1,024 characters |
 | Weight of a rule or threshold | up to 1,000 |
 | Rule files | 64, each up to 1 MiB |
 
 ## Cost
+
+**Regular expressions are the one condition whose cost you choose.** The time
+a search takes grows with the size of the expression and the length of the
+value, and a visitor chooses the value. Two limits keep that bounded:
+
+- An expression has a size: its number of steps when compiled. Plain
+  expressions have a few dozen (the largest that ships with Xibalba has 48).
+  Repeats multiply: `(a{30}){30}` is 900 times `a`. An expression above the
+  limit, or a rule set whose expressions are too large together, is refused
+  with a message that names the rule.
+- A regular expression looks at values up to 1,024 characters. A longer
+  value is not searched. It then counts **against** the request: as a match
+  where the rule denies, checks or adds weight, and as no match where the
+  rule lets through. So a visitor cannot get past a rule by padding an
+  address, and cannot be let through by one. `equals`, `contains`, `prefix`
+  and `suffix` have no such limit; they cost almost nothing at any length.
+
+With the largest expressions the limits allow and the longest value they
+look at, one request took about 12 milliseconds on the development machine.
+Rules like the ones in this document stay in microseconds.
 
 Evaluating a request does not allocate memory and performs no I/O. On the
 development machine a request that matches none of 123 rules, and is therefore

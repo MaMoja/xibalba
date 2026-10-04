@@ -763,3 +763,24 @@ func BenchmarkIdentify(b *testing.B) {
 		r.Identify(ua, client)
 	}
 }
+
+// Peek answers from what is known and leaves no trace.
+func TestPeekLeavesNoTrace(t *testing.T) {
+	r := New(Options{Definitions: defs(t, defsFile(`
+  - {name: DNSBot, class: search-engine, user_agent: DNSBot, purpose: p, verify: {reverse_dns: [".bot.example.org"]}}
+`))})
+	client := netip.MustParseAddr("203.0.113.9")
+	for i := 0; i < 3; i++ {
+		if got := r.Peek("Mozilla/5.0 (compatible; DNSBot/2.0)", client); got.Name != "DNSBot" || got.Status != Pending {
+			t.Fatalf("Peek = %+v", got)
+		}
+	}
+	for _, report := range r.Reports() {
+		if n := report.Requests; n.Verified+n.Unverified+n.Unverifiable+n.Pending != 0 {
+			t.Errorf("%s was counted: %+v", report.Name, n)
+		}
+	}
+	if len(r.dnsJobs) != 0 || len(r.dnsOther) != 0 {
+		t.Errorf("a lookup was started: %d queued, %d noted", len(r.dnsJobs), len(r.dnsOther))
+	}
+}

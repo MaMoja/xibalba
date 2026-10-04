@@ -61,6 +61,22 @@ const (
 	MaxConditions = 1024
 	// MaxPatternLength is the longest text or regular expression in a condition.
 	MaxPatternLength = 512
+	// MaxGroups is the largest number of condition groups in one rule set,
+	// counting every entry of every all and any. Nesting multiplies, so the
+	// per-list limit alone would not bound a rule set.
+	MaxGroups = 20000
+	// MaxRegexSize is the largest regular expression, measured in the steps
+	// of its compiled form. Repeats multiply: "(a{50}){50}" is 2500 times
+	// "a". The expressions that ship with Xibalba have fewer than 50.
+	MaxRegexSize = 400
+	// MaxRegexTotal is the largest sum of MaxRegexSize over a rule set.
+	MaxRegexTotal = 2000
+	// MaxRegexInput is how much of a value a regular expression looks at.
+	// The time a regular expression takes grows with the value, and a
+	// visitor chooses the value. A longer value is not searched: it counts
+	// as matching where a match works against the request, and as not
+	// matching where a match works for it.
+	MaxRegexInput = 1024
 	// MaxWeight is the largest weight, positive or negative, of a rule or threshold.
 	MaxWeight = 1000
 )

@@ -61,6 +61,9 @@ type Options struct {
 	// Identify says which crawler a request claims to be. If nil, crawler
 	// conditions never match.
 	Identify func(userAgent string, client netip.Addr) rules.Crawler
+	// Peek is Identify without side effects, for Explain. If nil, Explain
+	// uses Identify.
+	Peek func(userAgent string, client netip.Addr) rules.Crawler
 	// Country says which country a client's address is registered in, and
 	// whether a country database is loaded at all. If nil, or while no
 	// database is loaded, rules with a country condition are skipped.
@@ -291,13 +294,13 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 	}()
 
 	info, _ := clientip.FromContext(r.Context())
-	req := g.request(r, info.Client)
+	req := g.request(r, info.Client, g.opts.Identify)
 	set = g.set.Load()
 	return set.engine.Evaluate(&req), req.Client, set, true
 }
 
 // request gathers what the rules may ask about a request from client.
-func (g *Gate) request(r *http.Request, client netip.Addr) rules.Request {
+func (g *Gate) request(r *http.Request, client netip.Addr, identify func(string, netip.Addr) rules.Crawler) rules.Request {
 	req := rules.Request{
 		Method:      strings.ToUpper(r.Method),
 		Host:        rules.NormalizeHost(r.Host),
@@ -317,8 +320,8 @@ func (g *Gate) request(r *http.Request, client netip.Addr) rules.Request {
 	if g.opts.Trapped != nil {
 		req.Trapped = g.opts.Trapped(req.Client)
 	}
-	if g.opts.Identify != nil {
-		req.Crawler = g.opts.Identify(req.UserAgent, req.Client)
+	if identify != nil {
+		req.Crawler = identify(req.UserAgent, req.Client)
 	}
 	return req
 }
@@ -335,7 +338,11 @@ func (g *Gate) Explain(r *http.Request, client netip.Addr, engine Evaluator) (ac
 	if engine == nil {
 		engine = g.set.Load().engine
 	}
-	req := g.request(r, client)
+	identify := g.opts.Peek
+	if identify == nil {
+		identify = g.opts.Identify
+	}
+	req := g.request(r, client, identify)
 	decision := engine.Evaluate(&req)
 	return decision.Action, engine.Sources()[decision.Source].ID, decision.Weight, true
 }

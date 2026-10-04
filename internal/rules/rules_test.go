@@ -488,3 +488,89 @@ func BenchmarkEvaluate(b *testing.B) {
 		e.Evaluate(req)
 	}
 }
+
+// The cost of a rule set has bounds that hold whatever the author writes.
+func TestLimitsOnWhatARuleSetMayCost(t *testing.T) {
+	rule := func(name, regex string, action Action) RuleSpec {
+		return RuleSpec{Name: name, Match: MatchSpec{Path: &StringSpec{Regex: regex}}, Action: action}
+	}
+	for name, tt := range map[string]struct {
+		rules []RuleSpec
+		want  string
+	}{
+		"one huge expression": {[]RuleSpec{rule("a", "([a-z]{0,20}){15}Q", Deny)}, "too large"},
+		"nested repeats":      {[]RuleSpec{rule("a", "(x{30}){30}", Deny)}, "too large"},
+		"many middling ones": {func() (out []RuleSpec) {
+			for i := 0; i < 40; i++ {
+				out = append(out, rule(fmt.Sprintf("r%d", i), fmt.Sprintf("a{150}%d", i%10), Deny))
+			}
+			return out
+		}(), "too large together"},
+	} {
+		_, problems := Compile(Spec{DefaultAction: Allow, Rules: tt.rules})
+		found := 0
+		for _, p := range problems {
+			if strings.Contains(p.Message, tt.want) {
+				found++
+			}
+		}
+		if found != 1 {
+			t.Errorf("%s: %d problems say %q: %+v", name, found, tt.want, problems)
+		}
+	}
+
+	// Nesting multiplies: ten times ten times ten ... groups.
+	leaf := MatchSpec{Path: &StringSpec{Prefix: "/x"}}
+	wide := leaf
+	for depth := 0; depth < 5; depth++ {
+		list := make([]MatchSpec, 10)
+		for i := range list {
+			list[i] = wide
+		}
+		wide = MatchSpec{Any: list}
+	}
+	_, problems := Compile(Spec{DefaultAction: Allow, Rules: []RuleSpec{{Name: "wide", Match: wide, Action: Deny}}})
+	if len(problems) != 1 || !strings.Contains(problems[0].Message, "groups of conditions") {
+		t.Errorf("a rule of 100000 groups: %d problems, first %+v", len(problems), problems[:min(len(problems), 1)])
+	}
+}
+
+// A value too long to search counts against the request, never for it.
+func TestRegexOnAValueTooLongToSearch(t *testing.T) {
+	long := "/" + strings.Repeat("a", MaxRegexInput) + ".php"
+	e, problems := Compile(Spec{DefaultAction: Challenge, Rules: []RuleSpec{
+		{Name: "let-static", Match: MatchSpec{Path: &StringSpec{Regex: `a+\.php$`}}, Action: Allow},
+	}})
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	if d := e.Evaluate(&Request{Method: "GET", Path: long}); d.Action != Challenge {
+		t.Errorf("an allow rule matched a value it did not search: %s", d.Action)
+	}
+	e, _ = Compile(Spec{DefaultAction: Allow, Rules: []RuleSpec{
+		{Name: "no-php", Match: MatchSpec{Path: &StringSpec{Regex: `\.php$`}}, Action: Deny},
+		{Name: "only-shop", Match: MatchSpec{Not: &MatchSpec{Path: &StringSpec{Regex: `^/shop`}}}, Action: Deny},
+	}})
+	if d := e.Evaluate(&Request{Method: "GET", Path: "/shop/" + strings.Repeat("a", MaxRegexInput)}); d.Action != Deny {
+		t.Errorf("a long value slipped past the deny rules: %s", d.Action)
+	}
+	if d := e.Evaluate(&Request{Method: "GET", Path: "/shop/a"}); d.Action != Allow {
+		t.Errorf("a short value: %s", d.Action)
+	}
+}
+
+func BenchmarkWorstRegexRuleSet(b *testing.B) {
+	var set []RuleSpec
+	for i := 0; i < 4; i++ { // as much expression as a rule set may hold
+		set = append(set, RuleSpec{Name: fmt.Sprintf("r%d", i), Match: MatchSpec{UserAgent: &StringSpec{Regex: fmt.Sprintf("(.*a){9}.{0,170}%dQ", i)}}, Action: Deny})
+	}
+	e, problems := Compile(Spec{DefaultAction: Allow, Rules: set})
+	if len(problems) != 0 {
+		b.Fatal(problems)
+	}
+	req := &Request{Method: "GET", Path: "/", UserAgent: strings.Repeat("a", MaxRegexInput)}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		e.Evaluate(req)
+	}
+}

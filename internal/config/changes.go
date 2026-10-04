@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
+	"github.com/goccy/go-yaml/parser"
 
 	"github.com/MaMoja/xibalba/data"
 	"github.com/MaMoja/xibalba/internal/changes"
@@ -117,6 +119,9 @@ func (c *Config) ruleSpec(state changes.State, now time.Time) (spec rules.Spec, 
 	// configuration, so that what is changed there has an effect.
 	first = len(all)
 	if hasContent([]byte(state.Rules)) {
+		if err := plainYAML(state.Rules); err != nil {
+			return spec, 0, 0, err
+		}
 		var doc ruleFileDoc
 		if err := yaml.UnmarshalWithOptions([]byte(state.Rules), &doc, yaml.Strict()); err != nil {
 			return spec, 0, 0, errors.New(strings.TrimSpace(yaml.FormatError(err, false, true)))
@@ -139,10 +144,75 @@ func (c *Config) ruleSpec(state changes.State, now time.Time) (spec rules.Spec, 
 	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn}, first, count, nil
 }
 
+// plainYAML refuses the parts of YAML that a rule text typed into a web
+// page has no use for and that can make a small text expensive: anchors and
+// aliases (one line can stand for a million), merge keys, tags, several
+// documents, and nesting far deeper than any rule goes.
+func plainYAML(text string) error {
+	depth, deepest, indent := 0, 0, 0
+	for _, line := range strings.Split(text, "\n") {
+		indent = max(indent, len(line)-len(strings.TrimLeft(line, " ")))
+		for i := 0; i < len(line); i++ {
+			switch line[i] {
+			case '[', '{':
+				depth++
+				deepest = max(deepest, depth)
+			case ']', '}':
+				depth--
+			}
+		}
+	}
+	if deepest > 40 || indent > 80 {
+		return errors.New("the text is nested deeper than any rule needs")
+	}
+	file, err := parser.ParseBytes([]byte(text), 0)
+	if err != nil {
+		return errors.New(strings.TrimSpace(yaml.FormatError(err, false, true)))
+	}
+	if len(file.Docs) > 1 {
+		return errors.New(`the text holds more than one document ("---"); only one is read, so write one`)
+	}
+	var found string
+	for _, doc := range file.Docs {
+		ast.Walk(visitorFunc(func(node ast.Node) {
+			switch node.(type) {
+			case *ast.AnchorNode, *ast.AliasNode, *ast.MergeKeyNode:
+				found = `anchors and aliases ("&name", "*name", "<<") are not read here; write the conditions out`
+			case *ast.TagNode:
+				found = `tags ("!!type") are not read here; leave them out`
+			}
+		}), doc)
+	}
+	if found != "" {
+		return errors.New(found)
+	}
+	return nil
+}
+
+type visitorFunc func(ast.Node)
+
+func (f visitorFunc) Visit(node ast.Node) ast.Visitor {
+	if node != nil {
+		f(node)
+	}
+	return f
+}
+
 // Compile builds the rule set in force at now. If it does not work, it
 // returns what is wrong, one line per problem; a problem in a rule written
 // in the web interface names the line of that text.
-func (c *Config) Compile(state changes.State, now time.Time) (*rules.Engine, []string) {
+func (c *Config) Compile(state changes.State, now time.Time) (engine *rules.Engine, problems []string) {
+	// The text comes from a web page or a hand-edited file. Whatever it
+	// does to the YAML reader, the answer is a problem, never a crash.
+	defer func() {
+		if recover() != nil {
+			engine, problems = nil, []string{"the rules are not valid: the text cannot be read as YAML"}
+		}
+	}()
+	return c.compile(state, now)
+}
+
+func (c *Config) compile(state changes.State, now time.Time) (*rules.Engine, []string) {
 	spec, first, count, err := c.ruleSpec(state, now)
 	if err != nil {
 		return nil, []string{"the rules are not valid: " + err.Error()}

@@ -354,3 +354,30 @@ func TestRulesWrittenInTheWebInterface(t *testing.T) {
 		}
 	}
 }
+
+// A small text must not become a large rule set, and no text crashes the reader.
+func TestRuleTextThatIsNotPlain(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bomb := "rules:\n  - name: a\n    action: deny\n    match:\n      any: [&l1 {any: [&l2 {any: [&l3 {path: {prefix: \"/x\"}}, *l3, *l3, *l3]}, *l2, *l2, *l2]}, *l1, *l1, *l1]\n"
+	for name, tt := range map[string]struct{ text, want string }{
+		"aliases":         {bomb, "anchors and aliases"},
+		"merge key":       {"base: &b {action: deny}\nrules:\n  - <<: *b\n    name: a\n", "anchors and aliases"},
+		"tag":             {"rules: !!binary aGVsbG8=\n", "tags"},
+		"two documents":   {"rules: []\n---\nrules: []\n", "more than one document"},
+		"deep brackets":   {"rules: " + strings.Repeat("[", 5000) + "\n", "nested deeper"},
+		"deep indent":     {"rules:\n" + strings.Repeat(" ", 200) + "- name: a\n", "nested deeper"},
+		"not YAML at all": {"rules: {\"a\": \n\t\x7f", "not valid"},
+	} {
+		start := time.Now()
+		engine, problems := cfg.Compile(changes.State{Rules: tt.text}, start)
+		if engine != nil || len(problems) == 0 || !strings.Contains(strings.Join(problems, "\n"), tt.want) {
+			t.Errorf("%s: %v", name, problems)
+		}
+		if took := time.Since(start); took > 2*time.Second {
+			t.Errorf("%s took %s", name, took)
+		}
+	}
+}

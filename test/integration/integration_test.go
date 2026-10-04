@@ -2099,7 +2099,12 @@ func TestChangesInTheWebInterface(t *testing.T) {
 	if got := fetch("/geheim/akte"); got != http.StatusForbidden {
 		t.Errorf("after saving the rule: %d", got)
 	}
-	if code, _ := send("POST", "/settings/restore", url.Values{"form": {form}, "number": {"0"}}); code != http.StatusSeeOther {
+	_, page = send("GET", "/settings", nil)
+	newest := regexp.MustCompile(`name="version" value="([^"]+)"`).FindStringSubmatch(page)
+	if newest == nil {
+		t.Fatalf("no version on the settings page")
+	}
+	if code, _ := send("POST", "/settings/restore", url.Values{"form": {form}, "version": {newest[1]}}); code != http.StatusSeeOther {
 		t.Fatalf("going back: %d", code)
 	}
 	if got := fetch("/geheim/akte"); got != 200 {

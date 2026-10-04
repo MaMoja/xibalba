@@ -388,11 +388,17 @@ type textMatcher struct {
 	fold   bool
 	needle string
 	re     *regexp.Regexp
+	// tooLong is the answer of a regular expression for a value longer
+	// than MaxRegexInput: true where matching restricts the request.
+	tooLong bool
 }
 
 func (t textMatcher) matches(s string) bool {
 	switch t.op {
 	case opRegex:
+		if len(s) > MaxRegexInput {
+			return t.tooLong
+		}
 		return t.re.MatchString(s)
 	case opEquals:
 		if t.fold {

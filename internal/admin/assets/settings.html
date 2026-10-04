@@ -110,7 +110,7 @@
 <td>{{.What}}</td>
 <td><form method="post" action="/settings/restore">
 <input type="hidden" name="form" value="{{$.Form}}">
-<input type="hidden" name="number" value="{{.Number}}">
+<input type="hidden" name="version" value="{{.ID}}">
 <button type="submit" class="small" aria-label="{{$.T.go_back}}: {{.At}}">{{$.T.go_back}}</button>
 </form></td>
 </tr>{{end}}</tbody>

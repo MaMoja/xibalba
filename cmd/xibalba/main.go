@@ -328,12 +328,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Log:             log,
 	})
 	opsMux.Handle("GET /crawlers", known.Handler())
-	var identify func(string, netip.Addr) rules.Crawler
+	var identify, peek func(string, netip.Addr) rules.Crawler
 	if engine.UsesCrawlers() || mayChange {
 		registry.Register(known.Name(), known.Health)
 		supervisor.Add(known)
 		identify = func(userAgent string, client netip.Addr) rules.Crawler {
 			return crawlerOf(known.Identify(userAgent, client))
+		}
+		peek = func(userAgent string, client netip.Addr) rules.Crawler {
+			return crawlerOf(known.Peek(userAgent, client))
 		}
 	}
 
@@ -396,6 +399,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Country:     country,
 		Engine:      engine,
 		Identify:    identify,
+		Peek:        peek,
 		Limit:       limitFn,
 		Page:        pageFn,
 		Limited:     page.Limited,

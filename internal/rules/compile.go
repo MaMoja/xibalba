@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"net/textproto"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
@@ -156,6 +157,10 @@ func (e *Engine) addSource(id string, action Action) int {
 type compiler struct {
 	rule     int
 	problems []Problem
+	// groups counts the condition groups compiled, regexSize the steps of
+	// the regular expressions; both are bounded for the whole rule set.
+	groups    int
+	regexSize int
 
 	catalog     *Catalog
 	trap        bool // the trap is switched on
@@ -183,6 +188,13 @@ func (c *compiler) global(field, message, hint string) {
 // match compiles one group of conditions. Cheap conditions come first so an
 // expensive one, such as a regular expression, only runs when the rest holds.
 func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matcher {
+	if c.groups++; c.groups > MaxGroups {
+		if c.groups == MaxGroups+1 {
+			c.global("rules", fmt.Sprintf("the rule set has more than %d groups of conditions", MaxGroups),
+				"simplify the rules: nested all and any multiply")
+		}
+		return never{}
+	}
 	if depth > MaxDepth {
 		c.add(field, fmt.Sprintf("conditions are nested more than %d levels deep", MaxDepth),
 			"flatten the rule, or split it into several rules")
@@ -571,7 +583,26 @@ func (c *compiler) text(spec StringSpec, field string, header bool) (textMatcher
 				"Xibalba uses RE2 syntax, which has no lookahead or backreferences; for plain text use contains")
 			return textMatcher{}, false
 		}
+		// The time a search takes grows with the size of the compiled
+		// expression, so that size has a limit, per expression and in sum.
+		size := 0
+		if parsed, perr := syntax.Parse(pattern, syntax.Perl); perr == nil {
+			if prog, cerr := syntax.Compile(parsed.Simplify()); cerr == nil {
+				size = len(prog.Inst)
+			}
+		}
+		if size > MaxRegexSize {
+			c.add(sub, fmt.Sprintf("the regular expression is too large: %d steps when compiled; the limit is %d", size, MaxRegexSize),
+				"repeats such as {50} multiply; shorten them, or use contains, prefix or suffix")
+			return textMatcher{}, false
+		}
+		if c.regexSize += size; c.regexSize > MaxRegexTotal && c.regexSize-size <= MaxRegexTotal {
+			c.add(sub, fmt.Sprintf("the regular expressions of the rule set are too large together: more than %d steps", MaxRegexTotal),
+				"use contains, prefix, suffix or equals where plain text is meant; they cost almost nothing")
+		}
 		tm.re = re
+		// A value too long to search: see MaxRegexInput.
+		tm.tooLong = c.favours == c.negated
 		return tm, true
 	}
 	if fold {

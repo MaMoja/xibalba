@@ -47,7 +47,14 @@ func (s settings) Presets() []admin.Preset {
 	return out
 }
 
-func (s settings) SetPreset(name string, on bool) error { return s.store.SetPreset(name, on) }
+func (s settings) SetPreset(name string, on bool) error {
+	for _, p := range s.Presets() {
+		if p.Name == name && p.On == on {
+			return nil // it is so already; no change and no version
+		}
+	}
+	return s.store.SetPreset(name, on)
+}
 
 func (s settings) Addresses() []admin.Address {
 	var out []admin.Address
@@ -70,12 +77,12 @@ func (s settings) SetRules(text string) error { return s.store.SetRules(text) }
 func (s settings) Versions() []admin.Version {
 	var out []admin.Version
 	for _, v := range s.store.State().History {
-		out = append(out, admin.Version{At: v.At, What: v.What})
+		out = append(out, admin.Version{ID: v.ID(), At: v.At, What: v.What})
 	}
 	return out
 }
 
-func (s settings) Restore(number int) error { return s.store.Restore(number) }
+func (s settings) Restore(id string) error { return s.store.Restore(id) }
 
 var probeMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true, "OPTIONS": true}
 
@@ -84,7 +91,7 @@ var probeMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true, "PUT
 func (s settings) Test(text string, probe admin.Probe) (admin.Verdict, error) {
 	client, err := netip.ParseAddr(strings.TrimSpace(probe.Client))
 	target, urlErr := url.ParseRequestURI(strings.TrimSpace(probe.Address))
-	if err != nil || urlErr != nil || !probeMethods[probe.Method] || !strings.HasPrefix(target.Path, "/") || target.Host != "" || len(probe.Address) > 2000 {
+	if err != nil || client.Zone() != "" || urlErr != nil || !probeMethods[probe.Method] || !strings.HasPrefix(target.Path, "/") || target.Host != "" || len(probe.Address) > 2000 {
 		return admin.Verdict{}, keyed("probe_invalid")
 	}
 	request := &http.Request{Method: probe.Method, URL: target, Header: http.Header{}, Host: s.cfg.Upstream.Target().Host}

@@ -543,8 +543,8 @@ func (f *fakeSettings) Test(text string, probe Probe) (Verdict, error) {
 	return Verdict{Action: "deny", Source: "rule:block-shop", Weight: 3}, f.fail
 }
 func (f *fakeSettings) Versions() []Version { return f.versions }
-func (f *fakeSettings) Restore(number int) error {
-	f.calls = append(f.calls, fmt.Sprintf("restore %d", number))
+func (f *fakeSettings) Restore(id string) error {
+	f.calls = append(f.calls, "restore "+id)
 	return f.fail
 }
 
@@ -555,8 +555,8 @@ func (m manyReasons) Lines() []string { return m }
 
 func TestRuleEditorTestBoxAndVersions(t *testing.T) {
 	fake := &fakeSettings{rules: "rules: []\n", versions: []Version{
-		{At: time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC), What: "preset_on:block-ai-training"},
-		{At: time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC), What: "rules"},
+		{ID: "aaaa", At: time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC), What: "preset_on:block-ai-training"},
+		{ID: "bbbb", At: time.Date(2026, 10, 3, 10, 0, 0, 0, time.UTC), What: "rules"},
 	}}
 	w := newWorld(t, func(o *Options) { o.Settings = fake })
 	cookie := cookieOf(w.signIn(password, nil))
@@ -575,7 +575,7 @@ func TestRuleEditorTestBoxAndVersions(t *testing.T) {
 		"no form value": w.do("POST", "/settings/rules", "do=save"+draft, auth),
 		"another site":  w.do("POST", "/settings/rules", form+"&do=save"+draft, map[string]string{"Cookie": cookie, "Origin": "https://evil.example"}),
 		"no login":      w.do("POST", "/settings/rules", form+"&do=save"+draft, nil),
-		"restore":       w.do("POST", "/settings/restore", "number=0", auth),
+		"restore":       w.do("POST", "/settings/restore", "version=aaaa", auth),
 	} {
 		if rec.Code == http.StatusOK || (rec.Code == http.StatusSeeOther && rec.Header().Get("Location") != "/login") || len(fake.calls) != 0 {
 			t.Errorf("%s: %d, calls %v", name, rec.Code, fake.calls)
@@ -613,11 +613,11 @@ func TestRuleEditorTestBoxAndVersions(t *testing.T) {
 
 	// Going back.
 	fake.fail, fake.calls = nil, nil
-	if rec := w.do("POST", "/settings/restore", form+"&number=1", auth); rec.Code != http.StatusSeeOther || fake.calls[0] != "restore 1" {
+	if rec := w.do("POST", "/settings/restore", form+"&version=bbbb", auth); rec.Code != http.StatusSeeOther || fake.calls[0] != "restore bbbb" {
 		t.Errorf("restore: %d, calls %v", rec.Code, fake.calls)
 	}
-	if rec := w.do("POST", "/settings/restore", form+"&number=abc", auth); rec.Code != http.StatusUnprocessableEntity || len(fake.calls) != 1 {
-		t.Errorf("restore with a non-number: %d", rec.Code)
+	if !strings.Contains(body, `name="version" value="bbbb"`) {
+		t.Error("the page does not name the versions by their ID")
 	}
 	// A body far beyond what a rule text can be is not read.
 	if rec := w.do("POST", "/settings/rules", form+"&do=save&rules="+strings.Repeat("a", 400<<10), auth); rec.Code == http.StatusSeeOther {

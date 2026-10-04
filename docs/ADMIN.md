@@ -204,6 +204,11 @@ rules:
   of the configuration file and the presets.
 - Names that start with `web-interface.` or `preset.` are kept for
   Xibalba's own rules. At most 32 KiB of text.
+- The text is plain YAML: anchors and aliases (`&name`, `*name`, `<<`),
+  tags (`!!type`) and a second document (`---`) are refused. Write the
+  conditions out.
+- The [limits](RULES.md#limits) of every rule set apply, among them the
+  size of regular expressions.
 - An empty field means no own rules.
 
 **Trying a request.** Below the text field you describe a request: method,
@@ -215,15 +220,24 @@ would do with it, saved or not, and which rule decides:
 Result: blocked, decided by nur-intern, score 0
 ```
 
-Nothing is changed and no request is sent anywhere. Request limits are not
-part of the answer: they depend on what a client did before. A try with a
-crawler's name shows up in the crawler counts.
+Nothing is changed, nothing is counted, and nothing is sent anywhere, not
+even a name lookup. What the answer leaves out:
+
+- Request limits and a visitor's pass for the security check: they depend
+  on what a client did before.
+- For a crawler that is verified by name lookup, the box only knows what
+  was looked up for real requests before. An address never seen counts as
+  "not known yet", so a rule that asks for a verified crawler does not match.
+- Addresses Xibalba answers itself (everything under `/.xibalba/`) never
+  reach the rules; the box shows what the rules would say all the same.
 
 **Earlier versions.** Every change of presets or own rules keeps what was
 in force before, up to ten versions, each with the time and the change that
 replaced it. "Go back to this" puts that version in force at once; going
 back can itself be undone. The address list is not part of a version: an
-address you removed must not live on in a history.
+address you removed must not live on in a history. An address you write
+into a rule (`ip:`) is part of the rule text, and so stays in the earlier
+versions until ten later changes have pushed it out.
 
 ### Where the changes are kept
 

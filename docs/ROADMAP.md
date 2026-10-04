@@ -102,6 +102,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] IP block and allow lists with expiry and notes
 - [x] Security review of this part by a second agent (2026-10-04); no high finding. Fixed: a listed allow beat a more specific listed block (block now comes first); expired entries stayed in the file; reserved rule names; this machine's and the trusted proxies' addresses cannot be let through; notes counted in characters, control characters refused; `changes` in `/healthz`.
 - [x] Changes kept in their own file; the configuration file is never rewritten; rule set replaced while running
+- [x] Security review of the editor by a second agent (2026-10-04). Two high findings, both fixed before any release: a small rule text with YAML aliases could use gigabytes of memory, and the changes file could grow past the size it is read back with. Also fixed: slow rule sets through large regular expressions (limits for every rule set), a crash of the YAML reader on a tagged value, going back to the wrong version after another change, name lookups started from the box to try a request.
 - [x] Rule editor with validation (problems named with their line) and a box to try a request, saved or not
 - [x] Earlier versions of presets and own rules (ten), with a way back; the configuration file itself is never rewritten, so there is nothing of it to version
 

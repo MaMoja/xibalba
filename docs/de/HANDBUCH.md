@@ -494,6 +494,12 @@ Für Texte gibt es `equals` (genau gleich), `contains` (enthält), `prefix`
 und Kleinschreibung wird nicht unterschieden, außer Sie schreiben
 `case_sensitive: true` dazu.
 
+Reguläre Ausdrücke haben eine Größengrenze und betrachten Werte bis 1024
+Zeichen. Ein längerer Wert wird nicht durchsucht und zählt dann gegen die
+Anfrage: als Treffer, wo die Regel blockiert oder prüft, und als kein
+Treffer, wo sie durchlässt. `equals`, `contains`, `prefix` und `suffix`
+haben diese Grenze nicht. Einzelheiten: [RULES.md](../RULES.md#cost).
+
 ### Worauf Sie sich verlassen können
 
 **Nur die Adresse (`ip`) stellt Xibalba selbst fest.** Die Kennung

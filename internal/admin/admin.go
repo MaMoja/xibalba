@@ -117,8 +117,8 @@ type Settings interface {
 	Test(text string, probe Probe) (Verdict, error)
 	// Versions lists earlier versions of presets and rules, newest first.
 	Versions() []Version
-	// Restore goes back to the version with that number in Versions.
-	Restore(number int) error
+	// Restore goes back to the version with that ID.
+	Restore(id string) error
 }
 
 // Probe is a made-up request to try the rules on.
@@ -140,6 +140,7 @@ type Verdict struct {
 // Version is an earlier state to go back to. What names the change that
 // replaced it: "preset_on:<name>", "preset_off:<name>", "rules", "restore".
 type Version struct {
+	ID   string
 	At   time.Time
 	What string
 }
@@ -279,11 +280,7 @@ func (a *Admin) Handler() http.Handler {
 			return a.opts.Settings.RemoveAddress(r.PostFormValue("network"))
 		}))
 		mux.HandleFunc("POST /settings/restore", a.change(func(r *http.Request) error {
-			number, err := strconv.Atoi(r.PostFormValue("number"))
-			if err != nil {
-				return errors.New("number is not a number")
-			}
-			return a.opts.Settings.Restore(number)
+			return a.opts.Settings.Restore(r.PostFormValue("version"))
 		}))
 		mux.HandleFunc("POST /settings/rules", a.rules)
 	}
@@ -643,10 +640,7 @@ func (a *Admin) rules(w http.ResponseWriter, r *http.Request) {
 	a.settings(w, r, current, status, e)
 }
 
-type versionRow struct {
-	Number   int
-	At, What string
-}
+type versionRow struct{ ID, At, What string }
 
 type presetRow struct {
 	Name, Text string
@@ -685,13 +679,13 @@ func (a *Admin) settings(w http.ResponseWriter, r *http.Request, current session
 		choices = append(choices, choice{id, t["lifetime_"+id]})
 	}
 	var versions []versionRow
-	for i, v := range a.opts.Settings.Versions() {
+	for _, v := range a.opts.Settings.Versions() {
 		kind, name, _ := strings.Cut(v.What, ":")
 		what := strings.ReplaceAll(t["version_"+kind], "{name}", name)
 		if what == "" {
 			what = v.What
 		}
-		versions = append(versions, versionRow{Number: i, At: v.At.UTC().Format("02.01.2006 15:04"), What: what})
+		versions = append(versions, versionRow{ID: v.ID, At: v.At.UTC().Format("02.01.2006 15:04"), What: what})
 	}
 	text, probe := a.opts.Settings.Rules(), Probe{Method: "GET", Address: "/"}
 	if e.draft != nil {

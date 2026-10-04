@@ -316,7 +316,8 @@ func TestRulesAndVersions(t *testing.T) {
 
 	// Back to before the rules: rules gone, preset still on, address untouched.
 	step()
-	if err := s.Restore(0); err != nil {
+	clicked := s.State().History[0].ID()
+	if err := s.Restore(clicked); err != nil {
 		t.Fatal(err)
 	}
 	now := s.State()
@@ -324,15 +325,24 @@ func TestRulesAndVersions(t *testing.T) {
 		t.Errorf("after going back: %+v", now)
 	}
 	// Going back can be undone.
-	if err := s.Restore(0); err != nil || s.State().Rules == "" {
+	if err := s.Restore(s.State().History[0].ID()); err != nil || s.State().Rules == "" {
 		t.Errorf("undoing: %v, %+v", err, s.State())
 	}
-	if err := s.Restore(99); key(err) != "version_unknown" {
-		t.Errorf("an unknown version: %v", err)
+	// A version is named by what it holds: after other changes, the ID
+	// clicked on an older page still means the same version, or none.
+	if err := s.Restore(clicked); err != nil || s.State().Rules != "" {
+		t.Errorf("the version clicked earlier: %v, rules %q", err, s.State().Rules)
 	}
-	if err := s.Restore(-1); key(err) != "version_unknown" {
-		t.Errorf("a negative version: %v", err)
+	before := len(s.State().History)
+	if err := s.Restore(s.State().History[1].ID()); err != nil {
+		t.Fatal(err)
 	}
+	for _, id := range []string{"", "0", "nonsense", clicked + "x"} {
+		if err := s.Restore(id); key(err) != "version_unknown" {
+			t.Errorf("version %q: %v", id, err)
+		}
+	}
+	_ = before
 
 	// Only so many versions are kept, and rules have a size.
 	for i := 0; i < MaxVersions+5; i++ {
@@ -348,5 +358,28 @@ func TestRulesAndVersions(t *testing.T) {
 	}
 	if loaded, err := Load(w.path); err != nil || loaded.Check([]string{"block-ai-training"}) != nil {
 		t.Errorf("the saved file does not load: %v", err)
+	}
+}
+
+// Whatever passes the check can be saved and read again: a rule text full
+// of characters that take room in JSON, in every version.
+func TestTheFileStaysLoadable(t *testing.T) {
+	s, w := newStore(t, State{})
+	for i := 0; i < MaxVersions+2; i++ {
+		text := "# " + itoa(i) + strings.Repeat("<&>\"\\\n", (MaxRules-10)/6)
+		if err := s.SetRules(text); err != nil {
+			t.Fatalf("save %d: %v", i, err)
+		}
+	}
+	info, err := os.Stat(w.path)
+	if err != nil || info.Size() >= maxFile {
+		t.Fatalf("file: %v, %d bytes", err, info.Size())
+	}
+	loaded, err := Load(w.path)
+	if err != nil || loaded.Check(nil) != nil || len(loaded.History) != MaxVersions {
+		t.Errorf("load: %v, %d versions", err, len(loaded.History))
+	}
+	if err := s.SetRules("rules: []\x00"); key(err) != "rules_too_long" {
+		t.Errorf("a control character in the rules: %v", err)
 	}
 }

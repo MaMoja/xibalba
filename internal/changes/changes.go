@@ -6,7 +6,11 @@
 package changes
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
+	"reflect"
 	"unicode"
 	"unicode/utf8"
 
@@ -32,7 +36,9 @@ const (
 	MaxNote = 200
 	// MaxLifetime is the longest time an entry can be set to last.
 	MaxLifetime = 366 * 24 * time.Hour
-	maxFile     = 1 << 20
+	// maxFile is the largest changes file. The largest State that passes
+	// Check is well below it: eleven rule texts, 500 entries.
+	maxFile = 2 << 20
 	// MaxRules is the largest text of own rules, in bytes.
 	MaxRules = 32 << 10
 	// MaxVersions is how many earlier versions are kept to go back to.
@@ -74,6 +80,22 @@ type State struct {
 	// Addresses are not part of a version: an address taken off the list
 	// must not live on in the history.
 	History []Version `json:"history,omitempty"`
+}
+
+// ID names a version by its content, so that "go back to this one" still
+// means this one after other changes have moved it down the list.
+func (v Version) ID() string {
+	h := sha256.New()
+	names := make([]string, 0, len(v.Presets))
+	for name := range v.Presets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	_, _ = fmt.Fprintf(h, "%d\x00%s\x00%s\x00", v.At.Unix(), v.What, v.Rules)
+	for _, name := range names {
+		_, _ = fmt.Fprintf(h, "%s=%v\x00", name, v.Presets[name])
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
 }
 
 // Version is what Presets and Rules were before a change.
@@ -144,14 +166,17 @@ func (s State) Check(presets []string) error {
 			return problem("preset_unknown", "%q is not a preset", name)
 		}
 	}
-	if len(s.Rules) > MaxRules || !utf8.ValidString(s.Rules) {
-		return problem("rules_too_long", "the rules are longer than %d KiB or not valid text", MaxRules>>10)
+	plain := func(text string) bool { // text as typed: no control characters but line break and tab
+		return utf8.ValidString(text) && !strings.ContainsFunc(text, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' })
+	}
+	if len(s.Rules) > MaxRules || !plain(s.Rules) {
+		return problem("rules_too_long", "the rules are longer than %d KiB or hold characters that are not text", MaxRules>>10)
 	}
 	if len(s.History) > MaxVersions {
 		return problem("history_invalid", "more than %d earlier versions are kept", MaxVersions)
 	}
 	for _, v := range s.History {
-		if len(v.Rules) > MaxRules || len(v.What) > 100 {
+		if len(v.Rules) > MaxRules || !plain(v.Rules) || len(v.What) > 100 || len(v.Presets) > 100 {
 			return problem("history_invalid", "an earlier version is not valid")
 		}
 	}
@@ -237,7 +262,7 @@ func Load(path string) (State, error) {
 		return s, nil
 	}
 	if err != nil || info.IsDir() || info.Size() > maxFile {
-		return s, errors.New("it cannot be read, is a directory or is larger than 1 MiB")
+		return s, errors.New("it cannot be read, is a directory or is larger than 2 MiB")
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -246,7 +271,7 @@ func Load(path string) (State, error) {
 	raw, err := io.ReadAll(io.LimitReader(f, maxFile+1))
 	_ = f.Close()
 	if err != nil || len(raw) > maxFile {
-		return s, errors.New("it cannot be read or is larger than 1 MiB")
+		return s, errors.New("it cannot be read or is larger than 2 MiB")
 	}
 	if err := json.Unmarshal(raw, &s); err != nil {
 		return State{}, errors.New("it is not valid JSON")
@@ -257,9 +282,16 @@ func Load(path string) (State, error) {
 // Save writes the file: beside it first, then moved into place, so that a
 // crash never leaves half a file.
 func Save(path string, s State) error {
-	raw, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false) // rule texts hold "<" and "&"; escaped they would take six times the room
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(s); err != nil {
 		return err
+	}
+	raw := bytes.TrimRight(buf.Bytes(), "\n")
+	if len(raw) >= maxFile { // never write what Load would refuse at the next start
+		return errors.New("the changes would not fit into the changes file")
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".changes-*")
 	if err != nil {
@@ -431,16 +463,25 @@ func (s *Store) SetRules(text string) error {
 	return s.commitAs(next, "rules")
 }
 
-// Restore puts Presets and Rules back to an earlier version; number 0 is
-// the newest. What is replaced becomes a version itself, so going back can
-// be undone.
-func (s *Store) Restore(number int) error {
+// Restore puts Presets and Rules back to the earlier version with that ID.
+// What is replaced becomes a version itself, so going back can be undone.
+func (s *Store) Restore(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if number < 0 || number >= len(s.state.History) {
+	number := -1
+	for i, v := range s.state.History {
+		if v.ID() == id {
+			number = i
+			break
+		}
+	}
+	if number < 0 {
 		return problem("version_unknown", "this version is no longer kept")
 	}
 	version := s.state.History[number]
+	if version.Rules == s.state.Rules && reflect.DeepEqual(nonEmpty(version.Presets), nonEmpty(s.state.Presets)) {
+		return nil // it is what is in force already
+	}
 	next := s.state.clone()
 	next.Rules, next.Presets = version.Rules, nil
 	if len(version.Presets) > 0 {
@@ -519,6 +560,13 @@ func (s *Store) Tick() {
 		return // next stays: the next look tries again
 	}
 	s.problem = ""
+}
+
+func nonEmpty(m map[string]bool) map[string]bool {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // ProblemKey names the reason for the web interface.
