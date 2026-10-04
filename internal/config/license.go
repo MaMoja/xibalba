@@ -113,6 +113,8 @@ func (c *Config) checkLicense(dir string, env Env, add func(path, message, hint 
 func (c Config) PageOptions() pages.Options {
 	opts := pages.Options{
 		Contact:         c.Pages.Contact,
+		ImprintURL:      c.Pages.ImprintURL,
+		PrivacyURL:      c.Pages.PrivacyURL,
 		DefaultLanguage: c.Pages.DefaultLanguage,
 	}
 	if c.License.Usable() {

@@ -647,3 +647,52 @@ func TestTrapLinkIsInertAndOnlyThereWhenAsked(t *testing.T) {
 		t.Error("a page without a link has a template element")
 	}
 }
+
+// Links to imprint and privacy policy: on every page if configured, in the
+// reader's language, and only to addresses a link may lead to.
+func TestImprintAndPrivacyLinks(t *testing.T) {
+	r, err := New(Options{ImprintURL: "https://www.example.org/impressum", PrivacyURL: "/datenschutz", HideAttribution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages := map[string]func(http.ResponseWriter, *http.Request){
+		"blocked":     func(w http.ResponseWriter, req *http.Request) { r.Blocked(w, req, "ref") },
+		"unavailable": func(w http.ResponseWriter, req *http.Request) { r.Unavailable(w, req, 502) },
+		"limited":     func(w http.ResponseWriter, req *http.Request) { r.Limited(w, req, time.Minute) },
+		"challenge": func(w http.ResponseWriter, req *http.Request) {
+			r.Challenge(w, req, ChallengeView{Action: "/x", Token: "t"})
+		},
+	}
+	for name, show := range pages {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set("Accept-Language", "de")
+		show(rec, req)
+		body := rec.Body.String()
+		for _, want := range []string{`<a href="https://www.example.org/impressum" rel="noreferrer">Impressum</a>`, `<a href="/datenschutz" rel="noreferrer">Datenschutzerklärung</a>`, "<footer>"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s page lacks %s", name, want)
+			}
+		}
+	}
+	// Without the settings, and with the attribution hidden, there is no footer at all.
+	plain, _ := New(Options{HideAttribution: true})
+	rec := httptest.NewRecorder()
+	plain.Blocked(rec, httptest.NewRequest("GET", "/", nil), "ref")
+	if strings.Contains(rec.Body.String(), "<footer>") {
+		t.Error("an empty footer is shown")
+	}
+
+	for _, bad := range []string{"javascript:alert(1)", "//evil.example/x", "impressum", "https://", "https://user:pw@example.org/", "ftp://example.org/x",
+		"https://example.org/a b", "/a\nb", "data:text/html,x", "https://example.org/" + strings.Repeat("a", 600), "\\\\evil"} {
+		problems := Check(Options{ImprintURL: bad})
+		if len(problems) != 1 || problems[0].Field != "imprint_url" {
+			t.Errorf("imprint_url %q: %+v", bad, problems)
+		}
+	}
+	for _, good := range []string{"https://www.example.org/impressum", "http://intern.example/i", "/impressum", "/de/datenschutz?x=1#oben"} {
+		if problems := Check(Options{PrivacyURL: good}); len(problems) != 0 {
+			t.Errorf("privacy_url %q: %+v", good, problems)
+		}
+	}
+}

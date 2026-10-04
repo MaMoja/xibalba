@@ -4,6 +4,12 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Imprint and privacy links are free, not a sponsor feature.** German
+  operators are obliged to offer both from every page; that is something a
+  visitor needs, not decoration (CLAUDE.md section 12). They are links, not
+  pages hosted by Xibalba: the operator already has both documents, and a
+  second copy would go stale.
+
 - **Packages are built by a shell script and `dpkg-deb`, not by a packaging
   tool** (goreleaser, nfpm): no new dependency, forty lines, and the same
   script runs on a developer's machine. rpm is left for when someone asks.

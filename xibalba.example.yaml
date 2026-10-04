@@ -224,6 +224,13 @@ pages:
   # How to reach you, shown on the block page, for example an e-mail address
   # or a telephone number. Empty shows no contact line.
   contact: ""
+  # Links to your imprint and your privacy policy, shown at the bottom of
+  # every page Xibalba shows. A full address ("https://www.example.org/impressum")
+  # or a path on your website ("/impressum"). Empty shows no link. A path on
+  # the protected website must be reachable without the security check:
+  # see docs/CONFIGURATION.md.
+  imprint_url: ""
+  privacy_url: ""
   # Language for visitors whose browser states none of the supported ones (de, en).
   default_language: de
   # Replace any text, per language. Needs a sponsor license.

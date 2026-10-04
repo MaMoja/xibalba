@@ -488,6 +488,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
 | Regelgruppen oder einzelne Adressen im Browser schalten | `admin.allow_changes` | Abschnitt 4, „Einstellungen im Browser ändern“ |
+| Impressum und Datenschutzerklärung auf den Seiten verlinken | `pages.imprint_url`, `pages.privacy_url` | Abschnitt 8 |
 | die Zahlen im Browser sehen | `admin.enabled` und ein Passwort | Abschnitt 4, „Auf Wunsch: die Weboberfläche“ |
 | die Zähler über Neustarts hinweg behalten | `statistics.directory`, `statistics.keep_days` | Abschnitt 9, „Zähler dauerhaft speichern“ |
 | sehen, aus welchen Netzen die meisten Anfragen kommen | `statistics.networks.enabled`, `top`, `keep_days` | Abschnitt 9, „Zähler pro Netz“ |
@@ -1251,6 +1252,35 @@ pages:
 
 Die Kontaktangabe erscheint als eigene Zeile auf der Blockseite. Sie braucht
 keine Lizenz: Wer zu Unrecht blockiert wird, soll Sie erreichen können.
+
+### Impressum und Datenschutzerklärung verlinken
+
+```yaml
+pages:
+  imprint_url: "https://www.musterhausen.example/impressum"
+  privacy_url: "https://www.musterhausen.example/datenschutz"
+```
+
+Beide Verweise erscheinen am Fuß jeder Seite, die Xibalba selbst zeigt:
+Sicherheitsprüfung, Blockseite, „Zu viele Anfragen“ und „nicht erreichbar“.
+Sie brauchen keine Lizenz. Sie können eine vollständige Adresse angeben oder
+einen Pfad auf Ihrer Website (`/impressum`).
+
+Liegen Impressum und Datenschutzerklärung auf der geschützten Website
+selbst, müssen sie ohne Sicherheitsprüfung erreichbar sein, sonst kann ein
+Besucher, der gerade geprüft wird, sie nicht lesen. Lassen Sie die beiden
+Seiten mit einer Regel durch:
+
+```yaml
+rules:
+  list:
+    - name: rechtliches
+      match:
+        any:
+          - path: {equals: "/impressum"}
+          - path: {equals: "/datenschutz"}
+      action: allow
+```
 
 ### Ihren Namen zeigen (Sponsor-Lizenz)
 

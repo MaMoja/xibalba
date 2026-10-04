@@ -205,6 +205,7 @@ name on them or to change the wording.
 |---|---|---|---|
 | `pages.attribution` | `true` | `true`, `false` | Show the line "Protected by Xibalba" with links to the project at the bottom of every page. **`false` needs a sponsor license.** |
 | `pages.operator` | empty | Text, up to 200 characters | **Needs a sponsor license.** Who runs the website, as it should read in a sentence, for example `"Stadt Musterhausen"`. Replaces the neutral phrase "The operator of this website" in every language. |
+| `pages.imprint_url`, `pages.privacy_url` | empty | A full address (`https://…`) or a path on your website (`/impressum`), up to 500 characters | Links to your imprint and privacy policy at the bottom of every page Xibalba shows. Free, no license needed. A path on the protected website has to be reachable without the security check, or a visitor who is being checked cannot read it: let it through with an `allow` rule on exactly that path. |
 | `pages.contact` | empty | Text, up to 200 characters | How to reach you: an e-mail address, a telephone number, an office. Shown as a line on the block page. Empty shows no contact line. |
 | `pages.default_language` | `de` | `de`, `en` | Language for visitors whose browser states none of the supported languages. Every page offers the other language as well. |
 | `pages.texts` | `{}` | Language, then text name, then text (up to 1000 characters) | **Needs a sponsor license.** Replaces single texts. Texts you do not list keep their built-in wording. |
@@ -220,6 +221,8 @@ Text names for `pages.texts`:
 | `limited_text` | Paragraph of that page | A large number of requests came from your connection in a short time. {operator} is therefore limiting access for a while. Please try again a little later. |
 | `reference_label` | In front of the reference on the block page | Reference: |
 | `contact_label` | In front of `pages.contact` on the block page | Contact: |
+| `imprint_label` | The link to `pages.imprint_url` at the bottom of every page | Imprint |
+| `privacy_label` | The link to `pages.privacy_url` at the bottom of every page | Privacy policy |
 | `unavailable_title` | Heading and window title of the unavailable page | The website is currently unavailable |
 | `unavailable_text` | Paragraph of the unavailable page | Please try again in a few minutes. |
 | `language_name` | Label of the language switch | English |

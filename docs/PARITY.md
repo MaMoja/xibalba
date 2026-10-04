@@ -17,6 +17,10 @@ documentation only, described in our own words), and where Xibalba stands.
 | Blocking named AI crawlers | Presets by purpose |
 | German and English pages | Anubis has about 30 languages |
 | Contact shown on the pages | |
+| Links to imprint and privacy policy on the pages | Free, in every language of the page |
+| Web interface: overview, presets, address lists, own rules with a box to try a request, earlier versions | Anubis has none; optional in Xibalba |
+| Statistics on disk, per hour, optionally per network | |
+| Published packages: archives, deb, container image | rpm is missing |
 | Health endpoint | |
 | Removing the branding for sponsors | |
 | Guides and tested examples for nginx, Caddy, Apache, HAProxy, Traefik; Docker Compose; health check for containers | See ENVIRONMENTS.md |
@@ -53,10 +57,9 @@ documentation only, described in our own words), and where Xibalba stands.
 | Challenge method and difficulty per rule or threshold | Later |
 | Storage backends for shared state: Valkey/Redis, S3 | M9 |
 | Verdict mode for nginx, Caddy, Traefik (subrequest authentication) with allowed redirect domains | M9 |
-| Published images, deb, rpm (Dockerfile and systemd unit exist) | M9 |
+| rpm packages | Later |
 | Token that the web server in front can verify itself (HAProxy) | Later |
 | Running under a path prefix; website reached over a unix socket; TLS options towards the website | Later |
-| Imprint and privacy page on the visitor pages | M10 |
 | Link previews (Open Graph) for protected pages | M10 |
 | Configurable status codes | Later |
 | Serving a robots.txt that disallows AI crawlers | Later |
@@ -64,7 +67,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Headers that tell the website which rule decided | Later |
 | Log to a file with rotation | Later |
 | Guides tested in a real cluster or on Windows; guides for WordPress, HTMX | M10 |
-| Pages for visitors: why the check appears, known broken browser extensions | M10 |
+| A list of browser extensions known to break the check (a page for visitors that explains the check exists) | Later |
 | DNS blocklist lookup (off by default in Anubis) | Not planned: sends visitor addresses to a third party |
 | More languages | Later |
 

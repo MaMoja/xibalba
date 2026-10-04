@@ -20,5 +20,7 @@
   "challenge_too_early": "Das war etwas zu schnell. Bitte warten Sie einige Sekunden und wählen Sie dann erneut „Weiter“.",
   "challenge_retry": "Die Prüfung konnte nicht abgeschlossen werden und wurde neu gestartet.",
   "attribution_text": "Geschützt durch",
-  "attribution_sponsor": "Projekt unterstützen"
+  "attribution_sponsor": "Projekt unterstützen",
+  "imprint_label": "Impressum",
+  "privacy_label": "Datenschutzerklärung"
 }

@@ -151,7 +151,7 @@ async def run(base, axe_source, shots):
         check("no javascript: pressing at once gives a notice, not a dead end", early)
         if shots:
             await page.screenshot(path=os.path.join(shots, "challenge_too_early.png"))
-        await asyncio.sleep(1.3)
+        await asyncio.sleep(2.3)
         await page.keyboard.press("Tab")
         await page.keyboard.press("Enter")
         try:
@@ -184,14 +184,16 @@ async def run(base, axe_source, shots):
         check("blocked: the trap link is in the page text but inert, invisible and not a link for people",
               trap["inside"] == 1 and trap["live"] == 0 and trap["shown"] == "none", trap)
         links = await page.evaluate("Array.from(document.querySelectorAll('footer a')).map(a => [a.textContent, a.href, a.rel])")
+        check("blocked: imprint and privacy policy are linked, in the reader's language",
+              [l[:2] for l in links[:2]] == [["Impressum", "https://www.example.org/impressum"], ["Datenschutzerklärung", base + "/datenschutz"]], links)
         check("blocked: the Xibalba line shows the two project links",
-              [l[1] for l in links] == ["https://github.com/MaMoja/xibalba", "https://github.com/sponsors/MaMoja"]
-              and all(l[2] == "noopener noreferrer" for l in links), links)
+              [l[1] for l in links[2:]] == ["https://github.com/MaMoja/xibalba", "https://github.com/sponsors/MaMoja"]
+              and all(l[2] == "noopener noreferrer" for l in links[2:]), links)
         reachable = []
-        for _ in range(4):
+        for _ in range(6):
             await page.keyboard.press("Tab")
             reachable.append(await page.evaluate("document.activeElement.tagName + ':' + (document.activeElement.textContent || '')"))
-        check("blocked: both links can be reached with the keyboard", sum(1 for r in reachable if r.startswith("A:")) >= 2, reachable)
+        check("blocked: all four links can be reached with the keyboard", sum(1 for r in reachable if r.startswith("A:")) >= 4, reachable)
         if shots:
             await page.screenshot(path=os.path.join(shots, "blocked.png"))
         await ctx.close()
@@ -255,7 +257,10 @@ ops:
 trap:
   enabled: true
 challenge:
-  wait: 1s
+  wait: 2s
+pages:
+  imprint_url: "https://www.example.org/impressum"
+  privacy_url: "/datenschutz"
 rules:
   default_action: challenge
   list:

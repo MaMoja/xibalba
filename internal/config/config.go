@@ -242,6 +242,9 @@ type Pages struct {
 	Operator string `yaml:"operator"`
 	// Contact says how to reach the operator. Shown on the block page.
 	Contact string `yaml:"contact"`
+	// ImprintURL and PrivacyURL are linked at the bottom of every page.
+	ImprintURL string `yaml:"imprint_url"`
+	PrivacyURL string `yaml:"privacy_url"`
 	// DefaultLanguage is used when the visitor's browser states no
 	// supported language.
 	DefaultLanguage string `yaml:"default_language"`
@@ -260,6 +263,8 @@ func (p Pages) Options() pages.Options {
 	return pages.Options{
 		Operator:        p.Operator,
 		Contact:         p.Contact,
+		ImprintURL:      p.ImprintURL,
+		PrivacyURL:      p.PrivacyURL,
 		DefaultLanguage: p.DefaultLanguage,
 		Texts:           p.Texts,
 		HideAttribution: !p.Attribution,

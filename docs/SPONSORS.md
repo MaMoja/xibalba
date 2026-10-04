@@ -14,6 +14,7 @@ visitors see entirely their own.
 | Rules, security check, blocking, counters | Yes | Yes |
 | Pages in German and English, accessible | Yes | Yes |
 | Contact line on the block page (`pages.contact`) | Yes | Yes |
+| Links to your imprint and privacy policy (`pages.imprint_url`, `pages.privacy_url`) | Yes | Yes |
 | Default language (`pages.default_language`) | Yes | Yes |
 | The line "Protected by Xibalba" at the bottom of every page | Always shown | Can be removed (`pages.attribution: false`) |
 | Your name on the pages (`pages.operator`) | "The operator of this website" | Your name |

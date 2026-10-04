@@ -168,6 +168,30 @@ The cookie is set only to remember that the security check was passed. Whether
 it needs to be mentioned in your privacy notice is for you or your data
 protection officer to decide; this section gives the facts for that.
 
+## Content-Security-Policy
+
+Xibalba's own pages (security check, block page and the others) carry their
+own strict `Content-Security-Policy`: nothing may be loaded from anywhere,
+the one style block and the one script of the security check are allowed by
+their checksum, and the page may not be framed. You do not have to set
+anything for them.
+
+Two things to know if your web server adds a `Content-Security-Policy` of
+its own to every answer:
+
+- A browser applies **both** policies, and a page may only do what both
+  allow. A policy from your web server that forbids inline styles or inline
+  scripts therefore breaks the security check: the page appears unstyled and
+  the calculation never starts (the button for visitors without JavaScript
+  still works). Do not add your policy to answers that already carry one,
+  or leave the addresses under `/.xibalba/` and answers with status 403
+  from Xibalba out of it.
+- The policy of your own website is not touched by Xibalba. Answers of your
+  website pass through with the headers your website sets.
+
+Xibalba's pages need no exception in your website's policy: they are never
+part of your pages, they are shown instead of them.
+
 ## Watching it work
 
 `/decisions` on the operations listener shows what became of challenged requests:

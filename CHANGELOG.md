@@ -6,6 +6,12 @@ All notable changes are listed here. The format follows
 
 ## Unreleased
 
+### Added
+
+- Links to your imprint and privacy policy at the bottom of every page
+  Xibalba shows (`pages.imprint_url`, `pages.privacy_url`). No license needed.
+- Advice on `Content-Security-Policy` in `docs/CHALLENGE.md`.
+
 ## 0.1.0 - 2026-10-04
 
 The first published version.

@@ -34,6 +34,7 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -56,6 +57,7 @@ var keys = []string{
 	"blocked_title", "blocked_text",
 	"limited_title", "limited_text",
 	"reference_label", "contact_label",
+	"imprint_label", "privacy_label",
 	"challenge_title", "challenge_text", "challenge_cookie",
 	"challenge_working", "challenge_done",
 	"challenge_manual", "challenge_button", "challenge_needs_script",
@@ -97,6 +99,11 @@ type Options struct {
 	// Contact says how to reach the operator, for example an e-mail address
 	// or a telephone number. It is shown on the block page. Empty shows nothing.
 	Contact string
+	// ImprintURL and PrivacyURL are the addresses of the operator's
+	// imprint and privacy policy. Each is linked at the bottom of every
+	// page if set. A full address ("https://…") or a path on the
+	// protected website ("/impressum").
+	ImprintURL, PrivacyURL string
 	// DefaultLanguage is used when the visitor states no preference or
 	// prefers no supported language. Empty means the first supported language.
 	DefaultLanguage string
@@ -148,6 +155,19 @@ func Check(opts Options) []Problem {
 
 	checkText("operator", opts.Operator, maxNameLength, false)
 	checkText("contact", opts.Contact, maxNameLength, false)
+	for field, link := range map[string]string{"imprint_url": opts.ImprintURL, "privacy_url": opts.PrivacyURL} {
+		if link == "" {
+			continue
+		}
+		u, err := url.Parse(link)
+		plain := err == nil && len(link) <= 500 && !strings.ContainsFunc(link, func(r rune) bool { return r <= ' ' || r == 0x7f })
+		full := plain && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil
+		path := plain && u.Scheme == "" && u.Host == "" && strings.HasPrefix(link, "/") && !strings.HasPrefix(link, "//")
+		if !full && !path {
+			add(field, "this is not an address a link can lead to",
+				`give a full address such as "https://www.example.org/impressum", or a path on your website such as "/impressum"`)
+		}
+	}
 	if opts.DefaultLanguage != "" && !has(languages, opts.DefaultLanguage) {
 		add("default_language", fmt.Sprintf("%q is not a supported language", opts.DefaultLanguage),
 			"use one of: "+strings.Join(languages, ", "))
@@ -206,6 +226,8 @@ type Renderer struct {
 	chCSP    string // policy of the challenge page: also allows its script and form
 	fallback string // language used without a usable preference
 	contact  string
+	imprint  string
+	privacy  string
 	hideAttr bool
 	trap     func(*http.Request) string
 	locales  map[string]map[string]string
@@ -252,6 +274,8 @@ func New(opts Options) (*Renderer, error) {
 		script:   template.JS(script),
 		fallback: languages[0],
 		contact:  strings.TrimSpace(opts.Contact),
+		imprint:  opts.ImprintURL,
+		privacy:  opts.PrivacyURL,
 		hideAttr: opts.HideAttribution,
 		trap:     opts.TrapLink,
 		locales:  map[string]map[string]string{},
@@ -360,6 +384,21 @@ type attribution struct {
 	Text, Sponsor, RepoURL, SponsorURL string
 }
 
+// legalLink is a link to the operator's imprint or privacy policy.
+type legalLink struct{ URL, Label string }
+
+// legalFor returns the links the operator configured, labelled in lang.
+func (r *Renderer) legalFor(lang string) []legalLink {
+	var links []legalLink
+	if r.imprint != "" {
+		links = append(links, legalLink{r.imprint, r.locales[lang]["imprint_label"]})
+	}
+	if r.privacy != "" {
+		links = append(links, legalLink{r.privacy, r.locales[lang]["privacy_label"]})
+	}
+	return links
+}
+
 // attributionFor returns the line in the given language, or nil if it is hidden.
 func (r *Renderer) attributionFor(lang string) *attribution {
 	if r.hideAttr {
@@ -376,6 +415,7 @@ type challengePage struct {
 	Trap        string
 	CSS         template.CSS
 	Attribution *attribution
+	Legal       []legalLink
 	Script      template.JS
 	Primary     challengeVersion
 	Others      []challengeVersion
@@ -391,7 +431,7 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 	texts := r.locales[primary]
 	p := challengePage{
 		Trap: r.trapFor(req),
-		CSS:  r.css, Script: r.script, ChallengeView: v, Attribution: r.attributionFor(primary),
+		CSS:  r.css, Script: r.script, ChallengeView: v, Attribution: r.attributionFor(primary), Legal: r.legalFor(primary),
 		Working: texts["challenge_working"], Done: texts["challenge_done"],
 		Manual: texts["challenge_manual"], Button: texts["challenge_button"],
 		NeedsScript: texts["challenge_needs_script"],
@@ -431,6 +471,7 @@ type view struct {
 	Trap        string
 	CSS         template.CSS
 	Attribution *attribution
+	Legal       []legalLink
 	Primary     version
 	Others      []version
 	Reference   string
@@ -439,7 +480,7 @@ type view struct {
 
 func (r *Renderer) write(w http.ResponseWriter, req *http.Request, status int, kind, reference string) {
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
-	v := view{Trap: r.trapFor(req), CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary)}
+	v := view{Trap: r.trapFor(req), CSS: r.css, Reference: reference, Attribution: r.attributionFor(primary), Legal: r.legalFor(primary)}
 	if kind == "blocked" || kind == "limited" {
 		v.Contact = r.contact
 	}
