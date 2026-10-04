@@ -34,6 +34,8 @@ jobs:
         run: make bench
       - name: Cross-compile
         run: make cross
+      - name: Documentation links
+        run: make wiki
 
   container:
     name: Container image and compose example

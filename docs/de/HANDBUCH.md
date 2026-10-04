@@ -1276,8 +1276,8 @@ curl http://127.0.0.1:9090/decisions
 | `failures` | Anfragen, die wegen eines internen Fehlers nicht ausgewertet werden konnten |
 
 Viel `served` und wenig `solved` ist das Bild eines Crawlers, der die Prüfung
-nicht besteht. Die Zähler beginnen bei jedem Start bei null; dauerhafte
-Statistik ist geplant.
+nicht besteht. Die Zähler beginnen bei jedem Start bei null, sofern Sie sie
+nicht dauerhaft speichern (nächster Abschnitt).
 
 ### Zähler dauerhaft speichern
 

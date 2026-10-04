@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/MaMoja/xibalba/internal/buildinfo.Version=$(VERSION)
 GOFLAGS := -trimpath
 
-.PHONY: build run test bench browser-check webserver-check lint cross check clean help
+.PHONY: build run test bench browser-check webserver-check lint cross check wiki clean help
 
 help: ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -34,7 +34,10 @@ cross: ## Build for linux/amd64 and linux/arm64 into dist/
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o dist/xibalba-linux-amd64 ./cmd/xibalba
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o dist/xibalba-linux-arm64 ./cmd/xibalba
 
-check: lint test cross ## Everything CI runs
+wiki: ## Build the wiki pages from docs/ into dist/wiki (also checks the links between documents)
+	python3 tools/wiki.py dist/wiki
+
+check: lint test cross wiki ## Everything CI runs
 
 clean: ## Remove build output
 	rm -rf bin dist

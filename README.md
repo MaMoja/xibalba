@@ -190,8 +190,11 @@ configuration xibalba.yaml: 1 problem
 
 ## Documentation
 
+The same pages, easier to browse, are in the [wiki](https://github.com/MaMoja/xibalba/wiki).
+
 | Document | What it covers |
 |---|---|
+| [Getting started](docs/GETTING-STARTED.md) | Install and set up, step by step |
 | [Configuration](docs/CONFIGURATION.md) | Every setting, its default and its allowed values |
 | [Handbuch (Deutsch)](docs/de/HANDBUCH.md) | Für Betreiber: installieren, einrichten, wo man was einstellt |
 | [Environments](docs/ENVIRONMENTS.md) | Web servers, containers, systemd, Kubernetes, CDNs: example files and how far each is tested |
@@ -200,6 +203,10 @@ configuration xibalba.yaml: 1 problem
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
 | [Countries](docs/COUNTRIES.md) | Rules by country: which database, licences, keeping it current |
 | [Trap](docs/TRAP.md) | The hidden link that catches crawlers, and the optional maze |
+| [Operations](docs/OPERATIONS.md) | Running, updating, troubleshooting |
+| [Privacy](docs/PRIVACY.md) | What is stored and what is not |
+| [FAQ](docs/FAQ.md) | Questions operators ask |
+| [For visitors](docs/VISITORS.md) | Why am I seeing a security check? |
 | [Statistics](docs/STATISTICS.md) | Counters kept on disk by the hour: what is stored, how to read it |
 | [Metrics](docs/METRICS.md) | The numbers for a monitoring system |
 | [Challenge](docs/CHALLENGE.md) | The security check: how it works, its settings, what to consider |

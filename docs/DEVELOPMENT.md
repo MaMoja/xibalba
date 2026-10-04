@@ -100,6 +100,12 @@ Documentation is part of the change, not a follow-up.
 | A user-visible behaviour | `README.md` status table, `CHANGELOG.md` |
 | A technical choice | `docs/DECISIONS.md` |
 | A roadmap item | `docs/ROADMAP.md` |
+| A new document in `docs/` | The list in `tools/wiki.py` and the table in `README.md` |
+
+The [wiki](https://github.com/MaMoja/xibalba/wiki) is built from `docs/` by
+`tools/wiki.py` and published by the `Wiki` workflow on every push to `main`.
+Never edit the wiki itself: the next push overwrites it. `make wiki` builds
+the pages into `dist/wiki` and fails on a link that leads nowhere.
 
 Every package has a package comment that starts with its one job. Every
 exported name has a comment that says what it is for, not how it works.

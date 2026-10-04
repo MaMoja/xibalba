@@ -1,0 +1,43 @@
+name: Wiki
+
+# Publishes docs/ to the GitHub wiki. docs/ stays the only source; the wiki is
+# a copy that is easier to browse. The wiki must exist: create its first page
+# once by hand in the GitHub interface, after that this job overwrites it.
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "tools/wiki.py", ".github/workflows/wiki.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the wiki
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki
+      - name: Build the pages
+        run: python3 tools/wiki.py wiki
+      - name: Publish
+        run: |
+          cd wiki
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The wiki is up to date."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -m "Built from ${{ github.sha }}"
+          git push
