@@ -1538,3 +1538,36 @@ func TestRequestTargetsThatAreNotPathsAreRefused(t *testing.T) {
 		t.Error("such a request reached the website")
 	}
 }
+
+// A client that walks through many different pages is stopped; one that
+// loads the same few pages with many images is not.
+func TestLimitOnDifferentPages(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, `server:
+  listen: PUBLIC
+  trusted_proxies: ["127.0.0.1"]
+limits:
+  enabled: true
+  windows:
+    - {requests: 20, per: 1h, action: deny, count: pages}
+`)
+	browser := "Mozilla/5.0 Firefox/130.0"
+	for i := 0; i < 60; i++ {
+		target := fmt.Sprintf("/artikel/%d", i%3)
+		if i%2 == 1 {
+			target = fmt.Sprintf("/bilder/%d.png", i)
+		}
+		if resp, _ := get(t, inst.public+target, from("203.0.113.30", browser)); resp.StatusCode != 200 {
+			t.Fatalf("the reader was stopped at request %d (%s): %d", i, target, resp.StatusCode)
+		}
+	}
+	stopped := 0
+	for i := 1; i <= 40 && stopped == 0; i++ {
+		if resp, _ := get(t, inst.public+fmt.Sprintf("/liste?seite=%d", i), from("203.0.113.31", browser)); resp.StatusCode == http.StatusTooManyRequests {
+			stopped = i
+		}
+	}
+	if stopped < 17 || stopped > 27 {
+		t.Errorf("the crawler was stopped at page %d, limit 20", stopped)
+	}
+}

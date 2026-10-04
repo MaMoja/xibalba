@@ -1,0 +1,13 @@
+# For a container registry behind Xibalba: let the programs that pull and
+# push images use the registry's addresses. Per the OCI distribution
+# specification these all lie under /v2/. Such programs cannot pass the
+# security check. Whatever says it is a browser is not let through by this.
+# Switch this on only in front of a registry; the registry itself decides
+# who may read and write.
+rules:
+  - name: preset.allow-registry-clients
+    match:
+      path: {prefix: "/v2/"}
+      not:
+        user_agent: {contains: "Mozilla"}
+    action: allow

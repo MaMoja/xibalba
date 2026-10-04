@@ -202,7 +202,7 @@ func TestPresetFilesHaveAComment(t *testing.T) {
 func TestAllowPresetsCannotBeAbused(t *testing.T) {
 	cfg, err := Parse("xibalba.yaml", []byte(base+`rules:
   default_action: challenge
-  presets: [keep-internet-working, allow-feeds, allow-git-clients]
+  presets: [keep-internet-working, allow-feeds, allow-git-clients, allow-registry-clients]
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -229,6 +229,11 @@ func TestAllowPresetsCannotBeAbused(t *testing.T) {
 		{"GET", "/group/project/info/refs", "git/2.43.0", nil, rules.Allow},
 		{"POST", "/group/project.git/git-upload-pack", "git/2.43.0", git, rules.Allow},
 
+		{"GET", "/v2/library/app/manifests/latest", "containerd/1.7", nil, rules.Allow},
+		{"PUT", "/v2/library/app/manifests/latest", "docker/27.0", nil, rules.Allow},
+		{"GET", "/v2/library/app/blobs/sha256:abc", "Mozilla/5.0", nil, rules.Challenge},
+		{"GET", "/v2", "containerd/1.7", nil, rules.Challenge},
+		{"GET", "/admin/..;/v2/x", "containerd/1.7", nil, rules.Challenge},
 		// Roundabout addresses: the website may read them differently.
 		{"GET", "/artikel.php/..;/.well-known/x", "Mozilla", nil, rules.Challenge},
 		{"GET", "/artikel.php/..;/robots.txt", "Mozilla", nil, rules.Challenge},

@@ -38,13 +38,19 @@ type LimitWindow struct {
 	Per time.Duration `yaml:"per"`
 	// Action is what happens to further requests: challenge or deny.
 	Action string `yaml:"action"`
+	// Count is what is counted: "requests" (all of them) or "pages" (the
+	// different pages asked for).
+	Count string `yaml:"count"`
 }
+
+// LimitCounts are the allowed values of limits.windows[].count.
+var LimitCounts = []string{"requests", "pages"}
 
 func defaultLimits() Limits {
 	return Limits{
 		Enabled:    false,
 		CountBy:    "address",
-		Windows:    []LimitWindow{{Requests: 300, Per: time.Minute, Action: "challenge"}},
+		Windows:    []LimitWindow{{Requests: 300, Per: time.Minute, Action: "challenge", Count: "requests"}},
 		Exempt:     []string{},
 		MaxClients: 100000,
 	}
@@ -55,7 +61,7 @@ func defaultLimits() Limits {
 func (l Limits) Options() limit.Options {
 	opts := limit.Options{ByNetwork: l.CountBy == "network", MaxClients: l.MaxClients}
 	for _, w := range l.Windows {
-		opts.Windows = append(opts.Windows, limit.Window{Requests: w.Requests, Per: w.Per, Action: w.Action})
+		opts.Windows = append(opts.Windows, limit.Window{Requests: w.Requests, Per: w.Per, Action: w.Action, Pages: w.Count == "pages"})
 	}
 	for _, entry := range l.Exempt {
 		if p, err := parsePrefix(entry); err == nil {
@@ -67,7 +73,7 @@ func (l Limits) Options() limit.Options {
 
 // check validates the limits. They are checked even when switched off, so a
 // mistake does not wait for the day they are switched on.
-func (l Limits) check(add func(path, message, hint string)) {
+func (l *Limits) check(add func(path, message, hint string)) {
 	if !contains(CountByModes, l.CountBy) {
 		add("limits.count_by", fmt.Sprintf("%q is not a way to count", l.CountBy),
 			"use address (each address on its own) or network (neighbouring addresses together)")
@@ -76,18 +82,33 @@ func (l Limits) check(add func(path, message, hint string)) {
 		add("limits.windows", fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(l.Windows), limit.MaxWindows),
 			`give at least one limit, for example {requests: 300, per: 1m, action: challenge}`)
 	}
-	seen := map[time.Duration]int{}
-	for i, w := range l.Windows {
+	type kind struct {
+		per   time.Duration
+		count string
+	}
+	seen := map[kind]int{}
+	for i := range l.Windows {
+		if l.Windows[i].Count == "" {
+			l.Windows[i].Count = "requests" // may be left out
+		}
+		w := l.Windows[i]
 		field := fmt.Sprintf("limits.windows[%d]", i)
-		if w.Requests < 1 || w.Requests > 10000000 {
+		switch {
+		case !contains(LimitCounts, w.Count):
+			add(field+".count", fmt.Sprintf("%q is not something that can be counted", w.Count),
+				"use requests (every request) or pages (the different pages asked for)")
+		case w.Count == "pages" && (w.Requests < 1 || w.Requests > limit.MaxPages):
+			add(field+".requests", fmt.Sprintf("%d is out of range for a limit on pages", w.Requests),
+				fmt.Sprintf("use a number from 1 to %d; different pages are estimated, and beyond that the estimate is not good", limit.MaxPages))
+		case w.Requests < 1 || w.Requests > 10000000:
 			add(field+".requests", fmt.Sprintf("%d is out of range", w.Requests), "use a number from 1 to 10000000")
 		}
 		if w.Per < time.Second || w.Per > 24*time.Hour {
 			add(field+".per", fmt.Sprintf("%s is out of range", w.Per), `use a duration from "1s" to "24h"`)
-		} else if first, dup := seen[w.Per]; dup {
-			add(field+".per", fmt.Sprintf("there is already a limit per %s (entry number %d)", w.Per, first+1), "give every limit its own period")
+		} else if first, dup := seen[kind{w.Per, w.Count}]; dup {
+			add(field+".per", fmt.Sprintf("there is already a limit on %s per %s (entry number %d)", w.Count, w.Per, first+1), "give every limit its own period")
 		}
-		seen[w.Per] = i
+		seen[kind{w.Per, w.Count}] = i
 		if !contains(LimitActions, w.Action) {
 			add(field+".action", fmt.Sprintf("%q is not an action a limit can take", w.Action),
 				"use challenge (the client has to pass the security check) or deny (further requests are refused)")

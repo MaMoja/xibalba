@@ -21,6 +21,10 @@ All notable changes are listed here. The format follows
   meaningless syllables. Both off by default. `GET /trap` shows the state.
 - Preset `weigh-odd-browsers`: score for requests that say they are a
   browser but lack what every browser sends.
+- Limits on the number of different pages a client asks for
+  (`limits.windows[].count: pages`), to tell a crawler that walks through a
+  site from a person who loads many images.
+- Preset `allow-registry-clients` for container registries.
 - Rule condition `query`.
 - Presets `challenge-browsers` (check everything that says it is a
   browser), `keep-internet-working`, `allow-feeds` and `allow-git-clients`.

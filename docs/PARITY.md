@@ -40,7 +40,7 @@ documentation only, described in our own words), and where Xibalba stands.
 
 | Feature in Anubis | Planned in |
 |---|---|
-| Ready-made exceptions for container registry clients, small browsers, uptime monitors, Google's user-triggered fetchers (git and feeds exist) | M5 |
+| Ready-made exceptions for uptime monitors and Google's user-triggered fetchers (git, feeds and registries exist; small browsers pass without JavaScript) | Later |
 | Different strictness of the check by score (Xibalba has one check for all) | Later |
 | Weights for browser headers that depend on HTTPS (client hints) | M5 |
 | Address file of trapped clients for fail2ban | Later |

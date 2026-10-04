@@ -53,6 +53,8 @@ rules:
   #                           favicon.ico
   #   allow-feeds             let feed readers fetch news feeds
   #   allow-git-clients       let git fetch and push over HTTP
+  #   allow-registry-clients  only in front of a container registry: let
+  #                           image tools use the addresses under /v2/
   #   block-trapped           deny clients that followed the hidden trap
   #                           link (needs trap.enabled)
   #   block-fake-crawlers     deny requests that carry a crawler's name but do
@@ -157,10 +159,18 @@ limits:
   #   windows:
   #     - {requests: 300, per: 1m, action: challenge}
   #     - {requests: 20000, per: 24h, action: deny}
+  #
+  # "count: pages" counts the different pages a client asks for instead of
+  # every request (images, style sheets, scripts and fonts are not pages).
+  # A person reads a few pages in ten minutes, a crawler walks through
+  # hundreds. At most 500. Example:
+  #
+  #     - {requests: 60, per: 10m, action: challenge, count: pages}
   windows:
     - requests: 300
       per: 1m
       action: challenge
+      count: requests
   # Addresses and networks that are never counted: your own office, your
   # monitoring, a partner's server. Example: ["192.0.2.0/24", "2001:db8::/32"]
   exempt: []

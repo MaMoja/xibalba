@@ -4,6 +4,14 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Different pages are estimated with a bit field of 256 bits per client,
+  limit and period** (linear counting). Agent. Exact counting would need a
+  list of addresses per client; the estimate needs 64 bytes, stores no
+  address a client asked for, and is within about a tenth up to 500 pages.
+- **A page is told from what a page loads by the ending of the address.**
+  Agent. Headers that say so (`Sec-Fetch-Dest`) are chosen by the client and
+  absent in the crawlers this is meant for.
+
 - **Rules that favour a request and test the path only apply to addresses
   sent in plain form.** Agent, after the security review. Normalising makes
   more spellings match, which is right for rules that restrict and a hole

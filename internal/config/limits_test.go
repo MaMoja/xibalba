@@ -40,6 +40,23 @@ func TestLimitSettings(t *testing.T) {
 	}
 }
 
+func TestLimitOnPages(t *testing.T) {
+	// The same period may carry one limit on requests and one on pages.
+	cfg, err := Parse("xibalba.yaml", []byte(base+`limits:
+  enabled: true
+  windows:
+    - {requests: 300, per: 10m, action: challenge}
+    - {requests: 60, per: 10m, action: challenge, count: pages}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := cfg.Limits.Options()
+	if len(opts.Windows) != 2 || opts.Windows[0].Pages || !opts.Windows[1].Pages || cfg.Limits.Windows[0].Count != "requests" {
+		t.Errorf("options = %+v", opts)
+	}
+}
+
 func TestLimitProblems(t *testing.T) {
 	tests := []struct{ name, yaml, path, message string }{
 		{"unknown way to count", "  count_by: person\n", "limits.count_by", "not a way to count"},
@@ -50,6 +67,9 @@ func TestLimitProblems(t *testing.T) {
 		{"period too short", "  windows:\n    - {requests: 5, per: 10ms, action: deny}\n", "limits.windows[0].per", "out of range"},
 		{"same period twice", "  windows:\n    - {requests: 5, per: 1m, action: deny}\n    - {requests: 9, per: 60s, action: challenge}\n", "limits.windows[1].per", "already a limit"},
 		{"allow is not a limit action", "  windows:\n    - {requests: 5, per: 1m, action: allow}\n", "limits.windows[0].action", "not an action a limit can take"},
+		{"unknown thing to count", "  windows:\n    - {requests: 5, per: 1m, action: deny, count: visitors}\n", "limits.windows[0].count", "not something that can be counted"},
+		{"too many pages", "  windows:\n    - {requests: 5000, per: 1m, action: deny, count: pages}\n", "limits.windows[0].requests", "out of range for a limit on pages"},
+		{"same period and count twice", "  windows:\n    - {requests: 5, per: 1m, action: deny, count: pages}\n    - {requests: 9, per: 1m, action: challenge, count: pages}\n", "limits.windows[1].per", "already a limit on pages"},
 		{"exempt entry is not an address", "  exempt: [\"office\"]\n", "limits.exempt[0]", "not an IP address"},
 		{"everyone exempt", "  exempt: [\"0.0.0.0/0\"]\n", "limits.exempt[0]", "exempts every address"},
 		{"table too small", "  max_clients: 10\n", "limits.max_clients", "out of range"},

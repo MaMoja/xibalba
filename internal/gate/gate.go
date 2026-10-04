@@ -73,7 +73,7 @@ type Options struct {
 	// refused (deny) or have to pass the check. If nil, nothing is limited.
 	// Requests let through by a rule marked exempt_from_limits are neither
 	// counted nor limited.
-	Limit func(client netip.Addr) (over, deny bool, retryAfter time.Duration)
+	Limit func(client netip.Addr, path, query string) (over, deny bool, retryAfter time.Duration)
 	// Limited writes the page for a request refused by a limit.
 	Limited func(w http.ResponseWriter, r *http.Request, retryAfter time.Duration)
 	// Challenge handles requests whose decision is "challenge". If nil,
@@ -159,7 +159,7 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var over, refuse bool
 	var retryAfter time.Duration
 	if g.opts.Limit != nil && !g.trusted[decision.Source] {
-		over, refuse, retryAfter = g.opts.Limit(client)
+		over, refuse, retryAfter = g.opts.Limit(client, rules.NormalizePath(r.URL.Path), r.URL.RawQuery)
 	}
 
 	if g.opts.DryRun {

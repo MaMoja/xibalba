@@ -529,6 +529,7 @@ und danach, was prüft oder sperrt.
 | `allow-feeds` | lässt Feed-Leser Nachrichten-Feeds abrufen (letzter Teil der Adresse `feed`, `rss` oder `atom`, oder eine Datei `index`, `feed`, `rss`, `atom` mit Endung `.xml`, `.rss`, `.atom`) |
 | `allow-git-clients` | lässt git über HTTP abrufen und übertragen (nur die Adressen und Methoden, die git selbst nutzt) |
 | `weigh-odd-browsers` | vergibt Punkte an Anfragen, die sich als Browser ausgeben, denen aber fehlt, was jeder Browser sendet (keine Sprachangabe: +10, keine `Accept`-Angabe: +10, fensterloser Automatik-Browser: +20). Entscheidet selbst nichts; braucht `rules.thresholds` |
+| `allow-registry-clients` | nur vor einer Container-Registry: lässt Programme, die sich nicht als Browser ausgeben, die Adressen unter `/v2/` nutzen |
 | `block-trapped` | sperrt Anschlüsse, die dem versteckten Fallen-Link gefolgt sind (braucht `trap.enabled`, siehe „Die Falle“) |
 | `challenge-browsers` | prüft alles, was sich als Browser ausgibt (Kennung enthält „Mozilla“ oder „Opera“): jeden Browser und jeden Crawler, der sich als Browser tarnt. Programme, die sagen, was sie sind (curl, git, Feed-Leser), bleiben unberührt |
 
@@ -729,12 +730,32 @@ Büro) wird nie gezählt.
 | Einstellung | Bedeutung |
 |---|---|
 | `limits.enabled` | `true` schaltet die Begrenzung ein |
-| `limits.windows` | ein bis vier Grenzen, jeweils `requests` (Anzahl), `per` (Zeitraum, `1s` bis `24h`) und `action` |
+| `limits.windows` | ein bis vier Grenzen, jeweils `requests` (Anzahl), `per` (Zeitraum, `1s` bis `24h`), `action` und wahlweise `count: pages` |
 | `action: challenge` | über der Grenze: Sicherheitsprüfung. Ein Browser löst sie einmal und arbeitet ungestört weiter; ein Programm, das sie nicht lösen kann, ist gestoppt |
 | `action: deny` | über der Grenze: Seite „Zu viele Anfragen“ (Status 429), auch mit bestandener Prüfung |
 | `limits.exempt` | **Ausnahmeliste:** Adressen und Netze, die nie gezählt werden. Erweitern oder kürzen Sie die Liste in der Datei und starten Sie neu |
 | `limits.count_by` | `address`: jede Adresse für sich (bei IPv6 der Anschluss, /64). `network`: benachbarte Adressen gemeinsam (IPv4 /24, IPv6 /48) |
 | `limits.max_clients` | wie viele Anschlüsse höchstens gleichzeitig gezählt werden |
+
+**Verschiedene Seiten zählen.** Ein Mensch liest in zehn Minuten eine
+Handvoll Seiten, jede mit vielen Bildern. Ein Crawler geht Hunderte Seiten
+durch und lädt oft kein einziges Bild. Mit `count: pages` zählt eine Grenze
+nicht jede Anfrage, sondern wie viele *verschiedene Seiten* ein Anschluss
+abruft:
+
+```yaml
+limits:
+  enabled: true
+  windows:
+    - {requests: 60, per: 10m, action: challenge, count: pages}
+    - {requests: 300, per: 1m, action: challenge}
+```
+
+Bilder, Stildateien, Skripte und Schriften zählen dabei nicht; dieselbe Seite
+zählt nur einmal; `/liste?seite=2` und `/liste?seite=3` sind zwei Seiten. Die
+Zahl ist eine Schätzung (höchstens etwa ein Zehntel daneben) und geht bis
+500. Wer immer wieder dasselbe abruft, wird von einer Grenze auf Anfragen
+erfasst, nicht von dieser.
 
 **Wer nie begrenzt wird:** die Ausnahmeliste und die echten Suchmaschinen und
 KI-Crawler, die Sie über die `allow-`Regelgruppen für Crawler durchlassen.

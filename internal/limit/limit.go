@@ -1,6 +1,10 @@
 // Package limit counts requests per client and says when a client has sent
 // more than the site owner allows in a period of time.
 //
+// A limit counts either every request or the different pages a client asks
+// for. A person reads a handful of pages in a few minutes; a crawler walks
+// through hundreds. Images, style sheets, scripts and fonts are not pages.
+//
 // A client is an IPv4 address or an IPv6 /64 (one IPv6 connection owns a
 // whole /64), or, if configured, the wider network around it. Counts are
 // kept in memory only, for as long as the longest period, and never written
@@ -12,6 +16,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/maphash"
+	"math"
+	"math/bits"
 	"net/http"
 	"net/netip"
 	"sync"
@@ -30,10 +36,26 @@ type Window struct {
 	Per time.Duration
 	// Action is what happens to further requests: "challenge" or "deny".
 	Action string
+	// Pages counts the different pages asked for instead of all requests.
+	// The count is an estimate, good up to MaxPages.
+	Pages bool
 }
 
+// MaxPages is the largest limit a window that counts pages can have. The
+// different pages of a client are estimated from a small bit field; beyond
+// this number the estimate is no longer good.
+const MaxPages = 500
+
+// sketchBits is the size of the bit field per client, window and period.
+const sketchBits = 256
+
 // ID names the window in reports, such as "300/10m0s".
-func (w Window) ID() string { return fmt.Sprintf("%d/%s", w.Requests, w.Per) }
+func (w Window) ID() string {
+	if w.Pages {
+		return fmt.Sprintf("%d pages/%s", w.Requests, w.Per)
+	}
+	return fmt.Sprintf("%d/%s", w.Requests, w.Per)
+}
 
 // Options configures a Limiter.
 type Options struct {
@@ -71,6 +93,7 @@ type Limiter struct {
 	seed     maphash.Seed
 	shards   [shards]shard
 	exceeded []atomic.Uint64 // per window: requests refused or challenged
+	pages    bool            // some window counts pages
 	exempted atomic.Uint64
 
 	cancel context.CancelFunc
@@ -128,6 +151,62 @@ type counters struct {
 	current  [MaxWindows]uint32
 	previous [MaxWindows]uint32
 	seen     time.Time
+	// sketch holds, for windows that count pages, which pages were asked
+	// for. It is only there if such a window is configured.
+	sketch *sketches
+}
+
+// sketches holds one bit field per window for the current period and one
+// for the period before. A page sets the bit its address hashes to; the
+// number of different pages is estimated from how many bits are still clear.
+type sketches struct {
+	current, previous [MaxWindows][sketchBits / 64]uint64
+}
+
+// distinct estimates how many different pages set the bits of a field.
+func distinct(field *[sketchBits / 64]uint64) float64 {
+	set := 0
+	for _, word := range field {
+		set += bits.OnesCount64(word)
+	}
+	switch set {
+	case 0:
+		return 0
+	case sketchBits:
+		return 4 * sketchBits // full: far more than can be told
+	}
+	return -sketchBits * math.Log(float64(sketchBits-set)/sketchBits)
+}
+
+// assets are the file endings of what a page loads, as opposed to a page.
+var assets = map[string]bool{
+	"css": true, "js": true, "mjs": true, "map": true,
+	"png": true, "jpg": true, "jpeg": true, "gif": true, "svg": true, "webp": true, "avif": true, "ico": true, "bmp": true,
+	"woff": true, "woff2": true, "ttf": true, "otf": true, "eot": true,
+	"mp3": true, "mp4": true, "webm": true, "ogg": true, "wav": true, "m4a": true, "m4v": true, "mov": true,
+}
+
+// IsPage reports whether a path is a page rather than something a page
+// loads. The ending decides; a path without an ending is a page.
+func IsPage(path string) bool {
+	for i := len(path) - 1; i >= 0 && len(path)-i <= 6; i-- {
+		switch path[i] {
+		case '/':
+			return true
+		case '.':
+			var lower [5]byte
+			ending := lower[:len(path)-i-1]
+			for j := range ending {
+				b := path[i+1+j]
+				if b >= 'A' && b <= 'Z' {
+					b += 'a' - 'A'
+				}
+				ending[j] = b
+			}
+			return !assets[string(ending)]
+		}
+	}
+	return true
 }
 
 // New returns a Limiter. The options must have been validated (see
@@ -142,7 +221,11 @@ func New(opts Options) *Limiter {
 	if len(opts.Windows) > MaxWindows {
 		opts.Windows = opts.Windows[:MaxWindows]
 	}
-	l := &Limiter{opts: opts, perShard: opts.MaxClients / shards, seed: maphash.MakeSeed(), exceeded: make([]atomic.Uint64, len(opts.Windows))}
+	pages := false
+	for _, w := range opts.Windows {
+		pages = pages || w.Pages
+	}
+	l := &Limiter{pages: pages, opts: opts, perShard: opts.MaxClients / shards, seed: maphash.MakeSeed(), exceeded: make([]atomic.Uint64, len(opts.Windows))}
 	for i := range l.shards {
 		l.shards[i].clients = map[netip.Addr]*counters{}
 	}
@@ -168,9 +251,10 @@ func (l *Limiter) key(addr netip.Addr) netip.Addr {
 	return p.Addr()
 }
 
-// Count records one request from addr and says whether the client is over a
-// limit. An invalid or exempt address is never counted.
-func (l *Limiter) Count(addr netip.Addr) Verdict {
+// Count records one request from addr for the address path?query and says
+// whether the client is over a limit. An invalid or exempt address is never
+// counted.
+func (l *Limiter) Count(addr netip.Addr, path, query string) Verdict {
 	addr = addr.Unmap().WithZone("")
 	if !addr.IsValid() || len(l.opts.Windows) == 0 {
 		return Verdict{}
@@ -186,11 +270,25 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 	s := &l.shards[maphash.Bytes(l.seed, raw[:])%shards]
 	now := l.opts.Now()
 
+	// Which bit this page sets, if pages are counted and this is one.
+	page, bit := false, uint64(0)
+	if l.pages && IsPage(path) {
+		var h maphash.Hash
+		h.SetSeed(l.seed)
+		_, _ = h.WriteString(path)
+		_ = h.WriteByte('?')
+		_, _ = h.WriteString(query)
+		page, bit = true, h.Sum64()%sketchBits
+	}
+
 	s.mu.Lock()
 	c := s.clients[key]
 	if c == nil {
 		l.makeRoom(s, now)
 		c = &counters{}
+		if l.pages {
+			c.sketch = &sketches{}
+		}
 		s.clients[key] = c
 	}
 	c.seen = now
@@ -202,22 +300,36 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 		case period:
 		case period - 1:
 			c.previous[i], c.current[i] = c.current[i], 0
+			if w.Pages {
+				c.sketch.previous[i], c.sketch.current[i] = c.sketch.current[i], [sketchBits / 64]uint64{}
+			}
 		default:
 			c.previous[i], c.current[i] = 0, 0
+			if w.Pages {
+				c.sketch.previous[i], c.sketch.current[i] = [sketchBits / 64]uint64{}, [sketchBits / 64]uint64{}
+			}
 		}
 		c.period[i] = period
-		if c.current[i] < 1<<31 {
-			c.current[i]++
+
+		var current, previous float64
+		if w.Pages {
+			if page {
+				c.sketch.current[i][bit/64] |= 1 << (bit % 64)
+			}
+			current, previous = distinct(&c.sketch.current[i]), distinct(&c.sketch.previous[i])
+		} else {
+			if c.current[i] < 1<<31 {
+				c.current[i]++
+			}
+			current, previous = float64(c.current[i]), float64(c.previous[i])
 		}
 		// Share of the previous period that still lies within the last Per.
 		elapsed := now.UnixNano() - period*int64(w.Per)
 		remaining := float64(int64(w.Per)-elapsed) / float64(w.Per)
-		estimate := float64(c.current[i]) + float64(c.previous[i])*remaining
-		if estimate > float64(w.Requests) {
+		if current+previous*remaining > float64(w.Requests) {
 			if worst < 0 || (w.Action == "deny" && verdict.Action != "deny") {
 				worst = i
-				verdict = Verdict{Over: true, Action: w.Action,
-					RetryAfter: retryAfter(w, float64(c.current[i]), float64(c.previous[i]), elapsed)}
+				verdict = Verdict{Over: true, Action: w.Action, RetryAfter: retryAfter(w, current, previous, elapsed)}
 			}
 		}
 	}
@@ -314,6 +426,7 @@ type Report struct {
 // LimitReport is one limit in a Report.
 type LimitReport struct {
 	Requests int    `json:"requests"`
+	Count    string `json:"count"`
 	Per      string `json:"per"`
 	Action   string `json:"action"`
 	Over     uint64 `json:"requests_over_limit"`
@@ -329,7 +442,11 @@ func (l *Limiter) Report() Report {
 		s.mu.Unlock()
 	}
 	for i, w := range l.opts.Windows {
-		r.Limits[i] = LimitReport{Requests: w.Requests, Per: w.Per.String(), Action: w.Action, Over: l.exceeded[i].Load()}
+		count := "requests"
+		if w.Pages {
+			count = "pages"
+		}
+		r.Limits[i] = LimitReport{Count: count, Requests: w.Requests, Per: w.Per.String(), Action: w.Action, Over: l.exceeded[i].Load()}
 	}
 	return r
 }

@@ -167,7 +167,7 @@ Request limits per client; explained in [LIMITS.md](LIMITS.md).
 |---|---|---|---|
 | `limits.enabled` | `false` | `true`, `false` | Switches the limits on. |
 | `limits.count_by` | `address` | `address`, `network` | What one client is. `address`: an IPv4 address, an IPv6 /64. `network`: an IPv4 /24, an IPv6 /48. |
-| `limits.windows` | one limit: 300 requests per `1m`, `challenge` | One to four entries `{requests, per, action}`; requests 1 to 10000000; per `1s` to `24h`, each period once; action `challenge` or `deny` | The limits. Over a `challenge` limit a client has to pass the security check; over a `deny` limit it gets status `429`. |
+| `limits.windows` | one limit: 300 requests per `1m`, `challenge`, `count: requests` | One to four entries `{requests, per, action, count}`; requests 1 to 10000000 (1 to 500 with `count: pages`); per `1s` to `24h`; action `challenge` or `deny`; count `requests` (default) or `pages`; each combination of period and count once | The limits. `count: pages` counts the different pages a client asks for instead of every request. Over a `challenge` limit a client has to pass the security check; over a `deny` limit it gets status `429`. |
 | `limits.exempt` | `[]` | List of IP addresses and networks | Clients that are never counted. |
 | `limits.max_clients` | `100000` | 1000 to 5000000 | How many clients are tracked at most. About 15 MB per 100000. |
 

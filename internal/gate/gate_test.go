@@ -441,7 +441,7 @@ func TestCrawlerIdentityReachesTheRules(t *testing.T) {
 // limitHarness is a gate whose limiter says what the test tells it to.
 func limitHarness(t *testing.T, over, deny *bool, counted *[]string, change func(*Options)) *harness {
 	return newHarness(t, func(o *Options) {
-		o.Limit = func(client netip.Addr) (bool, bool, time.Duration) {
+		o.Limit = func(client netip.Addr, _, _ string) (bool, bool, time.Duration) {
 			*counted = append(*counted, client.String())
 			return *over, *deny, 42 * time.Second
 		}

@@ -55,12 +55,13 @@ Bots that pretend to be browsers cannot be told by their name. Owner's
 decision (2026-10-03): all of this comes before statistics.
 - [x] Request limits per client and period, switchable, with a list of exempt addresses
 - [x] Preset "check everything that looks like a browser", with exceptions for `/.well-known`, `robots.txt`, `favicon.ico` and feeds; ready-made exceptions for git clients and feed readers
-- [ ] Ready-made exceptions for container registry clients, small browsers and uptime monitors (their user agents must be looked up, not written from memory)
+- [x] Ready-made exception for container registry clients (`allow-registry-clients`, by the addresses of the OCI distribution specification). Small browsers need none: they get through with the path without JavaScript.
+- [ ] Uptime monitors as verified crawler definitions (their operators publish addresses); moved to Later
 - [x] Plausibility of browser headers, as weights: no language, no Accept, headless browser
 - [ ] Further plausibility checks that depend on HTTPS (client hints, fetch metadata); need a condition for the scheme first
 - [x] Trap link that only a careless crawler follows; rule condition `trapped`, preset `block-trapped`
 - [x] Maze of worthless pages behind the trap link, as an option, off by default
-- [ ] Patterns: one client fetching very many different pages, or the same page again and again
+- [x] Patterns: one client fetching very many different pages (`count: pages`); the same page again and again is covered by limits on requests
 - [x] Country condition in rules, with a country database the operator supplies or the free DB-IP database downloaded on request
 - [ ] Confirm the DB-IP download against the live server (not reachable from the development environment)
 - [x] Security review of the milestone by a second agent (2026-10-04), and its findings fixed:
@@ -128,6 +129,7 @@ decision (2026-10-03): all of this comes before statistics.
 - Hosted variant
 - CMS plugins
 - ASN-based lists and reputation feeds
+- Uptime monitors (UptimeRobot and similar) as crawler definitions of a class of their own, verified by their published addresses, with an allow preset
 - From the comparison in `docs/PARITY.md`: server load as a condition; a solved task usable only once; memory-hard proof of work; check that a style sheet was loaded; token the web server in front can verify; path prefix; unix socket and TLS options towards the website; headers telling the website which rule decided; log file with rotation; more languages
 - Go through the list "Tests to take from Anubis' published security history" in `docs/PARITY.md`
 - Serving a robots.txt generated from the crawler classes

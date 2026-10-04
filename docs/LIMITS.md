@@ -26,12 +26,43 @@ counted.
 | Setting | Meaning |
 |---|---|
 | `limits.enabled` | `true` switches the limits on. |
-| `limits.windows` | One to four limits, each with `requests`, `per` (1s to 24h) and `action`. |
+| `limits.windows` | One to four limits, each with `requests`, `per` (1s to 24h), `action`, and optionally `count: pages`. |
 | `limits.count_by` | What one client is. `address`: an IPv4 address; for IPv6 the /64, which is one connection. `network`: an IPv4 /24 or an IPv6 /48. |
 | `limits.exempt` | Addresses and networks that are never counted. |
 | `limits.max_clients` | How many clients are tracked at most. |
 
 Defaults and allowed values are in [CONFIGURATION.md](CONFIGURATION.md#limits).
+
+## Counting different pages
+
+A limit on requests cannot tell a person who reads three pages with a
+hundred images from a crawler that walks through three hundred pages without
+loading a single image. `count: pages` can: it counts how many *different
+pages* a client asks for.
+
+```yaml
+limits:
+  enabled: true
+  windows:
+    - {requests: 60, per: 10m, action: challenge, count: pages}
+    - {requests: 300, per: 1m, action: challenge}
+```
+
+A client that asks for more than 60 different pages within ten minutes has to
+pass the security check.
+
+- A page is an address together with its query: `/liste?seite=2` and
+  `/liste?seite=3` are two pages.
+- Images, style sheets, scripts, fonts, audio and video (by the ending of
+  the address) are not pages and do not count.
+- Asking for the same page again does not count again. To catch a client
+  that asks for the same thing again and again, use a limit on requests.
+- The number is an estimate, about one in ten off at worst, and good up to
+  500. That is the highest limit a `pages` limit can have.
+- Once a client is over, all its requests are affected, also for images.
+- It needs more memory: about 0.6 KB per counted client instead of 0.1 KB.
+
+One period can have a limit on requests and one on pages.
 
 ## The two actions
 

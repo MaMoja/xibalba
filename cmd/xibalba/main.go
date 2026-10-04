@@ -288,14 +288,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Request limits, if switched on.
-	var limitFn func(netip.Addr) (bool, bool, time.Duration)
+	var limitFn func(netip.Addr, string, string) (bool, bool, time.Duration)
 	if cfg.Limits.Enabled {
 		limiter := limit.New(cfg.Limits.Options())
 		supervisor.Add(limiter)
 		registry.Register(limiter.Name(), func() health.Status { return health.Status{State: health.OK} })
 		opsMux.Handle("GET /limits", limiter.Handler())
-		limitFn = func(client netip.Addr) (bool, bool, time.Duration) {
-			v := limiter.Count(client)
+		limitFn = func(client netip.Addr, path, query string) (bool, bool, time.Duration) {
+			v := limiter.Count(client, path, query)
 			return v.Over, v.Action == "deny", v.RetryAfter
 		}
 	}

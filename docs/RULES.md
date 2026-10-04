@@ -283,6 +283,7 @@ that decides wins. So list what lets through before what checks or denies.
 | `keep-internet-working` | Lets everyone read `/.well-known/`, `/robots.txt` and `/favicon.ico`, without a query (`?…`). `/.well-known/webfinger` may have one. |
 | `allow-feeds` | Lets feed readers fetch feeds: addresses whose last part is `feed`, `rss` or `atom`, or a file named `index`, `feed`, `rss` or `atom` ending in `.xml`, `.rss` or `.atom`. No earlier part of the address may contain a dot. |
 | `allow-git-clients` | Lets programs that say they are git use git's own addresses with git's own methods (`GET …/info/refs`, `POST …/git-upload-pack`, `POST …/git-receive-pack`). |
+| `allow-registry-clients` | For a container registry: lets programs that do not say they are a browser use the addresses under `/v2/` (the OCI distribution specification). Only for a registry. |
 | `block-trapped` | Denies clients that followed the hidden trap link. Needs `trap.enabled`; see [TRAP.md](TRAP.md). |
 | `block-fake-crawlers` | Denies requests that carry a known crawler's name but do not come from its operator. |
 | `block-ai-training` | Denies crawlers that collect pages for AI training. |
