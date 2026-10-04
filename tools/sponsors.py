@@ -113,11 +113,15 @@ def main() -> None:
     else:
         token = os.environ.get("SPONSORS_TOKEN", "")
         if not token:
-            print("SPONSORS_TOKEN is not set: nothing done. See docs/MAINTAINING.md.")
+            print("::warning::SPONSORS_TOKEN is not set: nothing done. See docs/MAINTAINING.md.")
             return
         nodes = ask_github(token)
+    listed = public_sponsors(nodes)
+    if os.environ.get("GITHUB_ACTIONS"):
+        # Shown on the run's page. Numbers only: private sponsors stay private.
+        print("::notice::GitHub answered: %d sponsorships, %d listed in the README" % (len(nodes), len(listed)))
     old = README.read_text()
-    new = rewrite(old, render(public_sponsors(nodes)))
+    new = rewrite(old, render(listed))
     if new == old:
         print("The list of sponsors is up to date.")
     elif check:
