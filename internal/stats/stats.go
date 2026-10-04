@@ -354,7 +354,7 @@ func eachLine(path string, fn func(line []byte)) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	r := bufio.NewReaderSize(f, 64<<10)
 	var line []byte
 	tooLong := false
