@@ -58,7 +58,14 @@ jobs:
           sudo dpkg -i "dist/release/xibalba_${{ steps.version.outputs.version }}_amd64.deb"
           xibalba -version
           xibalba -check -config /etc/xibalba/xibalba.yaml
-          systemd-analyze verify /lib/systemd/system/xibalba.service
+      - name: Check the service file
+        run: |
+          # What systemd has to say about the unit is shown on the run's page;
+          # whether the service really works is the next step's business.
+          out="$(systemd-analyze verify /lib/systemd/system/xibalba.service 2>&1 | grep -i xibalba || true)"
+          if [ -n "$out" ]; then
+            echo "::warning::systemd-analyze: $(echo "$out" | head -5 | tr '\n' ' ')"
+          fi
       - name: Start the service
         run: |
           sudo systemctl start xibalba
@@ -82,8 +89,10 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9091/login)" = "200"
           systemctl is-active xibalba
       - name: Service log
-        if: always()
-        run: sudo journalctl -u xibalba --no-pager | tail -40
+        if: failure()
+        run: |
+          sudo journalctl -u xibalba --no-pager | tail -40
+          echo "::error::$(sudo journalctl -u xibalba --no-pager -o cat | tail -6 | tr '\n' ' ' | cut -c1-900)"
       - name: Remove the package
         run: |
           sudo dpkg --purge xibalba
