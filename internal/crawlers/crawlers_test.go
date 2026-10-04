@@ -648,7 +648,11 @@ func TestIPv6ImpostorsAreKeptPerNetwork(t *testing.T) {
 	for i := 0; i < 3000; i++ {
 		r.Identify("ExBot", netip.AddrFrom16([16]byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, byte(i >> 8), byte(i)}))
 	}
-	time.Sleep(50 * time.Millisecond)
+	// The lookup runs in the background; wait for it rather than for a fixed time.
+	deadline := time.Now().Add(10 * time.Second)
+	for r.Identify("ExBot", addr("2001:db8:0:1::ffff:1")).Status == Pending && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
 	if got := r.Identify("ExBot", addr("2001:db8:0:1::ffff:1")).Status; got != Unverified {
 		t.Errorf("another address of a refuted network is %v", got)
 	}
