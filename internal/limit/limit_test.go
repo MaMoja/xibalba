@@ -300,11 +300,9 @@ func TestEstimateOfDifferentPages(t *testing.T) {
 		for i := 0; i < n; i++ {
 			l.Count(addr("192.0.2.1"), "/p/"+time.Duration(i).String(), "")
 		}
-		s := &l.shards[0]
 		var got float64
 		for i := range l.shards {
-			s = &l.shards[i]
-			for _, c := range s.clients {
+			for _, c := range l.shards[i].clients {
 				got = distinct(&c.sketch.current[0])
 			}
 		}
