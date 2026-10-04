@@ -78,6 +78,10 @@ type Options struct {
 	// page (a successful answer of type text/html), for limits that count
 	// different pages. If nil, answers are not looked at.
 	Page func(client netip.Addr, path, query string)
+	// Origin is told the client and the outcome ("allow", "challenge" or
+	// "deny") of every evaluated request, for counts per network of
+	// origin. If nil, nothing is told.
+	Origin func(client netip.Addr, outcome string)
 	// Limited writes the page for a request refused by a limit.
 	Limited func(w http.ResponseWriter, r *http.Request, retryAfter time.Duration)
 	// Challenge handles requests whose decision is "challenge". If nil,
@@ -172,17 +176,29 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	action := decision.Action
+	limited := over && refuse && action != rules.Deny
+	if over && action != rules.Deny {
+		action = rules.Challenge
+	}
+	if g.opts.Origin != nil {
+		// Counted as decided, also while nothing is enforced.
+		switch {
+		case limited || action == rules.Deny:
+			g.opts.Origin(client, "deny")
+		case action == rules.Challenge:
+			g.opts.Origin(client, "challenge")
+		default:
+			g.opts.Origin(client, "allow")
+		}
+	}
 	if g.opts.DryRun {
 		g.opts.Next.ServeHTTP(w, r)
 		return
 	}
-	action := decision.Action
-	if over && action != rules.Deny {
-		if refuse {
-			g.opts.Limited(w, r, retryAfter)
-			return
-		}
-		action = rules.Challenge
+	if limited {
+		g.opts.Limited(w, r, retryAfter)
+		return
 	}
 	switch action {
 	case rules.Deny:

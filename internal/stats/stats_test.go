@@ -292,3 +292,39 @@ func TestBackgroundSamplingAndConcurrentReads(t *testing.T) {
 		t.Errorf("Name() = %q", s.Name())
 	}
 }
+
+// Counts handed over once (Added) are added as they are, and Reduce is
+// applied when the hour is written to the month's file.
+func TestAddedCountsAndReduce(t *testing.T) {
+	w := newWorld()
+	dir := filepath.Join(t.TempDir(), "networks")
+	pending := map[string]uint64{"a": 2, "b": 1}
+	s := New(Options{
+		Name: "statistics-networks", Dir: dir, Create: true, KeepDays: 30, Now: w.Now,
+		Added:  func() map[string]uint64 { out := pending; pending = nil; return out },
+		Reduce: func(counts map[string]uint64) { delete(counts, "b") },
+	})
+	if s.Name() != "statistics-networks" {
+		t.Errorf("name = %q", s.Name())
+	}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Stop(context.Background()) }()
+	s.Sample()
+	pending = map[string]uint64{"a": 3}
+	s.Sample()
+	s.Sample() // nothing new: nothing added twice
+	first := hourOf(w.Now())
+	if got := s.Hours(first, first); len(got) != 1 || got[0].Counts["a"] != 5 || got[0].Counts["b"] != 1 {
+		t.Fatalf("current hour = %+v", got)
+	}
+	w.advance(time.Hour)
+	s.Sample()
+	if got := s.Hours(first, first); len(got) != 1 || got[0].Counts["a"] != 5 || len(got[0].Counts) != 1 {
+		t.Errorf("written hour = %+v", got)
+	}
+	if h := s.Health(); h.State != "ok" {
+		t.Errorf("health = %+v", h)
+	}
+}

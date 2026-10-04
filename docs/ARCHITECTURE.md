@@ -94,6 +94,7 @@ the same code that later uses them.
 | `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
 | `internal/stats` | Keep the other parts' counters on disk by the hour, with a time limit |
+| `internal/origin` | Count requests per network of origin, in a bounded table |
 | `internal/metrics` | Serve the numbers of the other parts in the Prometheus text format |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
@@ -148,6 +149,7 @@ cannot recover from.
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A part fails while its numbers are collected for `/metrics` | Its numbers are left out of that answer; the others are served. | Missing series in the monitoring system |
 | The statistics directory is gone or the disk is full | Requests are served as before. What is counted meanwhile is written when writing works again. | One warning with `component=statistics`; `statistics` is `degraded` in `/healthz` |
+| The counts per network cannot be written, or requests come from more networks than the table holds | Requests are served as before. Networks beyond the table are counted as `other`. | `statistics-networks` is `degraded` in `/healthz` when writing fails |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
 

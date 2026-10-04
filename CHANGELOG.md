@@ -8,6 +8,15 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Counts per network of origin (`statistics.networks`): the largest networks
+  of each hour (IPv4 `/24`, IPv6 `/48`) and what happened to their requests.
+  Off by default, own time limit (30 days), never a single address.
+  `GET /statistics/networks`.
+- `deny_at` on a `challenge` limit: a client that passed the security check
+  and still sends more than this number is refused. Off by default.
+- English guides: getting started, operations, privacy, FAQ and a page for
+  visitors. The documentation is also published as the
+  [wiki](https://github.com/MaMoja/xibalba/wiki), built from `docs/`.
 - Statistics on disk (`statistics.directory`, `statistics.keep_days`): what
   each rule, crawler and limit counted, by the hour, across restarts, in
   plain text files. Counts only. `GET /statistics` on the operations

@@ -166,11 +166,19 @@ limits:
   # minutes, a crawler walks through hundreds. At most 500. Example:
   #
   #     - {requests: 60, per: 10m, action: challenge, count: pages}
+  #
+  # "deny_at" belongs to a challenge limit. A client that passed the check and
+  # still sends more than this number within "per" is refused until it is
+  # below it again. 0: never (a client that passed the check carries on).
+  # Example: check from 300 a minute, refuse from 1200 a minute:
+  #
+  #     - {requests: 300, per: 1m, action: challenge, deny_at: 1200}
   windows:
     - requests: 300
       per: 1m
       action: challenge
       count: requests
+      deny_at: 0
   # Addresses and networks that are never counted: your own office, your
   # monitoring, a partner's server. Example: ["192.0.2.0/24", "2001:db8::/32"]
   exempt: []
@@ -251,6 +259,16 @@ statistics:
   directory: ""
   # How many days an hour's counts are kept (1 to 3650).
   keep_days: 400
+  # Counts per network of origin: which networks most requests came from, and
+  # what happened to them. Off by default. A network is an IPv4 /24 (256
+  # addresses) or an IPv6 /48; no single address is stored. Needs "directory".
+  networks:
+    enabled: false
+    # How many networks are kept per hour. The rest is summed up as "other".
+    top: 50
+    # How many days these counts are kept (1 to 400). Keep them short: a
+    # network is closer to a person than a rule name is.
+    keep_days: 30
 
 # What Xibalba writes to its log (standard error).
 log:

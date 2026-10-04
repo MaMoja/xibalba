@@ -23,7 +23,7 @@ func TestLimitSettings(t *testing.T) {
   enabled: true
   count_by: network
   windows:
-    - {requests: 100, per: 10s, action: challenge}
+    - {requests: 100, per: 10s, action: challenge, deny_at: 400}
     - {requests: 5000, per: 24h, action: deny}
   exempt: ["192.0.2.0/24", "2001:db8::1"]
   max_clients: 2000
@@ -33,7 +33,7 @@ func TestLimitSettings(t *testing.T) {
 	}
 	opts := cfg.Limits.Options()
 	if !opts.ByNetwork || opts.MaxClients != 2000 || len(opts.Windows) != 2 ||
-		opts.Windows[1].Requests != 5000 || opts.Windows[1].Per != 24*time.Hour || opts.Windows[1].Action != "deny" {
+		opts.Windows[0].DenyAt != 400 || opts.Windows[1].Requests != 5000 || opts.Windows[1].Per != 24*time.Hour || opts.Windows[1].Action != "deny" {
 		t.Errorf("options = %+v", opts)
 	}
 	if len(opts.Exempt) != 2 || opts.Exempt[1] != netip.MustParsePrefix("2001:db8::1/128") {
@@ -71,6 +71,9 @@ func TestLimitProblems(t *testing.T) {
 		{"unknown thing to count", "  windows:\n    - {requests: 5, per: 1m, action: deny, count: visitors}\n", "limits.windows[0].count", "not something that can be counted"},
 		{"too many pages", "  windows:\n    - {requests: 5000, per: 1m, action: deny, count: pages}\n", "limits.windows[0].requests", "out of range for a limit on pages"},
 		{"same period and count twice", "  windows:\n    - {requests: 5, per: 1m, action: deny, count: pages}\n    - {requests: 9, per: 1m, action: challenge, count: pages}\n", "limits.windows[1].per", "already a limit on pages"},
+		{"deny_at on a deny limit", "  windows:\n    - {requests: 5, per: 1m, action: deny, deny_at: 9}\n", "limits.windows[0].deny_at", "only has a meaning"},
+		{"deny_at not above requests", "  windows:\n    - {requests: 5, per: 1m, action: challenge, deny_at: 5}\n", "limits.windows[0].deny_at", "out of range"},
+		{"deny_at too many pages", "  windows:\n    - {requests: 5, per: 1m, action: challenge, count: pages, deny_at: 501}\n", "limits.windows[0].deny_at", "out of range"},
 		{"exempt entry is not an address", "  exempt: [\"office\"]\n", "limits.exempt[0]", "not an IP address"},
 		{"everyone exempt", "  exempt: [\"0.0.0.0/0\"]\n", "limits.exempt[0]", "exempts every address"},
 		{"table too small", "  max_clients: 10\n", "limits.max_clients", "out of range"},
@@ -122,7 +125,8 @@ func TestStatisticsSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Statistics.Directory != "" || cfg.Statistics.Path != "" || cfg.Statistics.KeepDays != 400 {
+	if cfg.Statistics.Directory != "" || cfg.Statistics.Path != "" || cfg.Statistics.KeepDays != 400 ||
+		cfg.Statistics.Networks.Enabled || cfg.Statistics.Networks.Top != 50 || cfg.Statistics.Networks.KeepDays != 30 {
 		t.Errorf("defaults = %+v", cfg.Statistics)
 	}
 	path := writeFiles(t, map[string]string{"xibalba.yaml": base + "statistics:\n  directory: stats\n  keep_days: 30\n", "stats/.keep": "", "file": "x"})
@@ -131,10 +135,13 @@ func TestStatisticsSettings(t *testing.T) {
 		t.Errorf("cfg = %+v, err = %v", cfg.Statistics, err)
 	}
 	for yaml, want := range map[string]string{
-		"statistics:\n  keep_days: 0\n":       "statistics.keep_days",
-		"statistics:\n  keep_days: 99999\n":   "statistics.keep_days",
-		"statistics:\n  directory: nowhere\n": "does not exist",
-		"statistics:\n  directory: file\n":    "is not a directory",
+		"statistics:\n  keep_days: 0\n":               "statistics.keep_days",
+		"statistics:\n  networks: {enabled: true}\n":  "statistics.directory is empty",
+		"statistics:\n  networks: {top: 0}\n":         "statistics.networks.top",
+		"statistics:\n  networks: {keep_days: 500}\n": "statistics.networks.keep_days",
+		"statistics:\n  keep_days: 99999\n":           "statistics.keep_days",
+		"statistics:\n  directory: nowhere\n":         "does not exist",
+		"statistics:\n  directory: file\n":            "is not a directory",
 	} {
 		_ = os.WriteFile(path, []byte(base+yaml), 0o600)
 		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), want) {

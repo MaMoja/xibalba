@@ -168,7 +168,7 @@ Request limits per client; explained in [LIMITS.md](LIMITS.md).
 |---|---|---|---|
 | `limits.enabled` | `false` | `true`, `false` | Switches the limits on. |
 | `limits.count_by` | `address` | `address`, `network` | What one client is. `address`: an IPv4 address, an IPv6 /64. `network`: an IPv4 /24, an IPv6 /48. |
-| `limits.windows` | one limit: 300 requests per `1m`, `challenge`, `count: requests` | One to four entries `{requests, per, action, count}`; requests 1 to 10000000 (1 to 500 with `count: pages`); per `1s` to `24h`; action `challenge` or `deny`; count `requests` (default) or `pages`; each combination of period and count once | The limits. `count: pages` counts the different pages a client is given (successful answers of type `text/html`) instead of every request. Over a `challenge` limit a client has to pass the security check; over a `deny` limit it gets status `429`. |
+| `limits.windows` | one limit: 300 requests per `1m`, `challenge`, `count: requests` | One to four entries `{requests, per, action, count, deny_at}`; requests 1 to 10000000 (1 to 500 with `count: pages`); per `1s` to `24h`; action `challenge` or `deny`; count `requests` (default) or `pages`; deny_at `0` (default, off) or a number above `requests`, only with `challenge`; each combination of period and count once | The limits. `count: pages` counts the different pages a client is given (successful answers of type `text/html`) instead of every request. Over a `challenge` limit a client has to pass the security check; over a `deny` limit it gets status `429`. With `deny_at`, a `challenge` limit refuses a client above that number even if it passed the check. |
 | `limits.exempt` | `[]` | List of IP addresses and networks | Clients that are never counted. |
 | `limits.max_clients` | `100000` | 1000 to 5000000 | How many clients are tracked at most. About 15 MB per 100000; about 40 MB with a limit that counts pages. |
 
@@ -280,6 +280,9 @@ Counters kept on disk by the hour; explained in [STATISTICS.md](STATISTICS.md).
 |---|---|---|---|
 | `statistics.directory` | empty | Path of an existing directory, relative to the configuration file | Where the counters are kept. Empty: nothing is kept across restarts. Only counts are stored; no address, path or user agent. |
 | `statistics.keep_days` | `400` | 1 to 3650 | How many days an hour's counts are kept. Files are removed by month. |
+| `statistics.networks.enabled` | `false` | `true`, `false` | Counts per network of origin (IPv4 `/24`, IPv6 `/48`), kept in the subdirectory `networks`. Needs `statistics.directory`. No single address is stored. See [STATISTICS.md](STATISTICS.md#counts-per-network). |
+| `statistics.networks.top` | `50` | 1 to 1000 | How many networks are kept per hour. The others are summed up as `other`. |
+| `statistics.networks.keep_days` | `30` | 1 to 400 | How many days the counts per network are kept. |
 
 ### `log`
 
@@ -314,6 +317,7 @@ Endpoints:
 | `GET /crawlers` | JSON with every known crawler: operator, class, source, how it is verified, the state of its address list, and how many requests claimed to be it. Holds no client address. Example in [CRAWLERS.md](CRAWLERS.md#looking-at-what-happens). |
 | `GET /metrics` | The numbers of all the endpoints below in the Prometheus text format, for a monitoring system. See [METRICS.md](METRICS.md). |
 | `GET /statistics` | Only if `statistics.directory` is set. JSON with the counts of the last hours (`?hours=N`, default 24), by the hour and in total. See [STATISTICS.md](STATISTICS.md). |
+| `GET /statistics/networks` | Only if `statistics.networks.enabled` is `true`. The same form, with the counts per network of origin. |
 | `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 
 Example health report:
@@ -346,6 +350,7 @@ top-level state is the worst state of any component. A component that is not
 | `limits` | The request limits. Listed only while `limits.enabled` is `true`. | Never: it keeps no state that can fail. |
 | `trap` | The trap. Listed only while `trap.enabled` is `true`. | Never. |
 | `statistics` | The counters kept on disk. Listed only if `statistics.directory` is set. | They cannot be written (`degraded`). Requests are not affected. |
+| `statistics-networks` | The counts per network. Listed only if `statistics.networks.enabled` is `true`. | They cannot be written (`degraded`). Requests are not affected. |
 | `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |

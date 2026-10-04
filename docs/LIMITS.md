@@ -94,8 +94,28 @@ If a client is over several limits, `deny` wins.
 
 **A `challenge` limit does not hold back a client that has passed the
 check.** That is its purpose for people, and its gap for a program that
-solves the check once and then asks for a great deal. Close the gap with a
-second, higher limit with `deny`, as in the example above.
+solves the check once and then asks for a great deal. There are two ways to
+close the gap, both off until you set them:
+
+**`deny_at` on the same limit.** From this number on the client is refused
+(status `429`), pass or no pass, until it is below the number again:
+
+```yaml
+limits:
+  enabled: true
+  windows:
+    - {requests: 300, per: 1m, action: challenge, deny_at: 1200}
+```
+
+Up to 300 requests a minute nothing happens; above 300 the client has to
+pass the check; above 1200 it is refused. `deny_at` must be higher than
+`requests`; `0` (the default) switches it off.
+
+**A second, higher limit with `deny`** over a longer period, as in the
+example above. Use this when the ceiling should cover a day and not a minute.
+
+`GET /limits` shows `deny_at` and, as `requests_over_deny_at`, how many
+requests were refused because of it.
 
 A limit only ever makes the outcome stricter. A request that a rule denies
 stays denied.

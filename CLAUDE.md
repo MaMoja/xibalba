@@ -160,6 +160,7 @@ internal/geo/         country of an address, from a database file
 internal/trap/        hidden link that catches crawlers; optional maze
 internal/metrics/     the other parts' numbers in the Prometheus text format
 internal/stats/       the other parts' counters on disk, by the hour
+internal/origin/      requests per network of origin, in a bounded table
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie

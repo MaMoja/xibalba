@@ -694,3 +694,23 @@ func TestPageWatchKeepsTheWriterUsable(t *testing.T) {
 		t.Errorf("found %d times, body %q", found, rec.Body)
 	}
 }
+
+// Every evaluated request is told with its outcome, also in a dry run.
+func TestOriginIsToldTheOutcome(t *testing.T) {
+	var over, deny bool
+	var counted []string
+	var told []string
+	h := limitHarness(t, &over, &deny, &counted, func(o *Options) {
+		o.Origin = func(client netip.Addr, outcome string) { told = append(told, client.String()+" "+outcome) }
+	})
+	h.do(call{target: "/"})
+	h.do(call{target: "/admin"})
+	over = true
+	h.do(call{target: "/"})
+	deny = true
+	h.do(call{target: "/"})
+	want := "203.0.113.5 allow,203.0.113.5 deny,203.0.113.5 challenge,203.0.113.5 deny"
+	if got := strings.Join(told, ","); got != want {
+		t.Errorf("told = %s\nwant   %s", got, want)
+	}
+}

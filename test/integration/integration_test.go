@@ -1754,6 +1754,9 @@ func TestStatisticsSurviveARestart(t *testing.T) {
 		t.Fatalf("nothing was written: %v", err)
 	}
 	for _, e := range entries {
+		if e.IsDir() {
+			t.Errorf("a directory %q was made although counts per network are off", e.Name())
+		}
 		raw, _ := os.ReadFile(filepath.Join(dir, e.Name()))
 		for _, private := range []string{"127.0.0.1", "geheim", "SecretAgent", "/admin"} {
 			if strings.Contains(string(raw), private) {
@@ -1784,5 +1787,48 @@ func TestStatisticsAreOffWithoutADirectory(t *testing.T) {
 	}
 	if _, report := health(t, inst); report.Components["statistics"].State != "" {
 		t.Errorf("health = %+v", report)
+	}
+}
+
+// Counts per network are an option. Switched on, they name the network a
+// request came from and never a single address; switched off (the default,
+// see TestStatisticsSurviveARestart), nothing of the kind is written.
+func TestStatisticsPerNetwork(t *testing.T) {
+	site := newWebsite(t)
+	dir := t.TempDir()
+	config := "statistics:\n  directory: \"" + dir + "\"\n  networks: {enabled: true, top: 5, keep_days: 7}\n" + testRules
+
+	inst := start(t, site.URL, config)
+	if resp, _ := get(t, inst.public+"/admin", language); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("/admin: %d", resp.StatusCode)
+	}
+	get(t, inst.public+"/", language)
+	get(t, inst.public+"/", language)
+	if _, report := health(t, inst); report.Components["statistics-networks"].State != "ok" {
+		t.Fatalf("health = %+v", report)
+	}
+	_ = inst.cmd.Process.Signal(syscall.SIGTERM)
+	_ = inst.cmd.Wait()
+
+	raw, err := os.ReadFile(filepath.Join(dir, "networks", "current.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "127.0.0.1") || !strings.Contains(string(raw), "127.0.0.0/24") {
+		t.Errorf("networks/current.json:\n%s", raw)
+	}
+
+	second := start(t, site.URL, config)
+	_, body := get(t, second.ops+"/statistics/networks?hours=2", nil)
+	var a statisticsAnswer
+	if err := json.Unmarshal([]byte(body), &a); err != nil {
+		t.Fatalf("/statistics/networks: %v\n%s", err, body)
+	}
+	if a.Totals["network|127.0.0.0/24|deny"] != 1 || a.Totals["network|127.0.0.0/24|allow"] != 2 {
+		t.Errorf("totals = %v", a.Totals)
+	}
+	// The general statistics stay free of networks.
+	if _, general := get(t, second.ops+"/statistics?hours=2", nil); strings.Contains(general, "network|") {
+		t.Errorf("/statistics holds networks:\n%s", general)
 	}
 }

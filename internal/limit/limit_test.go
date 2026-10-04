@@ -397,3 +397,40 @@ func TestPageDoesNotAllocateForAKnownClient(t *testing.T) {
 		t.Errorf("Count and Page allocate %v times", n)
 	}
 }
+
+// A client that passes the security check and carries on is refused at deny_at.
+func TestDenyAt(t *testing.T) {
+	c := newClock()
+	l := New(Options{Windows: []Window{{Requests: 2, Per: time.Minute, Action: "challenge", DenyAt: 4}}, MaxClients: 1000, Now: c.Now})
+	var got []string
+	var last Verdict
+	for i := 0; i < 6; i++ {
+		last = l.Count(addr("192.0.2.1"))
+		got = append(got, last.Action)
+	}
+	if strings.Join(got, ",") != ",,challenge,challenge,deny,deny" {
+		t.Errorf("actions = %v", got)
+	}
+	if last.RetryAfter <= 0 || last.RetryAfter > 2*time.Minute {
+		t.Errorf("retry after = %s", last.RetryAfter)
+	}
+	// Waiting that long is enough to be let near the check again.
+	c.advance(last.RetryAfter)
+	if v := l.Count(addr("192.0.2.1")); v.Action == "deny" {
+		t.Errorf("still refused after waiting: %+v", v)
+	}
+	r := l.Report().Limits[0]
+	if r.DenyAt != 4 || r.Denied != 2 || r.Over != 5 {
+		t.Errorf("report = %+v", r)
+	}
+}
+
+func TestWithoutDenyAtAChallengeLimitNeverRefuses(t *testing.T) {
+	c := newClock()
+	l := New(Options{Windows: []Window{{Requests: 2, Per: time.Minute, Action: "challenge"}}, MaxClients: 1000, Now: c.Now})
+	for i := 0; i < 1000; i++ {
+		if v := l.Count(addr("192.0.2.1")); v.Action == "deny" {
+			t.Fatalf("request %d refused", i+1)
+		}
+	}
+}

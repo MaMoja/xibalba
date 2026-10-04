@@ -74,14 +74,15 @@ decision (2026-10-03): all of this comes before statistics.
   - [x] Medium: a damaged country file stopped the start.
   - [x] Medium: warning when all visitors would share one limit.
   - [x] Low: trap lookup only when a rule asks, read lock; reload right after a download; bounded read of the country file; download address not echoed; health entries for `limits` and `trap`; privacy text names the 30 days.
-  - [ ] Medium, documented only: a `challenge` limit does not restrain a client that holds a pass (advice: add a `deny` limit). Owner to say whether an automatic escalation is wanted.
+  - [x] Medium: a `challenge` limit does not restrain a client that holds a pass. The owner chose an option: `deny_at` per limit, off by default.
   - [ ] Low, open: evict the oldest instead of any entry when the trap or limit table is full; cap the country file size lower for small machines.
 - [x] Second review of the fixes (2026-10-04), and its findings fixed: strictness also for "everything except this path" and for addresses encoded twice; request targets that are not paths refused; `keep-internet-working` without a query; warning also for the trap and for listening on all addresses; `exempt_from_limits` only by address or verified crawler; file problems still reported with `countries.download`.
   - [ ] Low, open: `allow-feeds` and `allow-git-clients` match any address ending the right way (documented); regular expressions in presets fold some non-ASCII letters; a damaged country file is read again every minute until replaced.
 
 ## M6: Statistics
 - [x] Aggregated counters per hour: by action, rule, crawler, limit and trap
-- [ ] Counters per network of origin: open, owner to decide (it would put networks of visitors on disk)
+- [x] Counters per network of origin (IPv4 /24, IPv6 /48), as an option, off by default, own time limit (owner's decision 2026-10-04)
+- [x] English guides (getting started, operations, privacy, FAQ, visitors) and the wiki, built from `docs/`
 - [x] Storage on disk with a time limit (plain files, one line per hour; no database)
 - [ ] Security review of the milestone by a second agent
 - [x] Prometheus metrics endpoint (format checked by tests; not yet tried against a running Prometheus)
@@ -121,7 +122,7 @@ decision (2026-10-03): all of this comes before statistics.
 
 ## Later
 - Challenge method and difficulty selectable per rule or threshold
-- English edition of the operator handbook
+- Counts per provider (AS number) besides counts per network; needs a second database file
 - Packaged releases, so operators do not need Go to install (part of M8)
 - A path test that means "this directory and everything under it", so `/admin` does not also match `/administrator`
 - A text expression language for rules, if `all`/`any`/`not` turn out not to be enough

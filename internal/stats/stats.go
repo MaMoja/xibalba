@@ -38,19 +38,34 @@ const (
 	MaxKeepDays = 3650
 	// maxLine is the longest line read from a month's file.
 	maxLine = 4 << 20
+	// reduceAt is the number of names from which an hour is reduced before
+	// it is over, if there is a Reduce.
+	reduceAt = 5000
 	// maxNames is how many different names one hour may hold.
 	maxNames = 20000
 )
 
 // Options configures a Store.
 type Options struct {
-	// Dir is the directory the files are kept in. It must exist.
+	// Name is the component's name; empty means "statistics".
+	Name string
+	// Dir is the directory the files are kept in. It must exist, unless
+	// Create is set.
 	Dir string
+	// Create makes Dir at the start if it is missing. Its parent must exist.
+	Create bool
 	// KeepDays is how long an hour is kept.
 	KeepDays int
 	// Collect returns the running totals by name. Totals only grow while
 	// Xibalba runs and start at zero with every start.
 	Collect func() map[string]uint64
+	// Added returns what was counted since it was last asked, by name, and
+	// is an alternative to Collect for a source that forgets what it hands
+	// over. Either may be nil.
+	Added func() map[string]uint64
+	// Reduce, if set, is applied to an hour's counts before the hour is
+	// written to its month's file, for example to keep only the largest.
+	Reduce func(counts map[string]uint64)
 	// Every is how often Collect is asked. Zero means a minute.
 	Every time.Duration
 	// Log receives the store's messages.
@@ -94,11 +109,14 @@ func New(opts Options) *Store {
 	if opts.Log == nil {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Store{opts: opts, log: opts.Log.With("component", "statistics"), last: map[string]uint64{}}
+	if opts.Name == "" {
+		opts.Name = "statistics"
+	}
+	return &Store{opts: opts, log: opts.Log.With("component", opts.Name), last: map[string]uint64{}}
 }
 
 // Name implements lifecycle.Component.
-func (s *Store) Name() string { return "statistics" }
+func (s *Store) Name() string { return s.opts.Name }
 
 func hourOf(t time.Time) time.Time { return t.UTC().Truncate(time.Hour) }
 
@@ -113,6 +131,9 @@ func (s *Store) monthPath(hour time.Time) string {
 // keep Xibalba from starting; health reports it.
 func (s *Store) Start(context.Context) error {
 	s.mu.Lock()
+	if s.opts.Create {
+		_ = os.Mkdir(s.opts.Dir, 0o700) // fails if it exists; a real problem shows at the first write
+	}
 	s.current = Bucket{Hour: hourOf(s.opts.Now()), Counts: map[string]uint64{}}
 	if kept, err := readCheckpoint(s.checkpointPath()); err != nil {
 		s.log.Warn("the hour that was being counted at the last stop could not be read and is lost", "error", err.Error())
@@ -165,7 +186,7 @@ func (s *Store) Stop(ctx context.Context) error {
 // Sample asks for the totals, adds what is new to the current hour, moves
 // on to the next hour if the clock has, and writes the state down.
 func (s *Store) Sample() {
-	totals := s.collect()
+	totals, added := s.collect()
 	now := s.opts.Now()
 
 	s.mu.Lock()
@@ -192,6 +213,17 @@ func (s *Store) Sample() {
 		}
 	}
 	s.last = totals
+	for name, n := range added {
+		if n > 0 && (len(s.current.Counts) < maxNames || s.current.Counts[name] > 0) {
+			s.current.Counts[name] += n
+		}
+	}
+	if s.opts.Reduce != nil && len(s.current.Counts) > reduceAt {
+		// Too many names for one hour, such as requests from thousands of
+		// networks: reduce early, so the hour stays small and the largest
+		// are not crowded out by the first.
+		s.opts.Reduce(s.current.Counts)
+	}
 	if err := writeCheckpoint(s.checkpointPath(), s.current); err != nil {
 		s.fail(err)
 		return
@@ -203,17 +235,22 @@ func (s *Store) Sample() {
 }
 
 // collect calls Collect and survives its failure.
-func (s *Store) collect() (totals map[string]uint64) {
+func (s *Store) collect() (totals, added map[string]uint64) {
 	defer func() {
 		if recover() != nil {
-			totals = map[string]uint64{}
+			totals, added = map[string]uint64{}, nil
 		}
 	}()
-	totals = s.opts.Collect()
+	if s.opts.Collect != nil {
+		totals = s.opts.Collect()
+	}
 	if totals == nil {
 		totals = map[string]uint64{}
 	}
-	return totals
+	if s.opts.Added != nil {
+		added = s.opts.Added()
+	}
+	return totals, added
 }
 
 // fail notes a problem and says it once. The caller holds the lock.
@@ -229,6 +266,9 @@ func (s *Store) fail(err error) {
 func (s *Store) appendHour(b Bucket) error {
 	if len(b.Counts) == 0 {
 		return nil
+	}
+	if s.opts.Reduce != nil {
+		s.opts.Reduce(b.Counts)
 	}
 	line, err := json.Marshal(b)
 	if err != nil {

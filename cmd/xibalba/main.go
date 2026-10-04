@@ -34,6 +34,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/limit"
 	"github.com/MaMoja/xibalba/internal/logging"
 	"github.com/MaMoja/xibalba/internal/metrics"
+	"github.com/MaMoja/xibalba/internal/origin"
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/proxy"
 	"github.com/MaMoja/xibalba/internal/rules"
@@ -361,7 +362,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		own = withTrap(snare.Handler(), own)
 	}
 
+	// Counts per network of origin, if the site owner switched them on.
+	var networks *origin.Counter
+	var originFn func(netip.Addr, string)
+	if cfg.Statistics.Networks.Enabled && cfg.Statistics.Path != "" {
+		networks = origin.New(origin.MaxNetworks)
+		originFn = networks.Note
+	}
+
 	decisions := gate.New(gate.Options{
+		Origin:      originFn,
 		Trapped:     trapped,
 		Country:     country,
 		Engine:      engine,
@@ -397,6 +407,21 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		registry.Register(kept.Name(), kept.Health)
 		supervisor.Add(kept)
 		opsMux.Handle("GET /statistics", kept.Handler())
+		if networks != nil {
+			top := cfg.Statistics.Networks.Top
+			perNetwork := stats.New(stats.Options{
+				Name:     "statistics-networks",
+				Dir:      cfg.Statistics.NetworksPath(),
+				Create:   true,
+				KeepDays: cfg.Statistics.Networks.KeepDays,
+				Added:    networks.Drain,
+				Reduce:   func(counts map[string]uint64) { origin.Top(counts, top) },
+				Log:      log,
+			})
+			registry.Register(perNetwork.Name(), perNetwork.Health)
+			supervisor.Add(perNetwork)
+			opsMux.Handle("GET /statistics/networks", perNetwork.Handler())
+		}
 	}
 
 	resolver := clientip.New(cfg.Server.TrustedPrefixes())

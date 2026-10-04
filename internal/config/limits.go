@@ -41,6 +41,9 @@ type LimitWindow struct {
 	// Count is what is counted: "requests" (all of them) or "pages" (the
 	// different pages asked for).
 	Count string `yaml:"count"`
+	// DenyAt makes a challenge limit refuse a client that is above this
+	// number within Per, even if it passed the security check. 0: never.
+	DenyAt int `yaml:"deny_at"`
 }
 
 // LimitCounts are the allowed values of limits.windows[].count.
@@ -61,7 +64,7 @@ func defaultLimits() Limits {
 func (l Limits) Options() limit.Options {
 	opts := limit.Options{ByNetwork: l.CountBy == "network", MaxClients: l.MaxClients}
 	for _, w := range l.Windows {
-		opts.Windows = append(opts.Windows, limit.Window{Requests: w.Requests, Per: w.Per, Action: w.Action, Pages: w.Count == "pages"})
+		opts.Windows = append(opts.Windows, limit.Window{Requests: w.Requests, Per: w.Per, Action: w.Action, Pages: w.Count == "pages", DenyAt: w.DenyAt})
 	}
 	for _, entry := range l.Exempt {
 		if p, err := parsePrefix(entry); err == nil {
@@ -109,6 +112,19 @@ func (l *Limits) check(add func(path, message, hint string)) {
 			add(field+".per", fmt.Sprintf("there is already a limit on %s per %s (entry number %d)", w.Count, w.Per, first+1), "give every limit its own period")
 		}
 		seen[kind{w.Per, w.Count}] = i
+		top := 10000000
+		if w.Count == "pages" {
+			top = limit.MaxPages
+		}
+		switch {
+		case w.DenyAt == 0:
+		case w.Action != "challenge":
+			add(field+".deny_at", "deny_at only has a meaning for a limit with action challenge",
+				"remove deny_at, or set action to challenge")
+		case w.DenyAt <= w.Requests || w.DenyAt > top:
+			add(field+".deny_at", fmt.Sprintf("%d is out of range", w.DenyAt),
+				fmt.Sprintf("use a number above requests (%d) and up to %d, or 0 to switch it off", w.Requests, top))
+		}
 		if !contains(LimitActions, w.Action) {
 			add(field+".action", fmt.Sprintf("%q is not an action a limit can take", w.Action),
 				"use challenge (the client has to pass the security check) or deny (further requests are refused)")

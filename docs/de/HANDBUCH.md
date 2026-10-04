@@ -368,6 +368,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
 | die Zähler über Neustarts hinweg behalten | `statistics.directory`, `statistics.keep_days` | Abschnitt 9, „Zähler dauerhaft speichern“ |
+| sehen, aus welchen Netzen die meisten Anfragen kommen | `statistics.networks.enabled`, `top`, `keep_days` | Abschnitt 9, „Zähler pro Netz“ |
 | Xibalba an eine Überwachung (Prometheus) anbinden | nichts einzustellen; Abruf unter `/metrics` am Betriebsport | Abschnitt 9, „Überwachung anbinden“ |
 | mehr oder weniger ins Protokoll schreiben | `log.level`, `log.format` | [Referenz](../CONFIGURATION.md#log) |
 | den Betriebsport ändern | `ops.listen` | [Referenz](../CONFIGURATION.md#ops) |
@@ -741,6 +742,7 @@ Büro) wird nie gezählt.
 | `limits.windows` | ein bis vier Grenzen, jeweils `requests` (Anzahl), `per` (Zeitraum, `1s` bis `24h`), `action` und wahlweise `count: pages` |
 | `action: challenge` | über der Grenze: Sicherheitsprüfung. Ein Browser löst sie einmal und arbeitet ungestört weiter; ein Programm, das sie nicht lösen kann, ist gestoppt |
 | `action: deny` | über der Grenze: Seite „Zu viele Anfragen“ (Status 429), auch mit bestandener Prüfung |
+| `deny_at` | nur bei `action: challenge`, als Option, ab Werk aus (`0`): ab dieser Anzahl wird der Anschluss abgewiesen (Status 429), auch wenn er die Prüfung bestanden hat. Beispiel: `{requests: 300, per: 1m, action: challenge, deny_at: 1200}` |
 | `limits.exempt` | **Ausnahmeliste:** Adressen und Netze, die nie gezählt werden. Erweitern oder kürzen Sie die Liste in der Datei und starten Sie neu |
 | `limits.count_by` | `address`: jede Adresse für sich (bei IPv6 der Anschluss, /64). `network`: benachbarte Adressen gemeinsam (IPv4 /24, IPv6 /48) |
 | `limits.max_clients` | wie viele Anschlüsse höchstens gleichzeitig gezählt werden |
@@ -1303,6 +1305,38 @@ Die Dateien sind einfacher Text (eine Zeile je Stunde). Ist das Verzeichnis
 einmal nicht beschreibbar, läuft Xibalba weiter und meldet es unter
 `statistics` in `/healthz`. Einzelheiten: [STATISTICS.md](../STATISTICS.md).
 
+**Zähler pro Netz.** Auf Wunsch zählt Xibalba zusätzlich, aus welchen Netzen
+die meisten Anfragen kommen und was mit ihnen geschah. Das ist eine Option
+und ab Werk ausgeschaltet:
+
+```yaml
+statistics:
+  directory: /var/lib/xibalba/statistics
+  networks:
+    enabled: true
+    top: 50
+    keep_days: 30
+```
+
+| Einstellung | Bedeutung |
+|---|---|
+| `statistics.networks.enabled` | `true` schaltet die Zähler pro Netz ein; `statistics.directory` muss gesetzt sein |
+| `statistics.networks.top` | wie viele Netze je Stunde gespeichert werden (1 bis 1000); alle übrigen werden als `other` zusammengezählt |
+| `statistics.networks.keep_days` | wie viele Tage diese Zähler aufbewahrt werden (1 bis 400) |
+
+Ein Netz ist ein IPv4-Bereich `/24` (256 benachbarte Adressen) oder ein
+IPv6-Bereich `/48`. **Eine einzelne Adresse wird nie gespeichert.** Abruf:
+
+```sh
+curl "http://127.0.0.1:9090/statistics/networks?hours=24"
+```
+
+Datenschutz: Ein Netz ist keine Person, liegt aber näher an einer Person als
+ein Regelname, denn eine kleine Einrichtung kann ein solches Netz allein
+nutzen. Deshalb ist die Option ausgeschaltet, deshalb werden nur die größten
+Netze einer Stunde gespeichert, und deshalb ist die Aufbewahrung kurz. Wenn
+Sie die Option einschalten, nehmen Sie sie in Ihre Datenschutzerklärung auf.
+
 ### Überwachung anbinden
 
 Für Überwachungssysteme liefert Xibalba alle Zahlen im Prometheus-Format:
@@ -1370,6 +1404,7 @@ Rechtsberatung.
 | Und bei eingeschalteter Falle? | Xibalba merkt sich im Arbeitsspeicher die Adressen der Anschlüsse, die dem versteckten Link gefolgt sind, für die Dauer von `trap.remember` (Voreinstellung 24 Stunden, höchstens 30 Tage). Wer dem Link nicht folgt, wird nicht erfasst. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. |
 | Und bei Länder-Regeln? | Das Land wird auf Ihrem Server aus der Datenbank-Datei gelesen; keine Besucheradresse verlässt dafür den Server. Nur wenn Sie `countries.download` einschalten, ruft Xibalba einmal im Monat die Datenbank beim Anbieter ab; dieser sieht dabei die Adresse Ihres Servers. |
 | Was wird gezählt? | Wie oft jede Regel entschieden hat, ohne Bezug zu Personen. In der Voreinstellung nur im Arbeitsspeicher, bis zum nächsten Neustart. Mit `statistics.directory` zusätzlich stundenweise in Dateien, für `statistics.keep_days` Tage (Voreinstellung 400): ausschließlich Anzahlen unter den Namen von Regeln, Crawlern und Grenzen, keine Adressen, Pfade oder Kennungen. |
+| Werden Herkunftsnetze gespeichert? | In der Voreinstellung nicht. Mit `statistics.networks.enabled` werden je Stunde die größten Netze (IPv4 `/24`, IPv6 `/48`; nie eine einzelne Adresse) mit ihren Zählern gespeichert, für `statistics.networks.keep_days` (30 Tage, wenn nicht geändert). |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |
 | Was steht in dem Cookie? | Ein Ablaufzeitpunkt und ein Prüfwert, der es an Netz und Browserkennung bindet. Der Prüfwert ist ein Hash mit geheimem Schlüssel; Adresse und Kennung lassen sich daraus nicht zurückgewinnen. Keine Kennung der Person, nichts über aufgerufene Seiten. |
 | Wozu dient das Cookie? | Allein dazu, einen Besucher nach bestandener Prüfung nicht erneut zu prüfen. |

@@ -4,6 +4,29 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Counts per network are an option, off by default, with their own short
+  time limit and only the largest networks per hour.** The owner asked for
+  statistics per network. A `/24` or `/48` is not an address, but a small
+  organisation can have one to itself, so it is treated as closer to
+  personal data than rule counters: separate files (`networks/`), 30 days
+  by default, top 50 per hour, the rest summed as `other`. Networks by
+  address prefix and not by provider (AS number): the latter needs another
+  database; noted under Later.
+- **`internal/origin` hands its counts over and forgets them** (`Drain`),
+  instead of running totals like the other parts. A table of totals would
+  grow with every network ever seen; draining once a minute bounds it.
+  `internal/stats` got an input for such counts and a reduce step, and
+  stays ignorant of what a network is.
+
+- **Escalation of a `challenge` limit is a number, `deny_at`, on the limit
+  itself.** The owner wanted it as an option at set-up. One more number on
+  the window the operator already wrote is easier to explain than a second
+  mechanism with its own memory of offenders, costs no extra state, and ends
+  by itself when the client slows down. Off (`0`) by default.
+- **The wiki is built from `docs/`** by `tools/wiki.py` and published by a
+  workflow. One source; the wiki cannot drift from the repository, and the
+  same script fails CI on a link between documents that leads nowhere.
+
 - **Statistics are kept in plain text files, one line per hour, not in an
   embedded database.** Agent. This departs from the stack rule in CLAUDE.md
   ("embedded, pure-Go database") and is logged for that reason: a year of

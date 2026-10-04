@@ -40,6 +40,10 @@ type Window struct {
 	// Pages counts the different pages asked for instead of all requests.
 	// The count is an estimate, good up to MaxPages.
 	Pages bool
+	// DenyAt turns a "challenge" window into "deny" once the client is above
+	// this number within Per. It bounds a client that passes the security
+	// check and carries on. Zero: never.
+	DenyAt int
 }
 
 // MaxPages is the largest limit a window that counts pages can have. The
@@ -94,6 +98,7 @@ type Limiter struct {
 	seed     maphash.Seed
 	shards   [shards]shard
 	exceeded []atomic.Uint64 // per window: requests refused or challenged
+	stepped  []atomic.Uint64 // per window: of those, refused because of DenyAt
 	pages    bool            // some window counts pages
 	exempted atomic.Uint64
 
@@ -195,7 +200,7 @@ func New(opts Options) *Limiter {
 	for _, w := range opts.Windows {
 		pages = pages || w.Pages
 	}
-	l := &Limiter{pages: pages, opts: opts, perShard: opts.MaxClients / shards, seed: maphash.MakeSeed(), exceeded: make([]atomic.Uint64, len(opts.Windows))}
+	l := &Limiter{pages: pages, opts: opts, perShard: opts.MaxClients / shards, seed: maphash.MakeSeed(), exceeded: make([]atomic.Uint64, len(opts.Windows)), stepped: make([]atomic.Uint64, len(opts.Windows))}
 	for i := range l.shards {
 		l.shards[i].clients = map[netip.Addr]*counters{}
 	}
@@ -234,7 +239,7 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 	s.mu.Lock()
 	c := l.client(s, key, now)
 	var verdict Verdict
-	worst := -1
+	worst, steppedUp := -1, false
 	for i, w := range l.opts.Windows {
 		elapsed := l.roll(c, i, w, now)
 		var current, previous, limit float64
@@ -259,10 +264,18 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 		}
 		// Share of the previous period that still lies within the last Per.
 		remaining := float64(int64(w.Per)-elapsed) / float64(w.Per)
-		if current+previous*remaining > limit {
-			if worst < 0 || (w.Action == "deny" && verdict.Action != "deny") {
-				worst = i
-				verdict = Verdict{Over: true, Action: w.Action, RetryAfter: retryAfter(w, current, previous, elapsed)}
+		if estimate := current + previous*remaining; estimate > limit {
+			action, step := w.Action, false
+			if w.DenyAt > 0 && action != "deny" && estimate > limit+float64(w.DenyAt-w.Requests) {
+				action, step = "deny", true
+			}
+			if worst < 0 || (action == "deny" && verdict.Action != "deny") {
+				worst, steppedUp = i, step
+				at := w
+				if step {
+					at.Requests = w.DenyAt // the wait ends when the client is below DenyAt again
+				}
+				verdict = Verdict{Over: true, Action: action, RetryAfter: retryAfter(at, current, previous, elapsed)}
 			}
 		}
 	}
@@ -270,6 +283,9 @@ func (l *Limiter) Count(addr netip.Addr) Verdict {
 
 	if worst >= 0 {
 		l.exceeded[worst].Add(1)
+		if steppedUp {
+			l.stepped[worst].Add(1)
+		}
 	}
 	return verdict
 }
@@ -449,7 +465,9 @@ type LimitReport struct {
 	Count    string `json:"count"`
 	Per      string `json:"per"`
 	Action   string `json:"action"`
+	DenyAt   int    `json:"deny_at,omitempty"`
 	Over     uint64 `json:"requests_over_limit"`
+	Denied   uint64 `json:"requests_over_deny_at,omitempty"`
 }
 
 // Report returns the current state.
@@ -466,7 +484,7 @@ func (l *Limiter) Report() Report {
 		if w.Pages {
 			count = "pages"
 		}
-		r.Limits[i] = LimitReport{Count: count, Requests: w.Requests, Per: w.Per.String(), Action: w.Action, Over: l.exceeded[i].Load()}
+		r.Limits[i] = LimitReport{Count: count, Requests: w.Requests, Per: w.Per.String(), Action: w.Action, DenyAt: w.DenyAt, Over: l.exceeded[i].Load(), Denied: l.stepped[i].Load()}
 	}
 	return r
 }
