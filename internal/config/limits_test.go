@@ -186,9 +186,11 @@ func TestAdminSettings(t *testing.T) {
 		}
 	}
 	for yaml, want := range map[string]string{
-		"admin:\n  listen: nowhere\n":       "admin.listen",
-		"admin:\n  session_lifetime: 10s\n": "admin.session_lifetime",
-		"admin:\n  password_file: \"\"\n":   "admin.password_file",
+		"admin:\n  listen: nowhere\n":                    "admin.listen",
+		"admin:\n  hostnames: [\"https://x.example\"]\n": "admin.hostnames[0]",
+		"admin:\n  enabled: true\n  listen: \":9090\"\n": "already used by ops.listen",
+		"admin:\n  session_lifetime: 10s\n":              "admin.session_lifetime",
+		"admin:\n  password_file: \"\"\n":                "admin.password_file",
 	} {
 		if _, err := Parse("xibalba.yaml", []byte(base+yaml)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", yaml, err)

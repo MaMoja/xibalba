@@ -35,7 +35,8 @@ The password needs at least 12 characters. The file holds only a
 scrambled form from which the password cannot be read back; it is
 readable by Xibalba's user only. Run the command as that user, or hand
 the file over afterwards (`chown xibalba /etc/xibalba/admin.password`).
-In a script, pipe the password in:
+In a script, and on systems other than Linux (where the typing cannot
+be hidden), pipe the password in:
 `printf '%s\n' "$PASSWORD" | xibalba -set-password -config …`.
 
 **2.** Switch it on in the configuration file and restart:
@@ -63,6 +64,8 @@ configuration xibalba.yaml: 1 problem
 | `admin.listen` | `127.0.0.1:9091` | Where it listens. The default is reachable from this machine only. |
 | `admin.password_file` | `admin.password` | The file `-set-password` writes, relative to the configuration file. |
 | `admin.session_lifetime` | `12h` | How long a login lasts (`5m` to `720h`). |
+| `admin.hostnames` | none | Names under which you open the web interface when a web server stands in front. `localhost` and `127.0.0.1` always work; any other name is refused unless listed. |
+| `admin.secure_cookie` | `false` | `true` when you reach it over HTTPS: the login cookie is then only sent encrypted and only to this exact host. |
 
 To change the password, run `-set-password` again and restart. A restart
 also signs everyone out.
@@ -79,8 +82,20 @@ network as it is. Two safe ways:
   ```
 
   Then open <http://127.0.0.1:9091/> on your own machine.
-- **Your web server with HTTPS in front**, passing a host name or path of
-  its own to `127.0.0.1:9091`, ideally restricted to your own network.
+- **Your web server with HTTPS in front**, passing a host name of its own
+  to `127.0.0.1:9091`, ideally restricted to your own network. Tell Xibalba
+  the name and that the connection is encrypted:
+
+```yaml
+admin:
+  enabled: true
+  hostnames: ["xibalba.example.org"]
+  secure_cookie: true
+```
+
+Behind a web server every sign-in attempt comes from the same address, the
+web server's. Wrong passwords from anyone then make everyone wait, you
+included. Restrict who can reach the login page in the web server.
 
 If `admin.listen` is not a local address, Xibalba warns at start.
 
@@ -104,12 +119,18 @@ keep them.
 
 - Nothing is shown without a login. There is one password and no user name.
 - After five wrong passwords from one address, that address has to wait: 30
-  seconds, then longer each time, up to 15 minutes.
+  seconds, then longer each time, up to 15 minutes. Attempts are counted
+  before the password is looked at, so sending many at once does not help.
+- It answers only under `localhost`, this machine's own local addresses and
+  the names in `admin.hostnames`. A foreign web page that points its own
+  name at the listener gets no answer.
 - A login is a random value in a cookie that scripts cannot read and that
   the browser sends to no other site. Sessions live in memory only.
 - The password is stored with PBKDF2-SHA256 and 600000 rounds. Checking one
   takes about a tenth of a second on a server and about a second on a
-  Raspberry Pi; only one is checked at a time.
+  Raspberry Pi; only one is checked at a time, and at most four attempts
+  wait for their turn.
+- Xibalba warns at start if the password file can be read by other users.
 - The pages contain no script and load nothing from elsewhere.
 - Password and sessions never appear in the log. A wrong password is logged
   as an event, without the address or what was typed.

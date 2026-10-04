@@ -356,6 +356,8 @@ admin:
 | `admin.listen` | wo sie erreichbar ist; ab Werk nur auf dem Server selbst (`127.0.0.1:9091`) |
 | `admin.password_file` | Datei mit dem gespeicherten Passwort (nie das Passwort selbst); `-set-password` schreibt sie |
 | `admin.session_lifetime` | wie lange eine Anmeldung gilt (ab Werk `12h`) |
+| `admin.hostnames` | Namen, unter denen Sie die Weboberfläche öffnen, wenn ein Webserver davor steht, zum Beispiel `["xibalba.example.org"]`; `localhost` und `127.0.0.1` gehen immer |
+| `admin.secure_cookie` | `true`, wenn Sie sie über HTTPS erreichen: Das Anmelde-Cookie wird dann nur verschlüsselt übertragen |
 
 Die Verbindung zur Weboberfläche ist nicht verschlüsselt. Von einem anderen
 Rechner aus erreichen Sie sie sicher über einen SSH-Tunnel

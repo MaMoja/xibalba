@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -15,16 +16,36 @@ import (
 // setPassword asks for the password of the web interface and writes its
 // stored form to the file the configuration names. The password itself is
 // never written anywhere.
-func setPassword(configPath string, stdin io.Reader, stdout, stderr io.Writer) int {
+func setPassword(ctx context.Context, configPath string, stdin io.Reader, stdout, stderr io.Writer) int {
 	path, err := config.PasswordFile(configPath)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return exitFailed
 	}
 	restore := func() {}
-	typed := false
+	typed := false // a person at a terminal, not a pipe
 	if f, ok := stdin.(*os.File); ok {
-		restore, typed = hideInput(f) // typed: a person at a terminal, not a pipe
+		if info, err := f.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+			var hidden bool
+			if restore, hidden = hideInput(f); !hidden {
+				_, _ = fmt.Fprintln(stderr, "The typing cannot be hidden on this terminal. Pipe the password in instead:\n"+
+					"  printf '%s\\n' \"$PASSWORD\" | xibalba -set-password -config "+configPath)
+				return exitFailed
+			}
+			typed = true
+			// Ctrl-C must not leave the terminal without echo.
+			done := make(chan struct{})
+			defer close(done)
+			go func() {
+				select {
+				case <-ctx.Done():
+					restore()
+					_, _ = fmt.Fprintln(stderr, "\nNothing was changed.")
+					os.Exit(exitFailed)
+				case <-done:
+				}
+			}()
+		}
 	}
 	reader := bufio.NewReader(io.LimitReader(stdin, 64<<10))
 	ask := func(prompt string) string {

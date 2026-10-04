@@ -4,6 +4,11 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **The web interface answers only under known host names** (`localhost`,
+  local addresses, the listen host, `admin.hostnames`). Without that, a web
+  page could point its own name at 127.0.0.1 and reach the login as its own
+  site. Costs one setting for those who put a web server in front.
+
 - **The web interface is an option, off by default, and as small as it can
   be** (owner's decision). Its own listener, so that switched off nothing of
   it exists and the operations listener stays free of logins. Pages are

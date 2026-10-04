@@ -166,6 +166,16 @@ func askHealth(listen string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
+// adminHosts are the names the web interface answers to: those the site
+// owner listed, and the host it listens on if that is a specific one.
+func adminHosts(a config.Admin) []string {
+	hosts := append([]string(nil), a.Hostnames...)
+	if host, _, err := net.SplitHostPort(a.Listen); err == nil && host != "" && host != "0.0.0.0" && host != "::" {
+		hosts = append(hosts, host)
+	}
+	return hosts
+}
+
 // run is the whole program. It takes its inputs as arguments so tests can call it.
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("xibalba", flag.ContinueOnError)
@@ -179,7 +189,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	if *newPassword {
-		return setPassword(*configPath, os.Stdin, stdout, stderr)
+		return setPassword(ctx, *configPath, os.Stdin, stdout, stderr)
 	}
 
 	if *showVersion {
@@ -448,6 +458,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		ui, err := admin.New(admin.Options{
 			Password:        cfg.Admin.Password,
 			SessionLifetime: cfg.Admin.SessionLifetime,
+			Hosts:           adminHosts(cfg.Admin),
+			SecureCookie:    cfg.Admin.SecureCookie,
 			History:         history,
 			Live:            func() map[string]uint64 { return totals(sources) },
 			Health:          registry.Report,
@@ -466,6 +478,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			Log:       log,
 			OnFailure: supervisor.Reporter("admin"),
 		})
+		if cfg.Admin.PasswordOpen {
+			log.Warn("the password file of the web interface can be read by other users of this machine; restrict it: chmod 600",
+				"component", "admin", "file", cfg.Admin.PasswordFile)
+		}
 		registry.Register(adminServer.Name(), adminServer.Health)
 		supervisor.Add(adminServer)
 		if host, _, err := net.SplitHostPort(cfg.Admin.Listen); err == nil && host != "localhost" {

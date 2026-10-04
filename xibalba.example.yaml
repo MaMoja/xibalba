@@ -298,6 +298,13 @@ admin:
   password_file: admin.password
   # How long a login lasts (5m to 720h).
   session_lifetime: 12h
+  # Names under which you open the web interface, if a web server stands in
+  # front: ["xibalba.example.org"]. Requests under other names are refused.
+  # localhost and 127.0.0.1 always work.
+  hostnames: []
+  # true if you reach it over HTTPS (a web server in front): the login cookie
+  # is then only ever sent encrypted. Leave false for http://127.0.0.1.
+  secure_cookie: false
 
 # How long running requests get to finish when Xibalba is asked to stop.
 shutdown_timeout: 10s

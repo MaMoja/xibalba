@@ -243,6 +243,7 @@ func TestTablesAreBounded(t *testing.T) {
 	for i := 0; i < maxThrottled+50; i++ {
 		req := httptest.NewRequest("POST", "/login", strings.NewReader("password=x"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Host = "localhost:9091"
 		req.RemoteAddr = "10." + itoa(i/65536) + "." + itoa(i/256%256) + "." + itoa(i%256) + ":1"
 		w.h.ServeHTTP(httptest.NewRecorder(), req)
 	}
@@ -303,5 +304,68 @@ func TestNumber(t *testing.T) {
 		if got := number(tt.v, tt.lang); got != tt.s {
 			t.Errorf("number(%d, %s) = %q", tt.v, tt.lang, got)
 		}
+	}
+}
+
+// Attempts sent side by side are counted before they are checked: no more
+// than the free ones get a look at the password.
+func TestParallelAttemptsCannotSlipUnderTheLimit(t *testing.T) {
+	w := newWorld(t, nil)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	codes := map[int]int{}
+	for i := 0; i < 30; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := w.signIn("wrong and parallel", nil)
+			mu.Lock()
+			codes[rec.Code]++
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	if codes[http.StatusUnauthorized] > freeFailures || codes[http.StatusUnauthorized]+codes[http.StatusTooManyRequests] != 30 {
+		t.Errorf("answers = %v", codes)
+	}
+}
+
+// A page of another site that points its own name at the listener gets no
+// answer, whatever it claims to come from.
+func TestOnlyKnownNamesAreAnswered(t *testing.T) {
+	w := newWorld(t, func(o *Options) { o.Hosts = []string{"Xibalba.Example.org"} })
+	for host, want := range map[string]int{
+		"127.0.0.1:9091": 200, "localhost": 200, "[::1]:9091": 200, "xibalba.example.org": 200, "XIBALBA.example.org:443": 200,
+		"evil.example:9091": 421, "127.0.0.1.evil.example": 421, "": 421, "10.0.0.5:9091": 421,
+	} {
+		req := httptest.NewRequest("GET", "/login", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		w.h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("Host %q: %d, want %d", host, rec.Code, want)
+		}
+	}
+	req := httptest.NewRequest("POST", "/login", strings.NewReader("password="+url.QueryEscape(password)))
+	req.Host = "evil.example:9091"
+	req.Header.Set("Origin", "http://evil.example:9091")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	w.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMisdirectedRequest || len(rec.Result().Cookies()) != 0 {
+		t.Errorf("sign-in under a foreign name: %d", rec.Code)
+	}
+}
+
+func TestSecureCookie(t *testing.T) {
+	w := newWorld(t, func(o *Options) { o.SecureCookie = true })
+	rec := w.signIn(password, nil)
+	set := rec.Header().Get("Set-Cookie")
+	if !strings.HasPrefix(set, "__Host-"+cookieName+"=") || !strings.Contains(set, "Secure") {
+		t.Fatalf("cookie = %q", set)
+	}
+	c := rec.Result().Cookies()[0]
+	if page := w.do("GET", "/", "", map[string]string{"Cookie": c.Name + "=" + c.Value}); page.Code != 200 {
+		t.Errorf("overview with the secure cookie: %d", page.Code)
 	}
 }

@@ -17,11 +17,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MaMoja/xibalba/internal/health"
@@ -41,8 +43,11 @@ const (
 	firstWait    = 30 * time.Second
 	maxWait      = 15 * time.Minute
 	maxThrottled = 1024
-	topRules     = 15
-	csp          = "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+	// maxWaiting is how many sign-in attempts may be in or queued for the
+	// password check at once.
+	maxWaiting = 4
+	topRules   = 15
+	csp        = "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 )
 
 // Hour is what was counted in one hour, by name. The names are those of the
@@ -65,6 +70,15 @@ type Options struct {
 	Live func() map[string]uint64
 	// Health returns the state of the parts.
 	Health func() health.Report
+	// Hosts are the names under which the interface may be asked for,
+	// besides "localhost" and addresses of this machine itself (127.0.0.1,
+	// ::1). A request under any other name is refused: a foreign web page
+	// could otherwise point its own name at this listener and talk to it
+	// as if it were its own site.
+	Hosts []string
+	// SecureCookie marks the session cookie for HTTPS only. Set it when a
+	// web server with HTTPS stands in front.
+	SecureCookie bool
 	// Version is the version of the running program.
 	Version string
 	// DryRun says that nothing is being blocked.
@@ -83,7 +97,10 @@ type Admin struct {
 	texts map[string]map[string]string
 	style []byte
 
-	checking sync.Mutex // one password check at a time: a check is costly on purpose
+	checking chan struct{} // one password check at a time: a check is costly on purpose
+	waiting  atomic.Int32  // requests in or queued for a check
+	cookie   string
+	hosts    map[string]bool
 
 	mu       sync.Mutex
 	sessions map[string]time.Time // session -> end
@@ -108,7 +125,14 @@ func New(opts Options) (*Admin, error) {
 		opts.SessionLifetime = 12 * time.Hour
 	}
 	a := &Admin{opts: opts, log: opts.Log.With("component", "admin"), texts: map[string]map[string]string{},
-		sessions: map[string]time.Time{}, failures: map[string]*failure{}}
+		sessions: map[string]time.Time{}, failures: map[string]*failure{}, checking: make(chan struct{}, 1),
+		cookie: cookieName, hosts: map[string]bool{"localhost": true}}
+	if opts.SecureCookie {
+		a.cookie = "__Host-" + cookieName // the browser then ties it to this exact host, over HTTPS only
+	}
+	for _, host := range opts.Hosts {
+		a.hosts[strings.ToLower(strings.Trim(host, "[]"))] = true
+	}
 	var err error
 	if a.pages, err = template.ParseFS(assets, "assets/*.html"); err != nil {
 		return nil, err
@@ -162,6 +186,10 @@ func (a *Admin) Handler() http.Handler {
 		a.overview(w, r)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.knownHost(r.Host) {
+			http.Error(w, "this name is not one the web interface answers to; see admin.hostnames", http.StatusMisdirectedRequest)
+			return
+		}
 		h := w.Header()
 		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -173,6 +201,20 @@ func (a *Admin) Handler() http.Handler {
 		h.Set("Cache-Control", "no-store")
 		mux.ServeHTTP(w, r)
 	})
+}
+
+// knownHost reports whether the interface may be asked for under this name.
+func (a *Admin) knownHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.ToLower(strings.Trim(host, "[]"))
+	if a.hosts[host] {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.IsLoopback()
 }
 
 // sameOrigin reports whether a request that changes something comes from
@@ -203,59 +245,74 @@ func (a *Admin) signIn(w http.ResponseWriter, r *http.Request) {
 	}
 	client, now := clientOf(r), a.opts.Now()
 	t := a.texts[pickLanguage(r.Header.Get("Accept-Language"))]
-
-	a.mu.Lock()
-	var until time.Time
-	for _, key := range []string{client, ""} { // "" is shared by all when the table is full
-		if f := a.failures[key]; f != nil && f.until.After(until) {
-			until = f.until
-		}
-	}
-	a.mu.Unlock()
-	if now.Before(until) {
+	wait := func(until time.Time) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(until.Sub(now).Seconds())+1))
 		a.login(w, r, http.StatusTooManyRequests, t["too_many"])
+	}
+
+	// The attempt is counted before the password is looked at, so that
+	// attempts sent side by side cannot all slip in under the limit. A
+	// right password takes the count back.
+	a.mu.Lock()
+	key := client
+	f := a.failures[key]
+	if f == nil {
+		if len(a.failures) >= maxThrottled {
+			for k, old := range a.failures { // make room: forget those whose wait is long over
+				if now.After(old.until) && now.Sub(old.last) > maxWait {
+					delete(a.failures, k)
+				}
+			}
+		}
+		if len(a.failures) >= maxThrottled { // still full: everyone new shares one entry
+			key = ""
+		}
+		if f = a.failures[key]; f == nil {
+			f = &failure{}
+			a.failures[key] = f
+		}
+	}
+	if until := f.until; now.Before(until) {
+		a.mu.Unlock()
+		wait(until)
 		return
 	}
+	if now.Sub(f.last) > maxWait {
+		f.count = 0
+	}
+	f.count++
+	f.last = now
+	if over := f.count - freeFailures; over >= 0 {
+		pause := maxWait
+		if over < 6 {
+			pause = min(firstWait<<over, maxWait)
+		}
+		f.until = now.Add(pause)
+		a.log.Warn("repeated wrong passwords: further sign-in attempts from that address have to wait", "wait", pause.String())
+	}
+	a.mu.Unlock()
 
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	password := r.PostFormValue("password")
-	a.checking.Lock()
+
+	// One check at a time, and only a few may queue for it: a check is
+	// costly on purpose and must not become a way to keep the machine busy.
+	if a.waiting.Add(1) > maxWaiting {
+		a.waiting.Add(-1)
+		wait(now.Add(5 * time.Second))
+		return
+	}
+	select {
+	case a.checking <- struct{}{}:
+	case <-r.Context().Done(): // the client went away
+		a.waiting.Add(-1)
+		return
+	}
 	ok := a.opts.Password.Matches(password)
-	a.checking.Unlock()
+	<-a.checking
+	a.waiting.Add(-1)
 
 	if !ok {
-		a.mu.Lock()
-		f := a.failures[client]
-		if f == nil {
-			if len(a.failures) >= maxThrottled {
-				for k, old := range a.failures { // make room: forget those whose wait is over
-					if now.After(old.until) && now.Sub(old.last) > maxWait {
-						delete(a.failures, k)
-					}
-				}
-			}
-			if len(a.failures) >= maxThrottled { // still full: everyone new shares one entry
-				client = ""
-			}
-			if f = a.failures[client]; f == nil {
-				f = &failure{}
-				a.failures[client] = f
-			}
-		}
-		if now.Sub(f.last) > maxWait {
-			f.count = 0
-		}
-		f.count++
-		f.last = now
-		if over := f.count - freeFailures; over >= 0 {
-			wait := maxWait
-			if over < 6 {
-				wait = min(firstWait<<over, maxWait)
-			}
-			f.until = now.Add(wait)
-		}
-		a.mu.Unlock()
 		a.log.Warn("sign-in with a wrong password")
 		a.login(w, r, http.StatusUnauthorized, t["wrong_password"])
 		return
@@ -268,7 +325,7 @@ func (a *Admin) signIn(w http.ResponseWriter, r *http.Request) {
 	}
 	session := base64.RawURLEncoding.EncodeToString(raw)
 	a.mu.Lock()
-	delete(a.failures, client)
+	delete(a.failures, key)
 	for id, end := range a.sessions {
 		if now.After(end) {
 			delete(a.sessions, id)
@@ -286,8 +343,8 @@ func (a *Admin) signIn(w http.ResponseWriter, r *http.Request) {
 	a.sessions[session] = now.Add(a.opts.SessionLifetime)
 	a.mu.Unlock()
 
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: session, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil, MaxAge: int(a.opts.SessionLifetime.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: a.cookie, Value: session, Path: "/", HttpOnly: true,
+		SameSite: http.SameSiteStrictMode, Secure: a.opts.SecureCookie, MaxAge: int(a.opts.SessionLifetime.Seconds())})
 	a.log.Info("signed in")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -297,17 +354,17 @@ func (a *Admin) signOut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if c, err := r.Cookie(cookieName); err == nil {
+	if c, err := r.Cookie(a.cookie); err == nil {
 		a.mu.Lock()
 		delete(a.sessions, c.Value)
 		a.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: a.cookie, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: a.opts.SecureCookie, MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
 func (a *Admin) signedIn(r *http.Request) bool {
-	c, err := r.Cookie(cookieName)
+	c, err := r.Cookie(a.cookie)
 	if err != nil || c.Value == "" {
 		return false
 	}

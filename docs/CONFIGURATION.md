@@ -304,6 +304,8 @@ The optional web interface. See [ADMIN.md](ADMIN.md).
 | `admin.listen` | `127.0.0.1:9091` | `host:port`, different from the other listeners | Where the web interface listens. The connection is not encrypted; keep it local or put HTTPS in front. |
 | `admin.password_file` | `admin.password` | Path of a file, relative to the configuration file | Holds the stored form of the password, never the password. Written by `-set-password`. |
 | `admin.session_lifetime` | `12h` | `5m` to `720h` | How long a login lasts. |
+| `admin.hostnames` | empty | List of host names, without scheme or port | Names the web interface answers to besides `localhost` and local addresses. Needed when a web server passes requests on under its own name. |
+| `admin.secure_cookie` | `false` | `true`, `false` | Marks the login cookie for HTTPS only. Set it when a web server with HTTPS stands in front. |
 
 ### `ops`
 

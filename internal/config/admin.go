@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,13 +25,21 @@ type Admin struct {
 	PasswordFile string `yaml:"password_file"`
 	// SessionLifetime is how long a login lasts.
 	SessionLifetime time.Duration `yaml:"session_lifetime"`
+	// Hostnames are the names the web interface answers to, besides
+	// localhost and this machine's own local addresses.
+	Hostnames []string `yaml:"hostnames"`
+	// SecureCookie marks the login cookie for HTTPS only.
+	SecureCookie bool `yaml:"secure_cookie"`
+
+	// PasswordOpen says that the password file can be read by other users.
+	PasswordOpen bool `yaml:"-"`
 
 	// Password is the content of PasswordFile, parsed. Only set if Enabled.
 	Password admin.Hash `yaml:"-"`
 }
 
 func defaultAdmin() Admin {
-	return Admin{Enabled: false, Listen: "127.0.0.1:9091", PasswordFile: "admin.password", SessionLifetime: 12 * time.Hour}
+	return Admin{Enabled: false, Listen: "127.0.0.1:9091", PasswordFile: "admin.password", SessionLifetime: 12 * time.Hour, Hostnames: []string{}}
 }
 
 func resolve(dir, path string) string {
@@ -45,8 +54,14 @@ func (a *Admin) check(dir string, others map[string]string, add func(path, messa
 	if err := checkListen(a.Listen); err != nil {
 		add("admin.listen", fmt.Sprintf("%q is not a listen address: %v", a.Listen, err), `use host:port, for example "127.0.0.1:9091"`)
 	}
+	for i, name := range a.Hostnames {
+		if name == "" || len(name) > 253 || strings.ContainsAny(name, "/:@ ?#") && net.ParseIP(name) == nil {
+			add(fmt.Sprintf("admin.hostnames[%d]", i), fmt.Sprintf("%q is not a host name", name),
+				`give the bare name under which you open the web interface, without "https://" and without a port, for example "xibalba.example.org"`)
+		}
+	}
 	for name, listen := range others {
-		if a.Enabled && a.Listen == listen && !strings.HasSuffix(listen, ":0") {
+		if a.Enabled && sameListener(a.Listen, listen) {
 			add("admin.listen", fmt.Sprintf("%q is already used by %s", a.Listen, name), "give every listener its own port")
 		}
 	}
@@ -61,6 +76,10 @@ func (a *Admin) check(dir string, others map[string]string, add func(path, messa
 		return
 	}
 	const set = "set a password with: xibalba -set-password -config <this file>"
+	a.PasswordOpen = false
+	if info, err := os.Stat(resolve(dir, a.PasswordFile)); err == nil && info.Mode().Perm()&0o077 != 0 {
+		a.PasswordOpen = true
+	}
 	raw, err := os.ReadFile(resolve(dir, a.PasswordFile))
 	switch {
 	case os.IsNotExist(err):
@@ -72,6 +91,24 @@ func (a *Admin) check(dir string, others map[string]string, add func(path, messa
 			add("admin.password_file", fmt.Sprintf("%q does not hold a stored password: %v", a.PasswordFile, err), set)
 		}
 	}
+}
+
+// sameListener reports whether two listen addresses would collide: the same
+// port, and hosts that are equal or of which one means "all addresses".
+func sameListener(a, b string) bool {
+	hostA, portA, errA := net.SplitHostPort(a)
+	hostB, portB, errB := net.SplitHostPort(b)
+	if errA != nil || errB != nil || portA != portB || portA == "0" {
+		return false
+	}
+	all := func(h string) bool { return h == "" || h == "0.0.0.0" || h == "::" }
+	local := func(h string) string {
+		if h == "localhost" {
+			return "127.0.0.1"
+		}
+		return h
+	}
+	return all(hostA) || all(hostB) || local(hostA) == local(hostB)
 }
 
 // PasswordFile returns where the configuration at name keeps the stored
