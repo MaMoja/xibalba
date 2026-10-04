@@ -46,8 +46,8 @@ xibalba_decisions_total{source="default",action="allow"} 0
 | `xibalba_metrics_failures_total` | counter | | How often a part failed while its numbers were collected; its numbers are then missing from that answer. |
 
 Counters start at zero with every start of Xibalba; a monitoring system
-handles that. Statistics that Xibalba itself keeps across restarts are
-**planned** (milestone M6).
+handles that. Xibalba can also keep its counters on disk by the hour
+itself; see [STATISTICS.md](STATISTICS.md).
 
 ## Useful questions
 

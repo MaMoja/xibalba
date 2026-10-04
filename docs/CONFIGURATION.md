@@ -272,6 +272,15 @@ A license file that is missing, damaged or not issued by the project is an
 error at start-up. A license that has expired is not: Xibalba starts, the
 pages return to their standard form, and the log and `/healthz` say why.
 
+### `statistics`
+
+Counters kept on disk by the hour; explained in [STATISTICS.md](STATISTICS.md).
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `statistics.directory` | empty | Path of an existing directory, relative to the configuration file | Where the counters are kept. Empty: nothing is kept across restarts. Only counts are stored; no address, path or user agent. |
+| `statistics.keep_days` | `400` | 1 to 3650 | How many days an hour's counts are kept. Files are removed by month. |
+
 ### `log`
 
 | Setting | Default | Allowed values | Meaning |
@@ -304,6 +313,7 @@ Endpoints:
 | `GET /trap` | Only while `trap.enabled` is `true`. JSON with the number of requests that reached the trap and of clients remembered right now. Holds no address. |
 | `GET /crawlers` | JSON with every known crawler: operator, class, source, how it is verified, the state of its address list, and how many requests claimed to be it. Holds no client address. Example in [CRAWLERS.md](CRAWLERS.md#looking-at-what-happens). |
 | `GET /metrics` | The numbers of all the endpoints below in the Prometheus text format, for a monitoring system. See [METRICS.md](METRICS.md). |
+| `GET /statistics` | Only if `statistics.directory` is set. JSON with the counts of the last hours (`?hours=N`, default 24), by the hour and in total. See [STATISTICS.md](STATISTICS.md). |
 | `GET /decisions` | JSON with how often each rule, threshold and the default decided since start, and what became of challenged requests. Holds no address, path or user agent. Examples in [RULES.md](RULES.md#trying-a-rule-set-safely) and [CHALLENGE.md](CHALLENGE.md#watching-it-work). |
 
 Example health report:
@@ -335,6 +345,7 @@ top-level state is the worst state of any component. A component that is not
 | `countries` | The country database. Listed only if a rule has a `country` condition. | No database is loaded, the last file or download was unusable, or the data is over 100 days old (`degraded`). Without a database, rules with a `country` condition are skipped. |
 | `limits` | The request limits. Listed only while `limits.enabled` is `true`. | Never: it keeps no state that can fail. |
 | `trap` | The trap. Listed only while `trap.enabled` is `true`. | Never. |
+| `statistics` | The counters kept on disk. Listed only if `statistics.directory` is set. | They cannot be written (`degraded`). Requests are not affected. |
 | `license` | The sponsor license. Listed only if `license.file` is set. | It has expired (`degraded`). The detail gives the dates and says what applies. Xibalba keeps running. |
 | `rules` | The evaluation of requests against the rule set | A request could not be evaluated in the last five minutes (`degraded`). The detail says how many, why, and whether they were allowed or refused. |
 | `upstream` | The connection to your website | The most recent request to the website failed (`degraded`). It returns to `ok` with the next request the website answers. |

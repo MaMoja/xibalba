@@ -8,6 +8,10 @@ All notable changes are listed here. The format follows
 
 ### Added
 
+- Statistics on disk (`statistics.directory`, `statistics.keep_days`): what
+  each rule, crawler and limit counted, by the hour, across restarts, in
+  plain text files. Counts only. `GET /statistics` on the operations
+  listener.
 - Example configurations for Apache, HAProxy and Traefik, each run against
   the real server by `make webserver-check` (69 checks over five servers).
 - `Dockerfile` (an image with nothing but the program, unprivileged), a

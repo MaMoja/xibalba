@@ -4,6 +4,19 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-04
 
+- **Statistics are kept in plain text files, one line per hour, not in an
+  embedded database.** Agent. This departs from the stack rule in CLAUDE.md
+  ("embedded, pure-Go database") and is logged for that reason: a year of
+  hourly counts is a few megabytes and is only ever appended to and read in
+  order. Files need no dependency, can be read with any tool, and cannot be
+  corrupted as a whole. If the web interface later needs queries a file
+  cannot answer, a database can be put behind the same package.
+- **No counters per network of origin for now.** Agent, for the owner to
+  decide. They would be the first data about visitors on disk.
+- **The statistics package is handed running totals and works out the hours
+  itself.** Agent. It knows nothing about rules or crawlers, and the parts
+  that count know nothing about storage.
+
 - **Metrics in the Prometheus text format are written by a package of our
   own, without the Prometheus client library.** Agent. The format is a few
   lines of text; the library would bring a dozen dependencies. The package
@@ -303,6 +316,9 @@ Newest first. One entry per decision: what, why, who decided.
 - Attribution for DB-IP: its terms ask for a link on pages that use the
   results. Should Xibalba offer a setting that shows this link on its pages,
   or is a note in the documentation enough? Today: documentation only.
+- Statistics per network of origin (which networks send the most denied
+  requests): wanted? They would store networks of visitors on disk, by the
+  hour; if wanted, as an option that is off by default.
 - Should a fresh installation start with crawler presets switched on (the
   spec says training "default deny", search "default allow")? Today nothing is
   on until the site owner lists presets.

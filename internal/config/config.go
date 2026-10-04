@@ -45,6 +45,8 @@ type Config struct {
 	Rules Rules `yaml:"rules"`
 	// Crawlers says how crawlers are recognised and verified.
 	Crawlers Crawlers `yaml:"crawlers"`
+	// Statistics keeps counters by the hour on disk.
+	Statistics Statistics `yaml:"statistics"`
 	// Countries is the database that says which country an address is in.
 	Countries Countries `yaml:"countries"`
 	// Trap is the hidden link that catches crawlers.
@@ -293,11 +295,12 @@ func Default() Config {
 			DialTimeout:           5 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
 		},
-		Rules:     defaultRules(),
-		Crawlers:  defaultCrawlers(),
-		Limits:    defaultLimits(),
-		Trap:      defaultTrap(),
-		Countries: defaultCountries(),
+		Rules:      defaultRules(),
+		Crawlers:   defaultCrawlers(),
+		Limits:     defaultLimits(),
+		Trap:       defaultTrap(),
+		Countries:  defaultCountries(),
+		Statistics: defaultStatistics(),
 		Challenge: Challenge{
 			Difficulty:        18,
 			NoJavaScript:      "button",
@@ -363,6 +366,9 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
 	cfg.Rules.TrapOn = cfg.Trap.Enabled
+	cfg.Statistics.check(filepath.Dir(name), func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
 	cfg.Countries.check(filepath.Dir(name), func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})

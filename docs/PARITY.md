@@ -51,7 +51,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Check that the client really loaded a style sheet | Later |
 | Memory-hard proof of work (WebAssembly) | Later |
 | Challenge method and difficulty per rule or threshold | Later |
-| Storage backends: file, Valkey/Redis, S3 | M6 (file), M9 (shared) |
+| Storage backends for shared state: Valkey/Redis, S3 | M9 |
 | Verdict mode for nginx, Caddy, Traefik (subrequest authentication) with allowed redirect domains | M9 |
 | Published images, deb, rpm (Dockerfile and systemd unit exist) | M9 |
 | Token that the web server in front can verify itself (HAProxy) | Later |

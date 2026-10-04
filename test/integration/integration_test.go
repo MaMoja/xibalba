@@ -1709,3 +1709,80 @@ func TestHealthCheckFlag(t *testing.T) {
 		t.Errorf("health check of a running Xibalba: %v, %q", err, out)
 	}
 }
+
+// --- statistics -------------------------------------------------------------
+
+type statisticsAnswer struct {
+	Totals map[string]uint64 `json:"totals"`
+	Hours  []struct {
+		Hour   time.Time         `json:"hour"`
+		Counts map[string]uint64 `json:"counts"`
+	} `json:"hours"`
+}
+
+func getStatistics(t *testing.T, inst *instance) statisticsAnswer {
+	t.Helper()
+	_, body := get(t, inst.ops+"/statistics?hours=2", nil)
+	var a statisticsAnswer
+	if err := json.Unmarshal([]byte(body), &a); err != nil {
+		t.Fatalf("/statistics: %v\n%s", err, body)
+	}
+	return a
+}
+
+// Counts are written down when Xibalba stops and are there again after the
+// next start. What is written holds no address, path or user agent.
+func TestStatisticsSurviveARestart(t *testing.T) {
+	site := newWebsite(t)
+	dir := t.TempDir()
+	config := "statistics:\n  directory: \"" + dir + "\"\n" + testRules
+
+	inst := start(t, site.URL, config)
+	for i := 0; i < 3; i++ {
+		get(t, inst.public+"/admin/geheim", map[string]string{"User-Agent": "Mozilla/5.0 SecretAgent", "Accept-Language": "en"})
+	}
+	get(t, inst.public+"/", language)
+	if _, report := health(t, inst); report.Components["statistics"].State != "ok" {
+		t.Fatalf("health = %+v", report)
+	}
+	_ = inst.cmd.Process.Signal(syscall.SIGTERM)
+	_ = inst.cmd.Wait()
+
+	// A hard look at what is on disk.
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("nothing was written: %v", err)
+	}
+	for _, e := range entries {
+		raw, _ := os.ReadFile(filepath.Join(dir, e.Name()))
+		for _, private := range []string{"127.0.0.1", "geheim", "SecretAgent", "/admin"} {
+			if strings.Contains(string(raw), private) {
+				t.Errorf("%s holds %q:\n%s", e.Name(), private, raw)
+			}
+		}
+	}
+
+	second := start(t, site.URL, config)
+	get(t, second.public+"/admin", language)
+	// Counts are taken up once a minute and at the stop; ask after a stop.
+	_ = second.cmd.Process.Signal(syscall.SIGTERM)
+	_ = second.cmd.Wait()
+
+	third := start(t, site.URL, config)
+	a := getStatistics(t, third)
+	// The hour may have turned between the runs; the totals hold both.
+	if a.Totals["decision|rule:block-admin|deny"] != 4 || a.Totals["decision|default|allow"] != 1 || len(a.Hours) < 1 {
+		t.Errorf("totals = %v", a.Totals)
+	}
+}
+
+func TestStatisticsAreOffWithoutADirectory(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, testRules)
+	if resp, _ := get(t, inst.ops+"/statistics", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("/statistics without a directory: %d", resp.StatusCode)
+	}
+	if _, report := health(t, inst); report.Components["statistics"].State != "" {
+		t.Errorf("health = %+v", report)
+	}
+}

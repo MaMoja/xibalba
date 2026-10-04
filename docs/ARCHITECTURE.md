@@ -37,6 +37,9 @@ flowchart TD
     main --> limit
     main --> trap
     main --> metrics
+    main --> stats
+    config --> stats
+    stats --> health
     main --> geo
     config --> geo
     geo --> health
@@ -90,6 +93,7 @@ the same code that later uses them.
 | `internal/limit` | Count requests per client and say when a client is over a limit |
 | `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
+| `internal/stats` | Keep the other parts' counters on disk by the hour, with a time limit |
 | `internal/metrics` | Serve the numbers of the other parts in the Prometheus text format |
 | `internal/gate` | Enforce rule decisions on live requests and count them |
 | `internal/token` | Sign and verify the tokens handed to clients; keep the signing key |
@@ -143,6 +147,7 @@ cannot recover from.
 | The country database is missing, damaged or cannot be downloaded | The database already loaded stays in use. If none is loaded, rules with a `country` condition are skipped; everything else works. A damaged file given in the configuration without downloading stops the start, like any wrong setting. | One warning with `component=countries`; `countries` is `degraded` in `/healthz` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |
 | A part fails while its numbers are collected for `/metrics` | Its numbers are left out of that answer; the others are served. | Missing series in the monitoring system |
+| The statistics directory is gone or the disk is full | Requests are served as before. What is counted meanwhile is written when writing works again. | One warning with `component=statistics`; `statistics` is `degraded` in `/healthz` |
 | A health check itself panics | Only that component is reported `down`. The other checks still run. | `/healthz` |
 | Shutdown takes too long | Components get `shutdown_timeout`; whatever did not stop is named in the log. | Log line `shutdown was not clean` |
 
@@ -182,7 +187,6 @@ Planned packages and their seams:
 
 | Package | Its one job | Interface it exposes |
 |---|---|---|
-| `internal/stats` | Count decisions | `Recorder` |
 | `internal/admin` | Serve the web interface | `http.Handler` |
 
 Two rules apply to every stage:

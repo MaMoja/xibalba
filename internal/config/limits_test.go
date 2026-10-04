@@ -2,6 +2,7 @@ package config
 
 import (
 	"net/netip"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -113,5 +114,31 @@ func TestTrapSettings(t *testing.T) {
 				t.Errorf("error = %v", err)
 			}
 		})
+	}
+}
+
+func TestStatisticsSettings(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Statistics.Directory != "" || cfg.Statistics.Path != "" || cfg.Statistics.KeepDays != 400 {
+		t.Errorf("defaults = %+v", cfg.Statistics)
+	}
+	path := writeFiles(t, map[string]string{"xibalba.yaml": base + "statistics:\n  directory: stats\n  keep_days: 30\n", "stats/.keep": "", "file": "x"})
+	cfg, err = Load(path)
+	if err != nil || !strings.HasSuffix(cfg.Statistics.Path, "/stats") {
+		t.Errorf("cfg = %+v, err = %v", cfg.Statistics, err)
+	}
+	for yaml, want := range map[string]string{
+		"statistics:\n  keep_days: 0\n":       "statistics.keep_days",
+		"statistics:\n  keep_days: 99999\n":   "statistics.keep_days",
+		"statistics:\n  directory: nowhere\n": "does not exist",
+		"statistics:\n  directory: file\n":    "is not a directory",
+	} {
+		_ = os.WriteFile(path, []byte(base+yaml), 0o600)
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", yaml, err)
+		}
 	}
 }

@@ -24,7 +24,8 @@ without telling the owner why.
   clearly worse, and log why.
 - Web interface: server-rendered `html/template` plus small plain JavaScript,
   embedded in the binary with `embed`. No Node build chain, no CDN, no external fonts.
-- Statistics storage: embedded, pure-Go database. No external service required.
+- Statistics storage: embedded, no external service required. Plain files
+  today (see DECISIONS.md); a pure-Go database if queries ever need one.
 - Configuration: one YAML file, validated at start-up, with error messages that
   name the file, the line and the fix.
 
@@ -158,6 +159,7 @@ internal/limit/       count requests per client, say when one is over a limit
 internal/geo/         country of an address, from a database file
 internal/trap/        hidden link that catches crawlers; optional maze
 internal/metrics/     the other parts' numbers in the Prometheus text format
+internal/stats/       the other parts' counters on disk, by the hour
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
@@ -174,7 +176,7 @@ examples/caddy/       tested Caddy configuration; the handbook shows it
 examples/apache/, haproxy/, traefik/   tested by test/webserver
 examples/docker/, systemd/, kubernetes/  container, service and cluster examples
 Dockerfile            the container image; built and started in CI
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, metrics, environments, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, metrics, statistics, environments, challenge, development
 docs/de/              operator handbook in German
 ```
 

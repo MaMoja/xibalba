@@ -111,6 +111,13 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// Examples name the directory a service would use; give them one that exists here.
+			if strings.Contains(config, "/var/lib/xibalba/statistics") {
+				if err := os.MkdirAll(filepath.Join(dir, "statistics"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				config = strings.ReplaceAll(config, "/var/lib/xibalba/statistics", "statistics")
+			}
 			config = strings.ReplaceAll(config, "/etc/xibalba/sponsor.license", "sponsor.license")
 			path := filepath.Join(dir, "xibalba.yaml")
 			if err := os.WriteFile(path, []byte(config), 0o600); err != nil {

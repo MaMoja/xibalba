@@ -97,6 +97,7 @@ shutdown_timeout: 30s
 		Limits:          defaultLimits(),
 		Trap:            defaultTrap(),
 		Countries:       defaultCountries(),
+		Statistics:      defaultStatistics(),
 		Challenge:       Default().Challenge,
 		Pages:           Default().Pages,
 		Ops:             Ops{Listen: "[::1]:9191"},

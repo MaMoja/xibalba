@@ -37,6 +37,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/proxy"
 	"github.com/MaMoja/xibalba/internal/rules"
+	"github.com/MaMoja/xibalba/internal/stats"
 	"github.com/MaMoja/xibalba/internal/token"
 	"github.com/MaMoja/xibalba/internal/trap"
 )
@@ -381,8 +382,22 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// The same numbers for a monitoring system.
 	numbers := metrics.New()
-	collect(numbers, parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare})
+	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare}
+	collect(numbers, sources)
 	opsMux.Handle("GET /metrics", numbers.Handler())
+
+	// And kept on disk by the hour, if a directory is configured.
+	if cfg.Statistics.Path != "" {
+		kept := stats.New(stats.Options{
+			Dir:      cfg.Statistics.Path,
+			KeepDays: cfg.Statistics.KeepDays,
+			Collect:  func() map[string]uint64 { return totals(sources) },
+			Log:      log,
+		})
+		registry.Register(kept.Name(), kept.Health)
+		supervisor.Add(kept)
+		opsMux.Handle("GET /statistics", kept.Handler())
+	}
 
 	resolver := clientip.New(cfg.Server.TrustedPrefixes())
 	public := httpserver.New(httpserver.Options{

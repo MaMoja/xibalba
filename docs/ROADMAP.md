@@ -80,8 +80,10 @@ decision (2026-10-03): all of this comes before statistics.
   - [ ] Low, open: `allow-feeds` and `allow-git-clients` match any address ending the right way (documented); regular expressions in presets fold some non-ASCII letters; a damaged country file is read again every minute until replaced.
 
 ## M6: Statistics
-- [ ] Aggregated counters per hour: by action, rule, crawler, network
-- [ ] Embedded storage with retention
+- [x] Aggregated counters per hour: by action, rule, crawler, limit and trap
+- [ ] Counters per network of origin: open, owner to decide (it would put networks of visitors on disk)
+- [x] Storage on disk with a time limit (plain files, one line per hour; no database)
+- [ ] Security review of the milestone by a second agent
 - [x] Prometheus metrics endpoint (format checked by tests; not yet tried against a running Prometheus)
 
 ## M7: Web interface, read side

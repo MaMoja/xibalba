@@ -97,6 +97,37 @@ func collect(m *metrics.Registry, p parts) {
 	}
 }
 
+// totals returns the running counts by name, for the statistics kept on
+// disk. The names are "kind|...": decision|<source>|<action>,
+// challenge|<result>, failures, crawler|<name>|<status>,
+// limit|<per>|<count>|<action>, trap|hits, trap|ignored.
+func totals(p parts) map[string]uint64 {
+	out := map[string]uint64{}
+	s := p.decisions.Snapshot()
+	for _, src := range s.Sources {
+		out["decision|"+src.Source+"|"+string(src.Action)] = src.Count
+	}
+	out["failures"] = s.Failures
+	out["challenge|served"], out["challenge|passed"] = s.Challenge.Served, s.Challenge.Passed
+	out["challenge|solved"], out["challenge|failed"] = s.Challenge.Solved, s.Challenge.Failed
+	for _, c := range p.crawlers.Reports() {
+		out["crawler|"+c.Name+"|verified"] = c.Requests.Verified
+		out["crawler|"+c.Name+"|impostor"] = c.Requests.Unverified
+		out["crawler|"+c.Name+"|unverifiable"] = c.Requests.Unverifiable
+		out["crawler|"+c.Name+"|pending"] = c.Requests.Pending
+	}
+	if p.limiter != nil {
+		for _, l := range p.limiter.Report().Limits {
+			out["limit|"+l.Per+"|"+l.Count+"|"+l.Action] = l.Over
+		}
+	}
+	if p.snare != nil {
+		r := p.snare.Report()
+		out["trap|hits"], out["trap|ignored"] = r.Hits, r.Ignored
+	}
+	return out
+}
+
 func sortedKeys(m map[string]health.Status) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

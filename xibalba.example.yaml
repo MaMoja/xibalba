@@ -242,6 +242,16 @@ license:
   # The license file, relative to this file. Empty: no license.
   file: ""
 
+# Statistics kept on disk: how often each rule, crawler and limit counted,
+# by the hour, across restarts. Counts only; no address, path or user agent
+# is stored. See docs/STATISTICS.md.
+statistics:
+  # Directory for the files, relative to this file. It must exist and be
+  # writable for Xibalba's user. Empty: nothing is kept across restarts.
+  directory: ""
+  # How many days an hour's counts are kept (1 to 3650).
+  keep_days: 400
+
 # What Xibalba writes to its log (standard error).
 log:
   # Lowest severity that is written: debug, info, warn, error.

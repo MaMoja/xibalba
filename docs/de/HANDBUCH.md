@@ -367,6 +367,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | meine Sponsor-Lizenz eintragen | `license.file` | Abschnitt 8 |
 | die Sprache für Besucher ohne Deutsch oder Englisch festlegen | `pages.default_language` | Abschnitt 8 |
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
+| die Zähler über Neustarts hinweg behalten | `statistics.directory`, `statistics.keep_days` | Abschnitt 9, „Zähler dauerhaft speichern“ |
 | Xibalba an eine Überwachung (Prometheus) anbinden | nichts einzustellen; Abruf unter `/metrics` am Betriebsport | Abschnitt 9, „Überwachung anbinden“ |
 | mehr oder weniger ins Protokoll schreiben | `log.level`, `log.format` | [Referenz](../CONFIGURATION.md#log) |
 | den Betriebsport ändern | `ops.listen` | [Referenz](../CONFIGURATION.md#ops) |
@@ -1278,6 +1279,30 @@ Viel `served` und wenig `solved` ist das Bild eines Crawlers, der die Prüfung
 nicht besteht. Die Zähler beginnen bei jedem Start bei null; dauerhafte
 Statistik ist geplant.
 
+### Zähler dauerhaft speichern
+
+Ohne weitere Einstellung beginnen die Zähler bei jedem Start bei null. Mit
+einem Verzeichnis speichert Xibalba sie stundenweise:
+
+```yaml
+statistics:
+  directory: /var/lib/xibalba/statistics
+  keep_days: 400
+```
+
+Das Verzeichnis muss vorhanden und für den Benutzer von Xibalba beschreibbar
+sein. Gespeichert wird nur, wie oft jede Regel, jeder Crawler und jede Grenze
+gezählt hat: keine Adressen, keine Pfade, keine Kennungen. Nach `keep_days`
+Tagen werden die Daten entfernt. Abrufen:
+
+```sh
+curl "http://127.0.0.1:9090/statistics?hours=24"
+```
+
+Die Dateien sind einfacher Text (eine Zeile je Stunde). Ist das Verzeichnis
+einmal nicht beschreibbar, läuft Xibalba weiter und meldet es unter
+`statistics` in `/healthz`. Einzelheiten: [STATISTICS.md](../STATISTICS.md).
+
 ### Überwachung anbinden
 
 Für Überwachungssysteme liefert Xibalba alle Zahlen im Prometheus-Format:
@@ -1344,7 +1369,7 @@ Rechtsberatung.
 | Und bei eingeschalteter Begrenzung der Anfragen? | Dann merkt sich Xibalba die Adressen der Anfragenden im Arbeitsspeicher, um zählen zu können. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. Ein Anschluss, der nichts mehr sendet, wird nach dem Doppelten des längsten eingestellten Zeitraums vergessen: bei einer Grenze je Minute nach zwei Minuten, bei einer Grenze je Tag nach spätestens zwei Tagen. Ein Neustart vergisst alles. Adressen der Ausnahmeliste werden gar nicht gespeichert. |
 | Und bei eingeschalteter Falle? | Xibalba merkt sich im Arbeitsspeicher die Adressen der Anschlüsse, die dem versteckten Link gefolgt sind, für die Dauer von `trap.remember` (Voreinstellung 24 Stunden, höchstens 30 Tage). Wer dem Link nicht folgt, wird nicht erfasst. Nichts davon wird in eine Datei oder ins Protokoll geschrieben. |
 | Und bei Länder-Regeln? | Das Land wird auf Ihrem Server aus der Datenbank-Datei gelesen; keine Besucheradresse verlässt dafür den Server. Nur wenn Sie `countries.download` einschalten, ruft Xibalba einmal im Monat die Datenbank beim Anbieter ab; dieser sieht dabei die Adresse Ihres Servers. |
-| Was wird gezählt? | Wie oft jede Regel entschieden hat. Ohne Bezug zu Personen, nur im Arbeitsspeicher, bis zum nächsten Neustart. |
+| Was wird gezählt? | Wie oft jede Regel entschieden hat, ohne Bezug zu Personen. In der Voreinstellung nur im Arbeitsspeicher, bis zum nächsten Neustart. Mit `statistics.directory` zusätzlich stundenweise in Dateien, für `statistics.keep_days` Tage (Voreinstellung 400): ausschließlich Anzahlen unter den Namen von Regeln, Crawlern und Grenzen, keine Adressen, Pfade oder Kennungen. |
 | Setzt Xibalba ein Cookie? | Nur bei Besuchern, die die Sicherheitsprüfung bestanden haben. |
 | Was steht in dem Cookie? | Ein Ablaufzeitpunkt und ein Prüfwert, der es an Netz und Browserkennung bindet. Der Prüfwert ist ein Hash mit geheimem Schlüssel; Adresse und Kennung lassen sich daraus nicht zurückgewinnen. Keine Kennung der Person, nichts über aufgerufene Seiten. |
 | Wozu dient das Cookie? | Allein dazu, einen Besucher nach bestandener Prüfung nicht erneut zu prüfen. |
@@ -1402,7 +1427,8 @@ Damit Sie wissen, woran Sie sind:
   erprobt. Crawler von Meta und Amazon sind nicht prüfbar.
 - **Keine Weboberfläche.** Einstellungen stehen in der Datei, Zähler ruft man
   mit `curl` ab.
-- **Keine dauerhafte Statistik.** Die Zähler beginnen bei jedem Start bei null.
+- **Statistik nur als Zahlen.** Die Zähler lassen sich dauerhaft speichern
+  und abrufen, aber noch nicht als Diagramme ansehen.
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
 - **Keine fertigen Pakete und Abbilder.** Xibalba wird aus dem Quelltext
   gebaut; ein `Dockerfile` und eine systemd-Dienstdatei liegen bei.
@@ -1430,6 +1456,7 @@ Die Reihenfolge der weiteren Arbeit steht in [ROADMAP.md](../ROADMAP.md).
 | [CRAWLERS.md](../CRAWLERS.md) | Crawler-Klassen, Regelgruppen, Prüfverfahren, Liste der bekannten Crawler, eigene Crawler | Englisch |
 | [COUNTRIES.md](../COUNTRIES.md) | Länder-Regeln, Datenbanken und ihre Lizenzen | Englisch |
 | [TRAP.md](../TRAP.md) | die Falle und der Irrgarten im Detail | Englisch |
+| [STATISTICS.md](../STATISTICS.md) | dauerhaft gespeicherte Zähler | Englisch |
 | [METRICS.md](../METRICS.md) | Zahlen für Überwachungssysteme | Englisch |
 | [LIMITS.md](../LIMITS.md) | Begrenzung der Anfragen im Detail | Englisch |
 | [CHALLENGE.md](../CHALLENGE.md) | die Sicherheitsprüfung im Detail | Englisch |
