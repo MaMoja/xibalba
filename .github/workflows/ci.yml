@@ -20,7 +20,16 @@ jobs:
       - name: Lint
         run: make lint
       - name: Test
-        run: make test
+        run: |
+          set -o pipefail
+          make test 2>&1 | tee test.log
+      - name: Show what failed
+        if: failure()
+        run: |
+          # As annotations, so the failure can be read without the full log.
+          grep -E -- '^(--- FAIL|FAIL|panic:|WARNING: DATA RACE)|_test\.go:[0-9]+:' test.log | head -n 30 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
       - name: Benchmark
         run: make bench
       - name: Cross-compile
