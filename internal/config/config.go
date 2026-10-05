@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"os"
@@ -53,6 +54,8 @@ type Config struct {
 	Countries Countries `yaml:"countries"`
 	// Trap is the hidden link that catches crawlers.
 	Trap Trap `yaml:"trap"`
+	// Previews puts a page's link-preview tags on the challenge page.
+	Previews Previews `yaml:"previews"`
 	// Limits are the request limits per client.
 	Limits Limits `yaml:"limits"`
 	// Challenge is the check a client has to pass when a rule says "challenge".
@@ -274,6 +277,16 @@ type Pages struct {
 	// Attribution shows the line "Protected by Xibalba" at the bottom of
 	// every page. Switching it off needs a sponsor license.
 	Attribution bool `yaml:"attribution"`
+	// Status is the HTTP status the pages are sent with.
+	Status PageStatus `yaml:"status"`
+}
+
+// PageStatus holds the HTTP status of the pages a visitor is stopped with.
+type PageStatus struct {
+	// Challenge is the status of the security check.
+	Challenge int `yaml:"challenge"`
+	// Blocked is the status of "request blocked".
+	Blocked int `yaml:"blocked"`
 }
 
 // Options returns the settings exactly as written, in the form
@@ -288,6 +301,8 @@ func (p Pages) Options() pages.Options {
 		DefaultLanguage: p.DefaultLanguage,
 		Texts:           p.Texts,
 		HideAttribution: !p.Attribution,
+		StatusChallenge: p.Status.Challenge,
+		StatusBlocked:   p.Status.Blocked,
 	}
 }
 
@@ -327,6 +342,7 @@ func Default() Config {
 		Limits:     defaultLimits(),
 		Admin:      defaultAdmin(),
 		Trap:       defaultTrap(),
+		Previews:   defaultPreviews(),
 		Countries:  defaultCountries(),
 		Statistics: defaultStatistics(),
 		Challenge: Challenge{
@@ -341,7 +357,8 @@ func Default() Config {
 			KeyFile:           "",
 			CookieName:        "xibalba-pass",
 		},
-		Pages:           Pages{DefaultLanguage: pages.Languages()[0], Texts: map[string]map[string]string{}, Attribution: true},
+		Pages: Pages{DefaultLanguage: pages.Languages()[0], Texts: map[string]map[string]string{}, Attribution: true,
+			Status: PageStatus{Challenge: http.StatusForbidden, Blocked: http.StatusForbidden}},
 		Ops:             Ops{Listen: "127.0.0.1:9090"},
 		ShutdownTimeout: 10 * time.Second,
 	}
@@ -404,6 +421,9 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 	})
 	cfg.Rules.CountriesOn = cfg.Countries.Database != ""
 	cfg.Admin.check(filepath.Dir(name), map[string]string{"server.listen": cfg.Server.Listen, "ops.listen": cfg.Ops.Listen}, func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
+	cfg.Previews.check(func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
 	cfg.Limits.check(func(path, message, hint string) {

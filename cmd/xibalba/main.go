@@ -38,6 +38,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/metrics"
 	"github.com/MaMoja/xibalba/internal/origin"
 	"github.com/MaMoja/xibalba/internal/pages"
+	"github.com/MaMoja/xibalba/internal/preview"
 	"github.com/MaMoja/xibalba/internal/proxy"
 	"github.com/MaMoja/xibalba/internal/rules"
 	"github.com/MaMoja/xibalba/internal/stats"
@@ -92,6 +93,24 @@ func crawlerOf(id crawlers.Identity) rules.Crawler {
 		c.Status = rules.CrawlerUnknown
 	}
 	return c
+}
+
+// previewTags returns the link-preview tags for the page a request asked
+// for, or nil: if previews are off, and for requests that are not for a
+// page of the website (answers to the check, addresses of Xibalba's own).
+func previewTags(previews *preview.Cache, r *http.Request) []pages.MetaTag {
+	if previews == nil || (r.Method != http.MethodGet && r.Method != http.MethodHead) || strings.HasPrefix(r.URL.Path, "/.xibalba/") {
+		return nil
+	}
+	tags := previews.Tags(r.Host, r.URL.Path, r.URL.RawQuery)
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]pages.MetaTag, len(tags))
+	for i, tag := range tags {
+		out[i] = pages.MetaTag{Key: tag.Key, Value: tag.Value, Name: tag.Name}
+	}
+	return out
 }
 
 // withTrap sends requests for the trap's addresses to the trap and the rest
@@ -309,6 +328,25 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	defer upstream.Close()
 	registry.Register("upstream", upstream.Health)
 
+	// Link previews, if switched on: the tags of the website's pages, fetched
+	// in the background and put on the challenge page.
+	var previews *preview.Cache
+	if cfg.Previews.Enabled {
+		previews = preview.New(preview.Options{
+			Upstream:     cfg.Upstream.Target(),
+			PreserveHost: cfg.Upstream.PreserveHost,
+			TTL:          cfg.Previews.TTL,
+			MaxEntries:   cfg.Previews.MaxPages,
+			PerMinute:    cfg.Previews.FetchPerMinute,
+			Query:        cfg.Previews.Query,
+			Fixed:        preview.Fixed(cfg.Previews.Tags),
+			UserAgent:    "Xibalba/" + buildinfo.Get().Version + " (link preview; +" + pages.RepoURL + ")",
+			Log:          log,
+		})
+		supervisor.Add(previews)
+		registry.Register(previews.Name(), previews.Health)
+	}
+
 	// The security check. Its tokens are signed with a key that is kept in a
 	// file if one is configured, so passes survive a restart.
 	key, keyNote, err := signingKey(cfg.Challenge.KeyPath)
@@ -330,6 +368,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		CookieName:        cfg.Challenge.CookieName,
 		Page: func(w http.ResponseWriter, r *http.Request, v challenge.View) {
 			page.Challenge(w, r, pages.ChallengeView{
+				Meta:   previewTags(previews, r),
 				Action: v.Action, Token: v.Token, Return: v.Return,
 				Nonce: v.Nonce, Difficulty: v.Difficulty,
 				Method: v.Method, WaitSeconds: v.WaitSeconds, RefreshURL: v.RefreshURL,
@@ -441,7 +480,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// The same numbers for a monitoring system.
 	numbers := metrics.New()
-	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare, check: check}
+	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare, previews: previews, check: check}
 	collect(numbers, sources)
 	opsMux.Handle("GET /metrics", numbers.Handler())
 

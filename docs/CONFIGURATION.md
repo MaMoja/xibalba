@@ -160,6 +160,20 @@ The hidden link that catches crawlers; explained in [TRAP.md](TRAP.md).
 | `trap.maze` | `false` | `true`, `false` | Answers the link with generated pages of meaningless syllables that link to more such pages. Needs `trap.enabled`. |
 | `trap.max_clients` | `100000` | 1000 to 5000000 | How many clients are remembered at most. |
 
+### `previews`
+
+Link previews (Open Graph) for pages behind the security check; explained in
+[PREVIEWS.md](PREVIEWS.md).
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `previews.enabled` | `false` | `true`, `false` | Puts the preview tags of the page that was asked for on the challenge page. Xibalba fetches them from your website in the background. |
+| `previews.ttl` | `24h` | `1m` to `720h` | How long the tags of a page are kept before they are fetched again. |
+| `previews.max_pages` | `1000` | 1 to 100000 | How many pages are remembered at most. About 2 MB per 1000 at the very most; usually far less. |
+| `previews.fetch_per_minute` | `30` | 1 to 600 | How many pages are fetched from your website per minute at most. |
+| `previews.query` | `false` | `true`, `false` | `true` treats addresses that differ after the `?` as different pages. `false` leaves that part out. |
+| `previews.tags` | `{}` | Tag name, then text (up to 1000 bytes, one line); up to 40 | Tags used for every page. Nothing is fetched then. A name is `description` or starts with `og:`, `twitter:` or `article:`. |
+
 ### `limits`
 
 Request limits per client; explained in [LIMITS.md](LIMITS.md).
@@ -210,7 +224,19 @@ name on them or to change the wording.
 | `pages.imprint_url`, `pages.privacy_url` | empty | A full address (`https://…`) or a path on your website (`/impressum`), up to 500 characters | Links to your imprint and privacy policy at the bottom of every page Xibalba shows. Free, no license needed. A path on the protected website has to be reachable without the security check, or a visitor who is being checked cannot read it: let it through with an `allow` rule on exactly that path. |
 | `pages.contact` | empty | Text, up to 200 characters | How to reach you: an e-mail address, a telephone number, an office. Shown as a line on the block page. Empty shows no contact line. |
 | `pages.default_language` | `de` | `de`, `en` | Language for visitors whose browser states none of the supported languages. Every page offers the other language as well. |
+| `pages.status.challenge` | `403` | `200`, `403`, `429`, `503` | The HTTP status the security check is sent with. Whatever you choose, the page is marked as not to be stored and not to be indexed. See below. |
+| `pages.status.blocked` | `403` | `200`, `403`, `404`, `410`, `429`, `451`, `503` | The HTTP status of "request blocked". |
 | `pages.texts` | `{}` | Language, then text name, then text (up to 1000 characters) | **Needs a sponsor license.** Replaces single texts. Texts you do not list keep their built-in wording. |
+
+Which status to choose: `403` says what happens, and it is what monitoring,
+caches and well-behaved programs understand; keep it unless you have a
+reason. `200` for the security check is for services that build link
+previews only from answers with status 200 (see [PREVIEWS.md](PREVIEWS.md)),
+and for web servers or CDNs in front that replace every error answer with a
+page of their own. `404` or `410` for the block page tell a crawler that
+there is nothing to come back for. `429` and `503` ask a program to come
+back later; that is rarely what you want for a block. "Too many requests"
+always has status 429 and "website unavailable" 502, 503 or 504.
 
 Text names for `pages.texts`:
 

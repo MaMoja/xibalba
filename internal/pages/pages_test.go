@@ -759,3 +759,68 @@ func TestChallengePageForEachMethod(t *testing.T) {
 		t.Error("after a report of automation the page tries again by itself")
 	}
 }
+
+func TestPreviewTagsOnTheChallengePage(t *testing.T) {
+	r := renderer(t)
+	rec := httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/wiki", nil), ChallengeView{Action: "/.xibalba/verify", Method: "pow", Meta: []MetaTag{
+		{Key: "og:title", Value: `Town "hall" <script>alert(1)</script>`},
+		{Key: "description", Value: "A & B", Name: true},
+		{Key: "og:image", Value: "javascript:alert(1)"},
+	}})
+	body := rec.Body.String()
+	for _, want := range []string{
+		`<meta property="og:title" content="Town &#34;hall&#34; &lt;script&gt;alert(1)&lt;/script&gt;">`,
+		`<meta name="description" content="A &amp; B">`,
+		`<meta property="og:image" content="javascript:alert(1)">`, // plain text in an attribute nothing runs
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+	if strings.Count(body, "<script>") != 1 || strings.Index(body, "og:title") > strings.Index(body, "</head>") {
+		t.Errorf("tags broke out of the head:\n%s", body)
+	}
+	if got := rec.Header().Get("X-Robots-Tag"); got != "noindex" {
+		t.Errorf("X-Robots-Tag = %q", got)
+	}
+
+	rec = httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/wiki", nil), ChallengeView{Action: "/.xibalba/verify", Method: "pow"})
+	if strings.Contains(rec.Body.String(), "og:") {
+		t.Error("tags without any given")
+	}
+}
+
+func TestStatusOfThePages(t *testing.T) {
+	r := renderer(t)
+	rec := httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "pow"})
+	if rec.Code != 403 {
+		t.Errorf("challenge: %d by default", rec.Code)
+	}
+	r, err := New(Options{StatusChallenge: 200, StatusBlocked: 404})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "pow"})
+	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("X-Robots-Tag") != "noindex" {
+		t.Errorf("challenge: %d %v", rec.Code, rec.Header())
+	}
+	rec = httptest.NewRecorder()
+	r.Blocked(rec, httptest.NewRequest("GET", "/", nil), "ref")
+	if rec.Code != 404 {
+		t.Errorf("blocked: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	r.Limited(rec, httptest.NewRequest("GET", "/", nil), time.Second)
+	if rec.Code != 429 {
+		t.Errorf("limited: %d", rec.Code)
+	}
+	for _, bad := range []Options{{StatusChallenge: 302}, {StatusChallenge: 404}, {StatusBlocked: 500}, {StatusBlocked: 301}, {StatusChallenge: -1}} {
+		if len(Check(bad)) != 1 {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+}

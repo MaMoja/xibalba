@@ -116,6 +116,8 @@ func (c Config) PageOptions() pages.Options {
 		ImprintURL:      c.Pages.ImprintURL,
 		PrivacyURL:      c.Pages.PrivacyURL,
 		DefaultLanguage: c.Pages.DefaultLanguage,
+		StatusChallenge: c.Pages.Status.Challenge,
+		StatusBlocked:   c.Pages.Status.Blocked,
 	}
 	if c.License.Usable() {
 		opts.Operator = c.Pages.Operator

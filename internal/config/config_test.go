@@ -97,6 +97,7 @@ shutdown_timeout: 30s
 		Crawlers:        defaultCrawlers(),
 		Limits:          defaultLimits(),
 		Trap:            defaultTrap(),
+		Previews:        defaultPreviews(),
 		Countries:       defaultCountries(),
 		Statistics:      defaultStatistics(),
 		Admin:           defaultAdmin(),

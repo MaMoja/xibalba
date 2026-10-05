@@ -9,6 +9,9 @@ documentation only, described in our own words), and where Xibalba stands.
 | Feature | Note |
 |---|---|
 | Reverse proxy in front of one website | |
+| Link previews (Open Graph) for protected pages | Fetched in the background, never while a request waits; or fixed tags. `twitter:`, `article:` and `description` as well. See PREVIEWS.md |
+| Configurable status codes for the check and the block page | From a list of sensible codes; default 403 |
+| Imprint and privacy links on the pages | |
 | Rules on user agent, path, host, method, headers, addresses; allow, deny, challenge, weigh; thresholds; imported rule files | Structured conditions instead of an expression language (see DECISIONS.md) |
 | Proof-of-work check, signed pass cookie valid for a week | |
 | Checks without JavaScript | `wait` (wait, then a button) and `refresh` (the page sends the browser on by itself) |
@@ -37,7 +40,7 @@ documentation only, described in our own words), and where Xibalba stands.
 
 | Anubis | Xibalba | Why |
 |---|---|---|
-| Denied requests get status 200 by default | Status 403 and an honest page | Decided: no pretending |
+| Denied requests get status 200 by default | Status 403 by default; other codes can be chosen (`pages.status`) | Honest by default |
 | Forwarding headers are believed as sent | Only from configured trusted proxies | Security rule |
 | DNS lookups while a request is evaluated | In the background only | Performance rule |
 | Mascot | None | Tone |
@@ -60,8 +63,6 @@ documentation only, described in our own words), and where Xibalba stands.
 | rpm packages | Later |
 | Token that the web server in front can verify itself (HAProxy) | Later |
 | Running under a path prefix; website reached over a unix socket; TLS options towards the website | Later |
-| Link previews (Open Graph) for protected pages | M10 |
-| Configurable status codes | Later |
 | Serving a robots.txt that disallows AI crawlers | Later |
 | Tools: robots.txt to rules, IP list to rules | Later |
 | Headers that tell the website which rule decided | Later |

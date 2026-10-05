@@ -2,6 +2,32 @@
 
 Newest first. One entry per decision: what, why, who decided.
 
+## 2026-10-05
+
+- **Link-preview tags are fetched in the background, never while a request
+  waits.** Agent's choice. Rule 7 forbids a network call in the request
+  path. The price: the first challenge page for an address has no tags. A
+  preview service that asks once gets an empty preview once; services ask
+  again, and an operator can give fixed tags instead.
+- **The fetcher is bounded on every side.** Agent's choice. An address that
+  anyone can ask for makes Xibalba fetch from the website, so: one fetch at
+  a time, a limit per minute (default 30), 64 waiting at most, a bounded
+  table, 256 KiB read per page, five seconds per fetch, no redirects, no
+  proxy from the environment, paths with `..` not fetched, and by default
+  the query left out so that one page cannot be asked for under endless
+  names.
+- **Only preview tags are passed on, as bounded plain text.** Agent's
+  choice. Names starting with `og:`, `twitter:`, `article:`, and
+  `description`; the title as a fallback. Other `meta` tags (generator,
+  verification codes) say things about the site that a preview does not
+  need.
+- **Our own small reader for `meta` tags instead of an HTML parser.**
+  Agent's choice. The standard library has none and a dependency for forty
+  tags is not worth it. It is fuzzed; what it returns is escaped again by
+  the page template.
+- **Previews are free.** Agent's choice in line with rule 12: they are
+  about being found and shared, not about appearance.
+
 ## 2026-10-04
 
 - **A pass earned by waiting has the lowest level**, whatever the task was.
@@ -370,6 +396,12 @@ Newest first. One entry per decision: what, why, who decided.
   A crawler can take this path too; `no_javascript: deny` closes it.
 - **The challenge page answers with status 403.** Agent's choice. A 200 would
   let caches and search engines take the check for the real page.
+  *Reopened 2026-10-05:* the status can now be chosen (`pages.status`),
+  because the owner wants what Anubis offers and because some link-preview
+  services read only answers with status 200. The default stays 403, the
+  choice is from a fixed list (no redirects, no 5xx that looks like an
+  outage of Xibalba itself except 503), and the page is marked `no-store`
+  and `noindex` whatever the status, which removes the reason given above.
 - **Default difficulty 18 bits.** Agent's choice. About a tenth of a second
   on a desktop; the cost to bulk fetchers comes mostly from having to run a
   browser and from the binding, not from the arithmetic.

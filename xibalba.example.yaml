@@ -137,6 +137,30 @@ trap:
   # How many clients are remembered at most.
   max_clients: 100000
 
+# Link previews. A service that shows a preview of a shared link (title,
+# description, picture) gets the security check instead of the page. With
+# this on, the challenge page carries the preview tags (Open Graph) of the
+# page that was asked for. Xibalba fetches them from your website in the
+# background; a request never waits. Off by default. See docs/PREVIEWS.md.
+previews:
+  enabled: false
+  # How long the tags of a page are kept before they are fetched again
+  # (1m to 720h).
+  ttl: 24h
+  # How many pages are remembered at most (1 to 100000).
+  max_pages: 1000
+  # How many pages are fetched from your website per minute at most (1 to 600).
+  fetch_per_minute: 30
+  # true: addresses that differ after the "?" are different pages.
+  # false: the part after "?" is left out.
+  query: false
+  # Tags used for every page; nothing is fetched then. Example:
+  #
+  #   tags:
+  #     og:title: "Stadt Musterhausen"
+  #     og:description: "Rathaus und Bürgerservice"
+  tags: {}
+
 # Request limits per client. Off by default. A client that sends more than a
 # limit allows has to pass the security check, or is refused for a while.
 # Not counted: the addresses under "exempt", and requests let through by a
@@ -249,6 +273,12 @@ pages:
   privacy_url: ""
   # Language for visitors whose browser states none of the supported ones (de, en).
   default_language: de
+  # The HTTP status the pages are sent with. 403 says what happens and is
+  # the default. challenge: 200, 403, 429 or 503. blocked: 200, 403, 404,
+  # 410, 429, 451 or 503. See docs/CONFIGURATION.md before changing them.
+  status:
+    challenge: 403
+    blocked: 403
   # Replace any text, per language. Needs a sponsor license.
   # {operator} stands for the operator. Example:
   #

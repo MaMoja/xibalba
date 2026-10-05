@@ -121,8 +121,9 @@ decision (2026-10-03): all of this comes before statistics.
   - [ ] Advice for sites with their own Content-Security-Policy
   - [ ] For visitors: "Why do I see this check?", questions and answers, browser extensions known to break the check
   - [ ] Questions and answers for operators
-- [ ] Imprint (Impressum) and privacy notice links on the visitor pages, set in the configuration (Anubis has this; German operators need it)
-- [ ] Link previews (Open Graph): let preview fetchers see title and description of a protected page
+- [x] Link previews (Open Graph): the challenge page carries the preview tags of the page that was asked for (`previews`, off by default); fetched in the background, or fixed in the configuration
+- [x] HTTP status of the security check and the block page can be chosen (`pages.status`)
+- [x] Imprint and privacy links on the visitor pages
 - [ ] Allowed redirect domains for setups with several host names
 - [ ] Security review by a second agent that has not seen the code being written
 - [ ] Load test on a Raspberry Pi and on a small VPS
@@ -144,7 +145,6 @@ decision (2026-10-03): all of this comes before statistics.
 - Packages in the rpm format; signed releases (provenance)
 - A path test that means "this directory and everything under it", so `/admin` does not also match `/administrator`
 - A text expression language for rules, if `all`/`any`/`not` turn out not to be enough
-- Configurable status code and text for the block page
 - Reloading rules without a restart
 - TLS termination on the public listener
 - Limits on request body size and on slow request bodies

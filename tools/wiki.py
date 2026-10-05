@@ -30,6 +30,7 @@ SECTIONS = [
         ("LIMITS.md", "Limits", "Request limits per client"),
         ("COUNTRIES.md", "Countries", "Rules by country"),
         ("TRAP.md", "Trap", "The hidden link that catches crawlers, and the maze"),
+        ("PREVIEWS.md", "Link-Previews", "Open Graph tags for pages behind the security check"),
         ("STATISTICS.md", "Statistics", "Counters kept on disk by the hour"),
         ("METRICS.md", "Metrics", "The numbers for a monitoring system"),
         ("ADMIN.md", "Web-Interface", "The optional overview in the browser"),

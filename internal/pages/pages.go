@@ -112,6 +112,10 @@ type Options struct {
 	// Texts replaces individual texts: language code, then text key, then
 	// the new text. A text may contain {operator}.
 	Texts map[string]map[string]string
+	// StatusChallenge and StatusBlocked are the HTTP status of the security
+	// check and of "request blocked". Zero means 403. See ChallengeStatuses
+	// and BlockedStatuses for what else is allowed.
+	StatusChallenge, StatusBlocked int
 	// HideAttribution removes the "Protected by Xibalba" line from the
 	// bottom of every page.
 	HideAttribution bool
@@ -120,6 +124,32 @@ type Options struct {
 	// invisible and unreachable for people, found by programs that collect
 	// every address in the page text (see internal/trap).
 	TrapLink func(*http.Request) string
+}
+
+// ChallengeStatuses and BlockedStatuses return the HTTP status codes the
+// two pages can be sent with. 403 is the honest one and the default. 200 is
+// what some services that build link previews insist on. The others are for
+// operators whose monitoring or web server in front treats them differently.
+func ChallengeStatuses() []int { return []int{200, 403, 429, 503} }
+
+// BlockedStatuses: see ChallengeStatuses.
+func BlockedStatuses() []int { return []int{200, 403, 404, 410, 429, 451, 503} }
+
+func hasStatus(list []int, v int) bool {
+	for _, item := range list {
+		if item == v {
+			return true
+		}
+	}
+	return false
+}
+
+func statusList(list []int) string {
+	out := make([]string, len(list))
+	for i, v := range list {
+		out[i] = strconv.Itoa(v)
+	}
+	return strings.Join(out, ", ")
 }
 
 // Problem is one mistake in Options.
@@ -169,6 +199,14 @@ func Check(opts Options) []Problem {
 			add(field, "this is not an address a link can lead to",
 				`give a full address such as "https://www.example.org/impressum", or a path on your website such as "/impressum"`)
 		}
+	}
+	if opts.StatusChallenge != 0 && !hasStatus(ChallengeStatuses(), opts.StatusChallenge) {
+		add("status.challenge", fmt.Sprintf("%d is not a status the security check can be sent with", opts.StatusChallenge),
+			"use one of: "+statusList(ChallengeStatuses()))
+	}
+	if opts.StatusBlocked != 0 && !hasStatus(BlockedStatuses(), opts.StatusBlocked) {
+		add("status.blocked", fmt.Sprintf("%d is not a status the block page can be sent with", opts.StatusBlocked),
+			"use one of: "+statusList(BlockedStatuses()))
 	}
 	if opts.DefaultLanguage != "" && !has(languages, opts.DefaultLanguage) {
 		add("default_language", fmt.Sprintf("%q is not a supported language", opts.DefaultLanguage),
@@ -232,6 +270,8 @@ type Renderer struct {
 	imprint  string
 	privacy  string
 	hideAttr bool
+	statusCh int
+	statusBl int
 	trap     func(*http.Request) string
 	locales  map[string]map[string]string
 }
@@ -280,11 +320,19 @@ func New(opts Options) (*Renderer, error) {
 		imprint:  opts.ImprintURL,
 		privacy:  opts.PrivacyURL,
 		hideAttr: opts.HideAttribution,
+		statusCh: http.StatusForbidden,
+		statusBl: http.StatusForbidden,
 		trap:     opts.TrapLink,
 		locales:  map[string]map[string]string{},
 	}
 	if opts.DefaultLanguage != "" {
 		r.fallback = opts.DefaultLanguage
+	}
+	if opts.StatusChallenge != 0 {
+		r.statusCh = opts.StatusChallenge
+	}
+	if opts.StatusBlocked != 0 {
+		r.statusBl = opts.StatusBlocked
 	}
 	for _, lang := range languages {
 		data, err := assets.ReadFile("assets/locales/" + lang + ".json")
@@ -353,7 +401,7 @@ func (r *Renderer) Unavailable(w http.ResponseWriter, req *http.Request, status 
 // code the visitor can pass on to the site owner; it identifies the rule, not
 // the visitor.
 func (r *Renderer) Blocked(w http.ResponseWriter, req *http.Request, reference string) {
-	r.write(w, req, http.StatusForbidden, "blocked", reference)
+	r.write(w, req, r.statusBl, "blocked", reference)
 }
 
 // Limited tells the visitor that too many requests came from their
@@ -388,9 +436,20 @@ type ChallengeView struct {
 	StyleURL string
 	// Headless asks the script to report signs of automation.
 	Headless bool
+	// Meta are link-preview tags of the page that was asked for. They go
+	// into the head, for the services that build the preview of a shared
+	// link; a person never sees them.
+	Meta []MetaTag
 	// Notice selects a note about the previous attempt: "", "too_early",
 	// "retry" or "automated".
 	Notice string
+}
+
+// MetaTag is one tag for ChallengeView.Meta: <meta property="Key"
+// content="Value">, or with Name set <meta name="Key" content="Value">.
+type MetaTag struct {
+	Key, Value string
+	Name       bool
 }
 
 // scripted reports whether the check is answered by the page's script.
@@ -447,8 +506,10 @@ type challengePage struct {
 	TryAgain, NoStyle                          string
 }
 
-// Challenge shows the security check. It is sent with status 403 so that
-// neither caches nor search engines take it for the page that was asked for.
+// Challenge shows the security check. It is sent with status 403 unless the
+// operator chose another, and always marked as not to be kept or indexed,
+// so that neither caches nor search engines take it for the page that was
+// asked for.
 func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v ChallengeView) {
 	primary := pickLanguage(req.Header.Get("Accept-Language"), r.fallback)
 	texts := r.locales[primary]
@@ -503,10 +564,10 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 
 	var body bytes.Buffer
 	if err := r.chTmpl.Execute(&body, p); err != nil {
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		http.Error(w, http.StatusText(r.statusCh), r.statusCh)
 		return
 	}
-	r.send(w, req, http.StatusForbidden, primary, csp, &body)
+	r.send(w, req, r.statusCh, primary, csp, &body)
 }
 
 type version struct {

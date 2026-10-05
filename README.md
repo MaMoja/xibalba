@@ -73,6 +73,8 @@ flowchart LR
 | Request limits per client with a list of exempt addresses | Built |
 | Presets: check everything that says it is a browser; exceptions for feeds, git, robots.txt; score for odd browsers | Built |
 | Trap link for crawlers, optional maze (off by default) | Built |
+| Link previews (Open Graph) for pages behind the security check (off by default) | Built |
+| HTTP status of the security check and the block page can be chosen | Built |
 | Country conditions in rules, with a database you supply or the free one downloaded for you | Built |
 | Metrics for monitoring systems (Prometheus format) | Built |
 | Statistics kept on disk by the hour, with a time limit | Built |
@@ -203,6 +205,7 @@ The same pages, easier to browse, are in the [wiki](https://github.com/MaMoja/xi
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
 | [Countries](docs/COUNTRIES.md) | Rules by country: which database, licences, keeping it current |
 | [Trap](docs/TRAP.md) | The hidden link that catches crawlers, and the optional maze |
+| [Link previews](docs/PREVIEWS.md) | Title, description and picture of a shared link although the page is behind the check |
 | [Web interface](docs/ADMIN.md) | The optional overview in the browser: switching it on, reaching it safely |
 | [Operations](docs/OPERATIONS.md) | Running, updating, troubleshooting |
 | [Privacy](docs/PRIVACY.md) | What is stored and what is not |

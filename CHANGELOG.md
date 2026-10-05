@@ -17,6 +17,13 @@ All notable changes are listed here. The format follows
 - A check of its own for a rule or threshold: `challenge:` with method,
   difficulty, wait, checks. A pass counts wherever the same or less is asked.
 
+- Link previews (`previews`, off by default): the challenge page carries the
+  Open Graph tags of the page that was asked for, so a shared link shows its
+  title, description and picture although the page is behind the check. The
+  tags are fetched from the website in the background, or given in the
+  configuration. See `docs/PREVIEWS.md`.
+- The HTTP status of the security check and of the block page can be chosen
+  (`pages.status.challenge`, `pages.status.blocked`). The default stays 403.
 - Links to your imprint and privacy policy at the bottom of every page
   Xibalba shows (`pages.imprint_url`, `pages.privacy_url`). No license needed.
 - Advice on `Content-Security-Policy` in `docs/CHALLENGE.md`.

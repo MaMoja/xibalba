@@ -37,6 +37,9 @@ flowchart TD
     main --> limit
     main --> trap
     main --> metrics
+    main --> preview
+    preview --> health
+    config --> preview
     main --> stats
     config --> stats
     stats --> health
@@ -93,6 +96,7 @@ the same code that later uses them.
 | `internal/limit` | Count requests per client and say when a client is over a limit |
 | `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
+| `internal/preview` | Remember the link-preview tags of the website's pages, fetched in the background |
 | `internal/stats` | Keep the other parts' counters on disk by the hour, with a time limit |
 | `internal/origin` | Count requests per network of origin, in a bounded table |
 | `internal/admin` | Serve the optional web interface: login, overview, and settings if allowed |
@@ -146,6 +150,8 @@ cannot recover from.
 | An address list has not been renewed for over a week | It is no longer used; as above. | Same |
 | DNS does not answer | The reverse DNS check decides nothing and is retried after a minute. Crawlers verified that way are "unknown" meanwhile. | `pending` in `/crawlers` |
 | More clients are active than the limit table holds | Older entries make way; their counts start again. Requests are served as usual. | `clients` in `/limits` stays at `limits.max_clients` |
+| The website does not answer a fetch of link-preview tags | The challenge page for that address has no tags; the fetch is tried again after five minutes at the earliest. No request waits or fails. | `previews` is `degraded` in `/healthz` until a fetch succeeds |
+| More addresses are asked for than preview tags can be fetched or kept | Fetches beyond 64 waiting are dropped; the table makes room by forgetting pages. | `xibalba_preview_fetches_total{result="dropped"}` |
 | More clients were caught in the trap than its table holds | Older entries make way and are no longer treated as caught. | `clients` in `/trap` |
 | The country database is missing, damaged or cannot be downloaded | The database already loaded stays in use. If none is loaded, rules with a `country` condition are skipped; everything else works. A damaged file given in the configuration without downloading stops the start, like any wrong setting. | One warning with `component=countries`; `countries` is `degraded` in `/healthz` |
 | A listener dies while running | The component reports the failure, health turns `down`, the program shuts down cleanly and exits with code 1 so the service manager restarts it. | Log line `component failed`, `/healthz` |

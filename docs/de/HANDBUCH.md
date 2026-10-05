@@ -489,6 +489,8 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
 | Regelgruppen oder einzelne Adressen im Browser schalten | `admin.allow_changes` | Abschnitt 4, „Einstellungen im Browser ändern“ |
 | Impressum und Datenschutzerklärung auf den Seiten verlinken | `pages.imprint_url`, `pages.privacy_url` | Abschnitt 8 |
+| dass geteilte Links eine Vorschau mit Titel und Bild zeigen | `previews.enabled` | Abschnitt 8, „Vorschau für geteilte Links“ |
+| den Statuscode der Sicherheitsprüfung oder der Blockseite ändern | `pages.status.challenge`, `pages.status.blocked` | Abschnitt 8, „Statuscodes“ |
 | die Zahlen im Browser sehen | `admin.enabled` und ein Passwort | Abschnitt 4, „Auf Wunsch: die Weboberfläche“ |
 | die Zähler über Neustarts hinweg behalten | `statistics.directory`, `statistics.keep_days` | Abschnitt 9, „Zähler dauerhaft speichern“ |
 | sehen, aus welchen Netzen die meisten Anfragen kommen | `statistics.networks.enabled`, `top`, `keep_days` | Abschnitt 9, „Zähler pro Netz“ |
@@ -1352,6 +1354,120 @@ rules:
       action: allow
 ```
 
+### Vorschau für geteilte Links
+
+Wer einen Link zu Ihrer Website in einem Messenger oder einem sozialen
+Netzwerk teilt, sieht dort eine kleine Vorschau: Titel, Beschreibung, Bild.
+Der Dienst ruft dafür die Seite ab und liest Angaben aus ihrem Kopf (Open
+Graph: `og:title`, `og:description`, `og:image`). Liegt die Seite hinter der
+Sicherheitsprüfung, bekommt der Dienst die Prüfung zu sehen, und die Vorschau
+lautet „Kurze Sicherheitsprüfung“.
+
+```yaml
+previews:
+  enabled: true
+```
+
+Damit trägt die Prüfseite die Vorschau-Angaben der Seite, die eigentlich
+aufgerufen wurde. Der Dienst kommt weiterhin nicht durch die Prüfung und
+bekommt die Seite selbst nicht; er bekommt nur, was er für die Vorschau
+braucht. Ab Werk ist das aus. Eine Lizenz brauchen Sie nicht.
+
+So arbeitet es:
+
+- Xibalba holt die Angaben im Hintergrund von Ihrer Website, höchstens
+  `previews.fetch_per_minute` Seiten pro Minute (ab Werk 30), und merkt sie
+  sich für `previews.ttl` (ab Werk 24 Stunden). Kein Besucher wartet darauf.
+- Die erste Prüfseite zu einer Adresse kommt deshalb noch ohne Angaben, die
+  späteren mit.
+- Übernommen werden nur Angaben, deren Name mit `og:`, `twitter:` oder
+  `article:` beginnt, und `description`; fehlt `og:title`, der Seitentitel.
+  Alles andere der Seite bleibt hinter der Prüfung.
+- Der Abruf enthält nichts über den Besucher: keine Adresse, kein Cookie.
+- Auf die Festplatte wird nichts geschrieben.
+
+| Einstellung | Ab Werk | Bedeutung |
+|---|---|---|
+| `previews.enabled` | `false` | Vorschau-Angaben auf die Prüfseite setzen |
+| `previews.ttl` | `24h` | wie lange die Angaben einer Seite gelten, bevor sie neu geholt werden (`1m` bis `720h`) |
+| `previews.max_pages` | `1000` | wie viele Seiten höchstens gemerkt werden (1 bis 100000) |
+| `previews.fetch_per_minute` | `30` | wie viele Seiten pro Minute höchstens von Ihrer Website geholt werden (1 bis 600) |
+| `previews.query` | `false` | `false`: der Teil der Adresse nach dem `?` wird weggelassen. `true`: jede Abfrage ist eine eigene Seite; nötig, wenn Ihre Seiten sich nur darin unterscheiden (`/artikel?id=7`) |
+| `previews.tags` | `{}` | feste Angaben für alle Seiten; dann wird nichts geholt |
+
+Reicht Ihnen eine Vorschau für die ganze Website, geben Sie die Angaben
+selbst an. Xibalba ruft Ihre Website dann dafür gar nicht ab:
+
+```yaml
+previews:
+  enabled: true
+  tags:
+    og:title: "Stadt Musterhausen"
+    og:description: "Rathaus und Bürgerservice"
+    og:image: "https://www.musterhausen.example/bilder/wappen.png"
+```
+
+Drei Dinge sollten Sie prüfen:
+
+**Das Bild.** `og:image` ist nur eine Adresse. Der Dienst holt das Bild
+selbst. Liegt es hinter der Sicherheitsprüfung, bekommt er die Prüfung.
+Lassen Sie den Ordner mit den Bildern durch:
+
+```yaml
+rules:
+  list:
+    - name: vorschaubilder
+      match:
+        path: {prefix: "/bilder/"}
+      action: allow
+```
+
+**Der Statuscode.** Manche Dienste bauen eine Vorschau nur aus Antworten
+mit dem Status 200. Bleibt die Vorschau leer, obwohl die Angaben auf der
+Prüfseite stehen, stellen Sie `pages.status.challenge: 200` ein (nächster
+Abschnitt).
+
+**Nicht öffentliche Seiten.** Die Angaben sieht jeder, der die Prüfseite
+bekommt. Bei öffentlichen Seiten ist das der Zweck. Achten Sie auf Seiten,
+die Ihre Website ohne Anmeldung ausliefert, nur weil die Anfrage vom eigenen
+Rechner kommt: deren Titel würden gezeigt. Seiten, die eine Anmeldung
+verlangen, verraten nichts, denn Xibalba meldet sich nicht an.
+
+Ob die Abrufe gelingen, zeigt `/healthz` (Bestandteil `previews`) und der
+Zähler `xibalba_preview_fetches_total` unter `/metrics`. Mehr dazu in
+[PREVIEWS.md](../PREVIEWS.md).
+
+### Statuscodes
+
+Die Sicherheitsprüfung und die Blockseite werden ab Werk mit dem Status 403
+(„verboten“) gesendet. Das sagt ehrlich, was geschieht, und Überwachung,
+Zwischenspeicher und ordentliche Programme verstehen es. Sie können andere
+Codes wählen:
+
+```yaml
+pages:
+  status:
+    challenge: 200
+    blocked: 404
+```
+
+| Einstellung | Ab Werk | Erlaubt |
+|---|---|---|
+| `pages.status.challenge` | `403` | `200`, `403`, `429`, `503` |
+| `pages.status.blocked` | `403` | `200`, `403`, `404`, `410`, `429`, `451`, `503` |
+
+Wann ein anderer Code sinnvoll ist:
+
+- `200` für die Prüfung, wenn Vorschau-Dienste sonst nichts anzeigen oder
+  wenn ein Webserver oder CDN davor jede Fehlerantwort durch eine eigene
+  Seite ersetzt.
+- `404` oder `410` für die Blockseite sagen einem Crawler, dass es hier
+  nichts zu holen gibt.
+
+Gleich welcher Code: Die Seiten sind als „nicht speichern“ und „nicht in
+Suchmaschinen aufnehmen“ gekennzeichnet. „Zu viele Anfragen“ hat immer den
+Status 429.
+
 ### Ihren Namen zeigen (Sponsor-Lizenz)
 
 ```yaml
@@ -1688,13 +1804,12 @@ Damit Sie wissen, woran Sie sind:
 - **Die Crawler-Liste ist nicht vollständig** (23 Crawler von zehn
   Betreibern) und noch nicht gegen die echten Adresslisten der Betreiber
   erprobt. Crawler von Meta und Amazon sind nicht prüfbar.
-- **Keine Weboberfläche.** Einstellungen stehen in der Datei, Zähler ruft man
-  mit `curl` ab.
-- **Statistik nur als Zahlen.** Die Zähler lassen sich dauerhaft speichern
-  und abrufen, aber noch nicht als Diagramme ansehen.
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
-- **Keine fertigen Pakete und Abbilder.** Xibalba wird aus dem Quelltext
-  gebaut; ein `Dockerfile` und eine systemd-Dienstdatei liegen bei.
+- **Keine rpm-Pakete.** Es gibt Archive, Debian-Pakete und ein
+  Container-Abbild.
+- **Kein Betrieb als reine Prüfstelle** für `auth_request` (nginx),
+  `forward_auth` (Caddy) oder `forwardAuth` (Traefik); Xibalba steht immer
+  selbst vor der Website. Geplant.
 - **Nicht erprobt** auf Windows, in einem Kubernetes-Cluster und hinter
   einem CDN; beschrieben in ENVIRONMENTS.md.
 - **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).

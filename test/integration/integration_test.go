@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -2179,5 +2180,142 @@ rules:
 	sheet := regexp.MustCompile(`href="(/\.xibalba/check\.css\?n=[^"]+)"`).FindStringSubmatch(body)
 	if resp, css := fetch(html.UnescapeString(sheet[1])); resp.StatusCode != 200 || !strings.Contains(css, "--xibalba-check:") {
 		t.Errorf("style sheet: %d %q", resp.StatusCode, css)
+	}
+}
+
+// previewSite is a website whose pages carry link-preview tags.
+func previewSite(t *testing.T) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	var hits atomic.Int64
+	site := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprintf(rw, `<html><head><title>Plain title</title>
+<meta property="og:title" content="Page %s &amp; &quot;more&quot;">
+<meta property="og:image" content="https://www.example.org/bild.png">
+<meta name="description" content="<script>alert(1)</script>">
+<meta name="generator" content="secret-cms 1.2">
+</head><body>the page itself</body></html>`, r.URL.RequestURI())
+	}))
+	t.Cleanup(site.Close)
+	return site, &hits
+}
+
+func TestLinkPreviewTagsOnTheChallengePage(t *testing.T) {
+	site, hits := previewSite(t)
+	inst := start(t, site.URL, "previews:\n  enabled: true\n  fetch_per_minute: 600\n"+challengeRules)
+
+	// The first challenge page comes at once and without tags: nothing
+	// waits for the website.
+	resp, page := get(t, inst.public+"/wiki/Start?utm=1", language)
+	if resp.StatusCode != http.StatusForbidden || strings.Contains(page, "og:title") {
+		t.Fatalf("first page: %d\n%s", resp.StatusCode, page)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(page, "og:title") {
+		if time.Now().After(deadline) {
+			t.Fatalf("tags never appeared\n%s", page)
+		}
+		time.Sleep(50 * time.Millisecond)
+		_, page = get(t, inst.public+"/wiki/Start?utm=2", language)
+	}
+	for _, want := range []string{
+		`<meta property="og:title" content="Page /wiki/Start &amp; &#34;more&#34;">`,
+		`<meta property="og:image" content="https://www.example.org/bild.png">`,
+		`<meta name="description" content="&lt;script&gt;alert(1)&lt;/script&gt;">`,
+		"A quick security check",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+	for _, bad := range []string{"secret-cms", "the page itself", "<script>alert"} {
+		if strings.Contains(page, bad) {
+			t.Errorf("page holds %q", bad)
+		}
+	}
+	if resp.Header.Get("Content-Security-Policy") == "" {
+		t.Error("no policy")
+	}
+	// One page, one fetch, however often and with whatever query it is asked for.
+	for i := 0; i < 20; i++ {
+		get(t, fmt.Sprintf("%s/wiki/Start?n=%d", inst.public, i), language)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := hits.Load(); n != 1 {
+		t.Errorf("the website was asked %d times for one page", n)
+	}
+	// An answer to the check is not a page of the website.
+	v := newVisitor(t)
+	_, page = v.do("POST", inst.public+"/.xibalba/verify", url.Values{"token": {"x"}, "return": {"/wiki/Start"}})
+	if strings.Contains(page, "og:title") {
+		t.Error("tags on the page after a wrong answer")
+	}
+	if status, report := health(t, inst); status != 200 || report.Components["previews"].State != "ok" {
+		t.Errorf("health: %d %+v", status, report)
+	}
+	resp2, err := http.Get(inst.ops + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := io.ReadAll(resp2.Body)
+	_ = resp2.Body.Close()
+	if !strings.Contains(string(text), `xibalba_preview_fetches_total{result="answered"} 1`) {
+		t.Errorf("metrics:\n%s", text)
+	}
+}
+
+func TestPreviewsAreOffByDefaultAndCanBeFixed(t *testing.T) {
+	site, hits := previewSite(t)
+	inst := start(t, site.URL, challengeRules)
+	for i := 0; i < 3; i++ {
+		if _, page := get(t, inst.public+"/wiki/Start", language); strings.Contains(page, "og:") {
+			t.Fatal("tags although previews are off")
+		}
+	}
+	if _, report := health(t, inst); report.Components["previews"].State != "" {
+		t.Error("the part runs although it is off")
+	}
+
+	fixed := start(t, site.URL, "previews:\n  enabled: true\n  tags:\n    og:title: \"Stadt Musterhausen\"\n    og:description: \"Rathaus & Bürgerservice\"\n"+challengeRules)
+	_, page := get(t, fixed.public+"/wiki/Start", language)
+	if !strings.Contains(page, `<meta property="og:title" content="Stadt Musterhausen">`) ||
+		!strings.Contains(page, `<meta property="og:description" content="Rathaus &amp; Bürgerservice">`) {
+		t.Errorf("fixed tags missing\n%s", page)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := hits.Load(); n != 0 {
+		t.Errorf("the website was asked %d times", n)
+	}
+}
+
+func TestConfiguredStatusCodes(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, `pages:
+  status:
+    challenge: 200
+    blocked: 404
+rules:
+  list:
+    - name: challenge-wiki
+      match:
+        path: {prefix: "/wiki"}
+      action: challenge
+    - name: deny-private
+      match:
+        path: {prefix: "/private"}
+      action: deny
+`)
+	before := site.hitCount()
+	resp, page := get(t, inst.public+"/wiki/Start", language)
+	if resp.StatusCode != 200 || !strings.Contains(page, "A quick security check") ||
+		resp.Header.Get("Cache-Control") != "no-store" || resp.Header.Get("X-Robots-Tag") != "noindex" {
+		t.Errorf("challenge: %d %v", resp.StatusCode, resp.Header)
+	}
+	if resp, _ := get(t, inst.public+"/private/x", language); resp.StatusCode != 404 {
+		t.Errorf("blocked: %d", resp.StatusCode)
+	}
+	if site.hitCount() != before {
+		t.Error("the website was reached")
 	}
 }

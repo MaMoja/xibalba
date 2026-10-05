@@ -10,6 +10,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/health"
 	"github.com/MaMoja/xibalba/internal/limit"
 	"github.com/MaMoja/xibalba/internal/metrics"
+	"github.com/MaMoja/xibalba/internal/preview"
 	"github.com/MaMoja/xibalba/internal/trap"
 )
 
@@ -23,6 +24,7 @@ type parts struct {
 	limiter   *limit.Limiter
 	snare     *trap.Trap
 	check     *challenge.Challenge
+	previews  *preview.Cache
 }
 
 // collect hands every part's numbers to the metrics registry. The numbers
@@ -103,6 +105,15 @@ func collect(m *metrics.Registry, p parts) {
 			w.Counter("xibalba_trap_hits_total", "Requests that followed the hidden link.", float64(r.Hits))
 			w.Counter("xibalba_trap_ignored_total", "Requests to the trap's addresses that were no catch.", float64(r.Ignored))
 			w.Gauge("xibalba_trap_clients", "Clients remembered as caught right now.", float64(r.Clients))
+		})
+	}
+	if p.previews != nil {
+		m.Add(func(w *metrics.Writer) {
+			fetched, failed, dropped := p.previews.Counts()
+			const help = "Fetches of link-preview tags from the website: answered, failed, and not made because too many were waiting."
+			w.Counter("xibalba_preview_fetches_total", help, float64(fetched), "result", "answered")
+			w.Counter("xibalba_preview_fetches_total", help, float64(failed), "result", "failed")
+			w.Counter("xibalba_preview_fetches_total", help, float64(dropped), "result", "dropped")
 		})
 	}
 }

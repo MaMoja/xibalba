@@ -158,6 +158,7 @@ data/                 built-in crawler definitions and presets (embedded)
 internal/limit/       count requests per client, say when one is over a limit
 internal/geo/         country of an address, from a database file
 internal/trap/        hidden link that catches crawlers; optional maze
+internal/preview/     link-preview tags of the website's pages, fetched in the background
 internal/admin/       optional web interface: login, overview, settings if allowed
 internal/changes/     what was changed in the web interface, in its own file
 internal/metrics/     the other parts' numbers in the Prometheus text format
@@ -179,7 +180,7 @@ examples/caddy/       tested Caddy configuration; the handbook shows it
 examples/apache/, haproxy/, traefik/   tested by test/webserver
 examples/docker/, systemd/, kubernetes/  container, service and cluster examples
 Dockerfile            the container image; built and started in CI
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, metrics, statistics, environments, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, previews, metrics, statistics, environments, challenge, development
 docs/de/              operator handbook in German
 ```
 

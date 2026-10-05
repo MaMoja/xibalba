@@ -446,3 +446,39 @@ rules:
 		}
 	}
 }
+
+func TestPreviewAndStatusSettings(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Previews.Enabled || cfg.Pages.Status.Challenge != 403 || cfg.Pages.Status.Blocked != 403 {
+		t.Errorf("defaults: %+v %+v", cfg.Previews, cfg.Pages.Status)
+	}
+	good := "previews:\n  enabled: true\n  ttl: 1h\n  query: true\n  tags:\n    og:title: \"Stadt Musterhausen\"\n    description: \"A & B\"\npages:\n  status:\n    challenge: 200\n    blocked: 404\n"
+	cfg, err = Parse("xibalba.yaml", []byte(base+good))
+	if err != nil {
+		t.Fatalf("valid settings: %v", err)
+	}
+	if cfg.PageOptions().StatusChallenge != 200 || cfg.PageOptions().StatusBlocked != 404 || len(cfg.Previews.Tags) != 2 {
+		t.Errorf("not taken over: %+v", cfg)
+	}
+	tests := []struct{ name, yaml, path, message string }{
+		{"ttl too short", "previews:\n  ttl: 1s\n", "previews.ttl", "out of range"},
+		{"no pages", "previews:\n  max_pages: 0\n", "previews.max_pages", "out of range"},
+		{"too many pages", "previews:\n  max_pages: 10000000\n", "previews.max_pages", "out of range"},
+		{"too fast", "previews:\n  fetch_per_minute: 100000\n", "previews.fetch_per_minute", "out of range"},
+		{"tag name", "previews:\n  tags:\n    refresh: \"0;url=x\"\n", "previews.tags.refresh", "cannot be used"},
+		{"tag value", "previews:\n  tags:\n    og:title: \"\"\n", "previews.tags.og:title", "cannot be used"},
+		{"challenge status", "pages:\n  status:\n    challenge: 302\n", "pages.status.challenge", "use one of: 200, 403, 429, 503"},
+		{"blocked status", "pages:\n  status:\n    blocked: 500\n", "pages.status.blocked", "use one of"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse("xibalba.yaml", []byte(base+tt.yaml))
+			if err == nil || !strings.Contains(err.Error(), tt.path) || !strings.Contains(err.Error(), tt.message) {
+				t.Errorf("error = %v", err)
+			}
+		})
+	}
+}
