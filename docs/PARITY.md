@@ -9,6 +9,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Feature | Note |
 |---|---|
 | Reverse proxy in front of one website | |
+| Subrequest authentication (nginx `auth_request`, Caddy `forward_auth`, Traefik `forwardAuth`) | Called "verdict". Caddy and Traefik need no second request; nginx example tested; every request is counted once. No list of redirect domains is needed: a visitor is only ever sent back to a path on the same website. See VERDICT.md |
 | Link previews (Open Graph) for protected pages | Fetched in the background, never while a request waits; or fixed tags. `twitter:`, `article:` and `description` as well. See PREVIEWS.md |
 | Configurable status codes for the check and the block page | From a list of sensible codes; default 403 |
 | Imprint and privacy links on the pages | |
@@ -59,7 +60,6 @@ documentation only, described in our own words), and where Xibalba stands.
 | A solved task cannot be used twice | Later: needs stored state; today a solution can be reused until it expires, by clients of the same network and browser |
 | Proof of work in WebAssembly (memory-hard functions) | Later: needs a WebAssembly program for the browser and its counterpart on the server, which means a build chain and a dependency |
 | Storage backends for shared state: Valkey/Redis, S3 | M9 |
-| Verdict mode for nginx, Caddy, Traefik (subrequest authentication) with allowed redirect domains | M9 |
 | rpm packages | Later |
 | Token that the web server in front can verify itself (HAProxy) | Later |
 | Running under a path prefix; website reached over a unix socket; TLS options towards the website | Later |

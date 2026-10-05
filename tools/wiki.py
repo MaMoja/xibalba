@@ -30,6 +30,7 @@ SECTIONS = [
         ("LIMITS.md", "Limits", "Request limits per client"),
         ("COUNTRIES.md", "Countries", "Rules by country"),
         ("TRAP.md", "Trap", "The hidden link that catches crawlers, and the maze"),
+        ("VERDICT.md", "Subrequest-Authentication", "The web server asks Xibalba instead of passing requests through"),
         ("PREVIEWS.md", "Link-Previews", "Open Graph tags for pages behind the security check"),
         ("STATISTICS.md", "Statistics", "Counters kept on disk by the hour"),
         ("METRICS.md", "Metrics", "The numbers for a monitoring system"),

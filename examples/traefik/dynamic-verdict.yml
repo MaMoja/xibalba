@@ -1,0 +1,54 @@
+# Traefik asks Xibalba about each request (forwardAuth): the routes.
+#
+# Here Traefik talks to your website itself and only asks Xibalba before
+# each request whether it may pass. Xibalba listens on 127.0.0.1:8080 and
+# has "verdict: enabled: true" in xibalba.yaml. See docs/VERDICT.md.
+# Use it in place of dynamic.yml; traefik.yml stays as it is.
+#
+# In xibalba.yaml:
+#
+#   server:
+#     trusted_proxies: ["127.0.0.1"]
+#   verdict:
+#     enabled: true
+#
+# NOT TESTED: unlike the other files here, this one has not been run by
+# test/webserver/check.py yet. It follows Traefik's documentation of the
+# forwardAuth middleware.
+
+http:
+  routers:
+    # Your website, asked about first.
+    website:
+      rule: "Host(`www.example.org`)"
+      entryPoints: ["websecure"]
+      middlewares: ["ask-xibalba"]
+      service: website
+      tls: {}
+    # Xibalba's own addresses: the visitor's answer to the security check
+    # and the check's style sheet. Not checked themselves.
+    xibalba:
+      rule: "Host(`www.example.org`) && PathPrefix(`/.xibalba/`)"
+      entryPoints: ["websecure"]
+      service: xibalba
+      tls: {}
+
+  middlewares:
+    ask-xibalba:
+      forwardAuth:
+        address: "http://127.0.0.1:8080/.xibalba/check"
+
+  services:
+    website:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3000"
+    xibalba:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+
+tls:
+  certificates:
+    - certFile: /etc/ssl/certs/www.example.org.pem
+      keyFile: /etc/ssl/private/www.example.org.key

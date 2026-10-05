@@ -4,6 +4,24 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-05
 
+- **The answer to a web server's question carries the page.** Agent's
+  choice. Caddy and Traefik hand the body of a refusing answer to the
+  visitor, so they need no redirect and no second request. Only nginx
+  throws the body away and fetches the page separately.
+- **The page fetched separately is not decided or counted again.** Agent's
+  choice. Otherwise every refused request would count twice in rules,
+  limits and statistics. The rules are evaluated a second time quietly;
+  what the limits said is handed over by nginx in a header, since asking
+  the limits again would count.
+- **Questions are answered only for a trusted proxy.** Security rule 3:
+  the question says on whose behalf it is asked.
+- **The question is answered 401 or 403 whatever `pages.status` says.**
+  Agent's choice. A web server reads 2xx as "pass"; an operator who chose
+  200 for the challenge page must not open the website by it.
+- **No setting for allowed redirect domains.** Agent's choice. After the
+  check a visitor is sent to a path on the website they are on, never to
+  another host, so there is nothing to allow.
+
 - **Link-preview tags are fetched in the background, never while a request
   waits.** Agent's choice. Rule 7 forbids a network call in the request
   path. The price: the first challenge page for an address has no tags. A

@@ -44,6 +44,7 @@ xibalba_decisions_total{source="default",action="allow"} 0
 | `xibalba_trap_hits_total` | counter | | Requests that followed the hidden link. Only while the trap is on. |
 | `xibalba_trap_ignored_total` | counter | | Requests to the trap's addresses that were no catch. |
 | `xibalba_trap_clients` | gauge | | Clients remembered as caught. May lag by up to a minute. |
+| `xibalba_verdicts_total` | counter | `outcome` | Answers to the web server's questions: `pass`, `challenge`, `deny`, `limited`, `unavailable`, and `refused` (a question not from a trusted proxy or without an address). Only while `verdict.enabled` is on. |
 | `xibalba_preview_fetches_total` | counter | `result` | Fetches of link-preview tags from the website: `answered`, `failed` (the website did not answer), `dropped` (not made because too many were waiting). Only while previews are on. |
 | `xibalba_metrics_failures_total` | counter | | How often a part failed while its numbers were collected; its numbers are then missing from that answer. |
 

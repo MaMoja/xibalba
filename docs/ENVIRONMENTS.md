@@ -67,6 +67,14 @@ visitor came over HTTPS, and lets websockets through.
 - **Traefik.** Two files: where Traefik listens, and the route. Traefik
   removes forwarding headers a client sent by itself.
 
+### Asking instead of passing through
+
+All of the above put Xibalba in the path. nginx, Caddy and Traefik can also
+keep talking to the website themselves and only ask Xibalba about each
+request (`auth_request`, `forward_auth`, `forwardAuth`). See
+[VERDICT.md](VERDICT.md) for when that is the better choice and for the
+example files.
+
 ## Containers
 
 The image is built from the [`Dockerfile`](../Dockerfile) and holds nothing

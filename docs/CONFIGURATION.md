@@ -160,6 +160,15 @@ The hidden link that catches crawlers; explained in [TRAP.md](TRAP.md).
 | `trap.maze` | `false` | `true`, `false` | Answers the link with generated pages of meaningless syllables that link to more such pages. Needs `trap.enabled`. |
 | `trap.max_clients` | `100000` | 1000 to 5000000 | How many clients are remembered at most. |
 
+### `verdict`
+
+Lets the web server in front ask Xibalba about each request instead of
+passing it through; explained in [VERDICT.md](VERDICT.md).
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `verdict.enabled` | `false` | `true`, `false` | Answers the web server's questions at `/.xibalba/check`. Needs `server.trusted_proxies`. With it, `upstream.url` may be left empty: Xibalba then only gives verdicts. |
+
 ### `previews`
 
 Link previews (Open Graph) for pages behind the security check; explained in

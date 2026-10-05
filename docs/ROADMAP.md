@@ -107,7 +107,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Earlier versions of presets and own rules (ten), with a way back; the configuration file itself is never rewritten, so there is nothing of it to version
 
 ## M9: Deployment
-- [ ] Verdict mode for nginx, Caddy, Traefik
+- [x] Verdict mode for nginx, Caddy, Traefik (`verdict.enabled`): tested with real nginx and Caddy; the Traefik example is written from its documentation and not run yet
 - [x] Dockerfile and Compose example (built and started in CI), systemd unit, Kubernetes example (not run in a cluster)
 - [ ] Published images; .deb and .rpm packages
 - [ ] Trusted proxies loaded from a CDN's published list
@@ -124,7 +124,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Link previews (Open Graph): the challenge page carries the preview tags of the page that was asked for (`previews`, off by default); fetched in the background, or fixed in the configuration. Security review by a second agent (2026-10-05); two high findings fixed before release: a visitor's host name could end up in everyone's preview, and memory use far above the documented bound
 - [x] HTTP status of the security check and the block page can be chosen (`pages.status`)
 - [x] Imprint and privacy links on the visitor pages
-- [ ] Allowed redirect domains for setups with several host names
+- [x] Allowed redirect domains: not needed. A visitor is only ever sent back to a path on the same website, in both modes
 - [ ] Security review by a second agent that has not seen the code being written
 - [ ] Load test on a Raspberry Pi and on a small VPS
 - [ ] Privacy documentation (what is stored, for how long)

@@ -2319,3 +2319,160 @@ rules:
 		t.Error("the website was reached")
 	}
 }
+
+// asWebServer asks for a verdict the way a web server in front does.
+func asWebServer(t *testing.T, inst *instance, path, method, uri, client string, extra map[string]string) (*http.Response, string) {
+	t.Helper()
+	headers := map[string]string{
+		"X-Forwarded-Uri": uri, "X-Forwarded-Method": method, "X-Forwarded-Host": "www.example.org",
+		"X-Forwarded-For": client, "Accept-Language": "en", "User-Agent": "Mozilla/5.0 (test)",
+	}
+	for k, v := range extra {
+		headers[k] = v
+	}
+	return get(t, inst.public+path, headers)
+}
+
+const verdictRules = `rules:
+  list:
+    - name: block-admin
+      match:
+        path: {prefix: "/admin"}
+      action: deny
+    - name: block-post
+      match:
+        path: {prefix: "/form"}
+        method: [POST]
+      action: deny
+    - name: challenge-wiki
+      match:
+        path: {prefix: "/wiki"}
+      action: challenge
+`
+
+func TestVerdictsWithoutAWebsite(t *testing.T) {
+	public, ops := freeAddr(t), freeAddr(t)
+	config := fmt.Sprintf("server:\n  listen: %s\n  trusted_proxies: [\"127.0.0.1\"]\nops:\n  listen: %s\nverdict:\n  enabled: true\nchallenge:\n  difficulty: 8\n", public, ops) + verdictRules
+	inst := &instance{public: "http://" + public, ops: "http://" + ops}
+	inst.cmd, inst.logs = run(t, config)
+	_ = waitFor(t, inst.ops+"/healthz").Body.Close()
+
+	resp, body := asWebServer(t, inst, "/.xibalba/check", "GET", "/page?x=1", "203.0.113.5", nil)
+	if resp.StatusCode != 204 || resp.Header.Get("X-Xibalba-Verdict") != "pass" || body != "" {
+		t.Errorf("allowed: %d %q %q", resp.StatusCode, resp.Header.Get("X-Xibalba-Verdict"), body)
+	}
+	resp, body = asWebServer(t, inst, "/.xibalba/check", "GET", "/admin/x", "203.0.113.5", nil)
+	if resp.StatusCode != 403 || resp.Header.Get("X-Xibalba-Verdict") != "deny" || !strings.Contains(body, "This request was blocked") {
+		t.Errorf("denied: %d %q", resp.StatusCode, resp.Header.Get("X-Xibalba-Verdict"))
+	}
+	if resp, _ := asWebServer(t, inst, "/.xibalba/check", "POST", "/form", "203.0.113.5", nil); resp.StatusCode != 403 {
+		t.Errorf("denied by method: %d", resp.StatusCode)
+	}
+	if resp, _ := asWebServer(t, inst, "/.xibalba/check", "GET", "/form", "203.0.113.5", nil); resp.StatusCode != 204 {
+		t.Errorf("the other method: %d", resp.StatusCode)
+	}
+
+	// The security check, start to finish, as Caddy and Traefik show it.
+	resp, page := asWebServer(t, inst, "/.xibalba/check", "GET", "/wiki/Start?a=1", "203.0.113.5", nil)
+	if resp.StatusCode != 401 || resp.Header.Get("X-Xibalba-Verdict") != "challenge" || !strings.Contains(page, "A quick security check") {
+		t.Fatalf("check due: %d\n%s", resp.StatusCode, page)
+	}
+	k := parseTask(t, page)
+	if k.ret != "/wiki/Start?a=1" {
+		t.Errorf("the visitor would be sent to %q", k.ret)
+	}
+	// ... and as nginx fetches it: the page alone, with its own status.
+	resp, page = asWebServer(t, inst, "/.xibalba/page", "GET", "/wiki/Start?a=1", "203.0.113.5", nil)
+	if resp.StatusCode != 403 || !strings.Contains(page, "A quick security check") {
+		t.Errorf("page: %d", resp.StatusCode)
+	}
+	resp, page = asWebServer(t, inst, "/.xibalba/page", "GET", "/admin/x", "203.0.113.5", nil)
+	if resp.StatusCode != 403 || !strings.Contains(page, "This request was blocked") {
+		t.Errorf("block page: %d", resp.StatusCode)
+	}
+	resp, _ = asWebServer(t, inst, "/.xibalba/page", "GET", "/page", "203.0.113.5", map[string]string{"X-Xibalba-Verdict": "limited", "X-Xibalba-Retry-After": "30"})
+	if resp.StatusCode != 429 || resp.Header.Get("Retry-After") != "30" {
+		t.Errorf("limited page: %d, Retry-After %q", resp.StatusCode, resp.Header.Get("Retry-After"))
+	}
+
+	// The answer goes to Xibalba's own address, through the web server.
+	form := k.answer("pow", k.solve())
+	req, _ := http.NewRequest("POST", inst.public+"/.xibalba/verify", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-For", "203.0.113.5")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (test)")
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	answer, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = answer.Body.Close()
+	if answer.StatusCode != 303 || answer.Header.Get("Location") != "/wiki/Start?a=1" || len(answer.Cookies()) != 1 {
+		t.Fatalf("answer: %d to %q, %d cookies", answer.StatusCode, answer.Header.Get("Location"), len(answer.Cookies()))
+	}
+	pass := answer.Cookies()[0].Name + "=" + answer.Cookies()[0].Value
+	if resp, _ := asWebServer(t, inst, "/.xibalba/check", "GET", "/wiki/Start?a=1", "203.0.113.5", map[string]string{"Cookie": pass}); resp.StatusCode != 204 {
+		t.Errorf("with the pass: %d", resp.StatusCode)
+	}
+	// The pass is bound to the visitor's network, also here.
+	if resp, _ := asWebServer(t, inst, "/.xibalba/check", "GET", "/wiki/Start?a=1", "198.51.100.9", map[string]string{"Cookie": pass}); resp.StatusCode != 401 {
+		t.Errorf("the pass from another network: %d", resp.StatusCode)
+	}
+	// Passed meanwhile: the page stage sends the visitor on.
+	resp2, err := client.Do(func() *http.Request {
+		r, _ := http.NewRequest("GET", inst.public+"/.xibalba/page", nil)
+		r.Header.Set("X-Forwarded-Uri", "/wiki/Start?a=1")
+		r.Header.Set("X-Forwarded-For", "203.0.113.5")
+		r.Header.Set("User-Agent", "Mozilla/5.0 (test)")
+		r.Header.Set("Cookie", pass)
+		return r
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.StatusCode != 303 || resp2.Header.Get("Location") != "/wiki/Start?a=1" {
+		t.Errorf("passed meanwhile: %d to %q", resp2.StatusCode, resp2.Header.Get("Location"))
+	}
+
+	// Counted once each: pages are not counted, nor are questions that
+	// were refused.
+	d := getDecisions(t, inst)
+	if d.count("rule:block-admin") != 1 || d.count("rule:challenge-wiki") != 3 || d.count("rule:block-post") != 1 {
+		t.Errorf("counts: admin %d, wiki %d, post %d", d.count("rule:block-admin"), d.count("rule:challenge-wiki"), d.count("rule:block-post"))
+	}
+	// Nothing but verdicts lives here.
+	if resp, _ := get(t, inst.public+"/page", language); resp.StatusCode != 404 {
+		t.Errorf("another address: %d", resp.StatusCode)
+	}
+	if status, report := health(t, inst); status != 200 || report.Components["upstream"].State != "" {
+		t.Errorf("health: %d %+v", status, report)
+	}
+}
+
+func TestVerdictsAreOnlyForTheWebServer(t *testing.T) {
+	site := newWebsite(t)
+	// Verdicts on, but this machine is not a trusted proxy.
+	inst := start(t, site.URL, "server:\n  listen: PUBLIC\n  trusted_proxies: [\"192.0.2.1\"]\nverdict:\n  enabled: true\n"+verdictRules)
+	for _, path := range []string{"/.xibalba/check", "/.xibalba/page"} {
+		resp, body := asWebServer(t, inst, path, "GET", "/admin", "203.0.113.5", nil)
+		if resp.StatusCode != 403 || strings.Contains(body, "This request was blocked") || resp.Header.Get("X-Xibalba-Verdict") != "" {
+			t.Errorf("%s answered a stranger: %d %q", path, resp.StatusCode, body)
+		}
+	}
+	if d := getDecisions(t, inst); d.count("rule:block-admin") != 0 {
+		t.Error("a stranger's question was decided about")
+	}
+	// Beside a website, both ways work.
+	if resp, body := get(t, inst.public+"/page", language); resp.StatusCode != 200 || !strings.Contains(body, "website says hello") {
+		t.Errorf("the website: %d", resp.StatusCode)
+	}
+
+	// Off by default: the addresses do not exist.
+	off := start(t, site.URL, "server:\n  listen: PUBLIC\n  trusted_proxies: [\"127.0.0.1\"]\n"+verdictRules)
+	for _, path := range []string{"/.xibalba/check", "/.xibalba/page"} {
+		if resp, _ := asWebServer(t, off, path, "GET", "/page", "203.0.113.5", nil); resp.StatusCode != 404 {
+			t.Errorf("%s exists although verdicts are off: %d", path, resp.StatusCode)
+		}
+	}
+}

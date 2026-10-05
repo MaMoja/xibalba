@@ -54,6 +54,8 @@ type Config struct {
 	Countries Countries `yaml:"countries"`
 	// Trap is the hidden link that catches crawlers.
 	Trap Trap `yaml:"trap"`
+	// Verdict answers a web server that asks about each request.
+	Verdict Verdict `yaml:"verdict"`
 	// Previews puts a page's link-preview tags on the challenge page.
 	Previews Previews `yaml:"previews"`
 	// Limits are the request limits per client.
@@ -423,6 +425,9 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 	cfg.Admin.check(filepath.Dir(name), map[string]string{"server.listen": cfg.Server.Listen, "ops.listen": cfg.Ops.Listen}, func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
+	cfg.checkVerdict(func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
 	cfg.Previews.check(func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
@@ -501,7 +506,9 @@ func (c Config) validate(lines map[string]int) []Problem {
 		add("server.idle_timeout", fmt.Sprintf("%s must be greater than zero", c.Server.IdleTimeout),
 			`use a duration such as "90s"`)
 	}
-	if c.Upstream.URL == "" {
+	if c.Upstream.URL == "" && c.Verdict.Enabled {
+		// Verdicts only: nothing is passed on.
+	} else if c.Upstream.URL == "" {
 		add("upstream.url", "the address of the website to protect is missing",
 			`set it to where your website is reached, for example "http://127.0.0.1:3000"`)
 	} else if _, err := parseUpstream(c.Upstream.URL); err != nil {

@@ -305,6 +305,15 @@ Bei beiden gilt: Sendet ein Besucher selbst eine erfundene Angabe
 `X-Forwarded-For`, ändert das nichts. Xibalba verwendet die Adresse, die Ihr
 Webserver gesehen hat. Auch das ist geprüft.
 
+**Die andere Bauweise: nur fragen statt durchreichen.** Sie können Ihren
+Webserver auch so lassen, wie er ist, und ihn Xibalba vor jeder Anfrage nur
+fragen lassen, ob sie durchdarf. Die Website erreicht er dann weiter selbst.
+Das ist sinnvoll, wenn Sie Ihre bestehende Einrichtung nicht umbauen wollen
+oder die Website gar nicht über HTTP angesprochen wird (PHP über FastCGI,
+Dateien direkt vom Webserver). Siehe den Abschnitt
+[„Nur fragen statt durchreichen“](#nur-fragen-statt-durchreichen) weiter
+unten.
+
 ### Schritt 5: Xibalba sagen, welchem Webserver es glauben darf
 
 Die Angabe `X-Forwarded-For` ist einfacher Text, den jeder Absender selbst
@@ -359,6 +368,60 @@ Im Probelauf wertet Xibalba jede Anfrage aus und zählt die Entscheidungen,
 lässt aber alles durch. Sehen Sie sich die Zähler eine Weile an
 ([Abschnitt 9](#9-betrieb-prüfen-beobachten-ändern)). Stimmen die Zahlen,
 setzen Sie `dry_run: false` und starten Xibalba neu.
+
+### Nur fragen statt durchreichen
+
+Üblich ist: Der Webserver reicht jede Anfrage an Xibalba, und Xibalba reicht
+die erlaubten an die Website. Es geht auch anders herum: Der Webserver
+spricht weiter selbst mit der Website und fragt Xibalba vor jeder Anfrage
+nur nach dem Urteil. Bei nginx heißt das `auth_request`, bei Caddy
+`forward_auth`, bei Traefik `forwardAuth`.
+
+In `xibalba.yaml`:
+
+```yaml
+server:
+  listen: "127.0.0.1:8080"
+  trusted_proxies: ["127.0.0.1"]
+verdict:
+  enabled: true
+```
+
+`upstream.url` darf dann fehlen. Xibalba beantwortet solche Fragen nur einem
+Webserver, der unter `server.trusted_proxies` steht; ohne diesen Eintrag
+startet es nicht und sagt warum.
+
+Die Vorlagen für den Webserver:
+
+| Webserver | Vorlage | Mit dem echten Webserver getestet |
+|---|---|---|
+| nginx | [`examples/nginx/xibalba-verdict.conf`](../../examples/nginx/xibalba-verdict.conf) | ja (nginx 1.24) |
+| Caddy | [`examples/caddy/Caddyfile.verdict`](../../examples/caddy/Caddyfile.verdict) | ja (Caddy 2.6) |
+| Traefik | [`examples/traefik/dynamic-verdict.yml`](../../examples/traefik/dynamic-verdict.yml) | nein, nach der Dokumentation von Traefik geschrieben |
+
+Was in dieser Bauweise anders ist:
+
+| | Durchreichen | Nur fragen |
+|---|---|---|
+| Regeln, Crawler-Prüfung, Länder, Falle, Begrenzung nach Anfragen, Sicherheitsprüfung | ja | ja |
+| Begrenzung nach verschiedenen Seiten (`count: pages`) | ja | nein, Xibalba sieht die Antworten der Website nicht |
+| Vorschau für geteilte Links | ja | nur mit `upstream.url` oder festen Angaben |
+| Die Website bekommt das Nachweis-Cookie zu sehen | nein | ja |
+| Seite „Website nicht erreichbar“ | von Xibalba | von Ihrem Webserver |
+| Statuscode der Prüfseite und der Blockseite | `pages.status` | nginx: `pages.status`; Caddy und Traefik: 401 für die Prüfung, 403 für die Sperre |
+
+Zwei Dinge sind wichtig:
+
+- **Was nicht fragt, ist nicht geschützt.** Jeder Bereich Ihres Webservers,
+  den Sie von der Frage ausnehmen, läuft an Xibalba vorbei. Für Bilder und
+  Stildateien ist das praktisch; es soll aber eine bewusste Entscheidung
+  sein.
+- **Jede Anfrage wird einmal gezählt,** auch wenn nginx für eine abgelehnte
+  Anfrage ein zweites Mal bei Xibalba anklopft, um die Seite zu holen.
+
+Wie viele Fragen wie beantwortet wurden, zeigt `xibalba_verdicts_total`
+unter `/metrics`. Die Einzelheiten stehen in [VERDICT.md](../VERDICT.md)
+(englisch).
 
 ### Auf Wunsch: die Weboberfläche
 
@@ -489,6 +552,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | festlegen, was bei einem internen Fehler passiert | `rules.on_error` | [Referenz](../CONFIGURATION.md#rules) |
 | Regelgruppen oder einzelne Adressen im Browser schalten | `admin.allow_changes` | Abschnitt 4, „Einstellungen im Browser ändern“ |
 | Impressum und Datenschutzerklärung auf den Seiten verlinken | `pages.imprint_url`, `pages.privacy_url` | Abschnitt 8 |
+| den Webserver nur fragen lassen, statt alles durchzureichen | `verdict.enabled` | Abschnitt 4, „Nur fragen statt durchreichen“ |
 | dass geteilte Links eine Vorschau mit Titel und Bild zeigen | `previews.enabled` | Abschnitt 8, „Vorschau für geteilte Links“ |
 | den Statuscode der Sicherheitsprüfung oder der Blockseite ändern | `pages.status.challenge`, `pages.status.blocked` | Abschnitt 8, „Statuscodes“ |
 | die Zahlen im Browser sehen | `admin.enabled` und ein Passwort | Abschnitt 4, „Auf Wunsch: die Weboberfläche“ |
@@ -1811,9 +1875,8 @@ Damit Sie wissen, woran Sie sind:
 - **Kein Neuladen im Betrieb.** Änderungen brauchen einen Neustart.
 - **Keine rpm-Pakete.** Es gibt Archive, Debian-Pakete und ein
   Container-Abbild.
-- **Kein Betrieb als reine Prüfstelle** für `auth_request` (nginx),
-  `forward_auth` (Caddy) oder `forwardAuth` (Traefik); Xibalba steht immer
-  selbst vor der Website. Geplant.
+- **Die Traefik-Vorlage für „nur fragen“** ist noch nicht mit einem
+  echten Traefik erprobt.
 - **Nicht erprobt** auf Windows, in einem Kubernetes-Cluster und hinter
   einem CDN; beschrieben in ENVIRONMENTS.md.
 - **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).

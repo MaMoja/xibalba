@@ -17,6 +17,10 @@ All notable changes are listed here. The format follows
 - A check of its own for a rule or threshold: `challenge:` with method,
   difficulty, wait, checks. A pass counts wherever the same or less is asked.
 
+- The web server can ask Xibalba about each request instead of passing it
+  through (`verdict.enabled`): nginx `auth_request`, Caddy `forward_auth`,
+  Traefik `forwardAuth`. `upstream.url` may then be left out. Example files
+  for all three; nginx and Caddy are tested. See `docs/VERDICT.md`.
 - Link previews (`previews`, off by default): the challenge page carries the
   Open Graph tags of the page that was asked for, so a shared link shows its
   title, description and picture although the page is behind the check. The

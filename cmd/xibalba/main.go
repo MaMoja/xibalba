@@ -44,6 +44,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/stats"
 	"github.com/MaMoja/xibalba/internal/token"
 	"github.com/MaMoja/xibalba/internal/trap"
+	"github.com/MaMoja/xibalba/internal/verdict"
 )
 
 // Exit codes.
@@ -119,6 +120,18 @@ func withTrap(snare, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, trap.Prefix) {
 			snare.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withVerdicts sends the web server's checks to verdicts and the rest of
+// Xibalba's own address space to next.
+func withVerdicts(verdicts, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == verdict.CheckPath || r.URL.Path == verdict.PagePath {
+			verdicts.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -317,21 +330,28 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// Public side. A request passes the stages in this order:
 	//   client identity -> rules -> (challenge: milestone M3) -> website
-	upstream := proxy.New(proxy.Options{
-		Unavailable:           page.Unavailable,
-		Upstream:              cfg.Upstream.Target(),
-		PreserveHost:          cfg.Upstream.PreserveHost,
-		DialTimeout:           cfg.Upstream.DialTimeout,
-		ResponseHeaderTimeout: cfg.Upstream.ResponseHeaderTimeout,
-		Log:                   log,
-	})
-	defer upstream.Close()
-	registry.Register("upstream", upstream.Health)
+	// Without a website to pass requests on to, Xibalba only gives verdicts
+	// (see internal/verdict) and has nothing at any other address.
+	site := http.NotFoundHandler()
+	upstreamName := "none (verdicts only)"
+	if target := cfg.Upstream.Target(); target != nil {
+		upstream := proxy.New(proxy.Options{
+			Unavailable:           page.Unavailable,
+			Upstream:              target,
+			PreserveHost:          cfg.Upstream.PreserveHost,
+			DialTimeout:           cfg.Upstream.DialTimeout,
+			ResponseHeaderTimeout: cfg.Upstream.ResponseHeaderTimeout,
+			Log:                   log,
+		})
+		defer upstream.Close()
+		registry.Register("upstream", upstream.Health)
+		site, upstreamName = upstream, target.Redacted()
+	}
 
 	// Link previews, if switched on: the tags of the website's pages, fetched
 	// in the background and put on the challenge page.
 	var previews *preview.Cache
-	if cfg.Previews.Enabled {
+	if cfg.Previews.Enabled && (cfg.Upstream.Target() != nil || len(cfg.Previews.Tags) > 0) {
 		previews = preview.New(preview.Options{
 			Upstream:     cfg.Upstream.Target(),
 			PreserveHost: cfg.Upstream.PreserveHost,
@@ -471,17 +491,24 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		DryRun:      cfg.Rules.DryRun,
 		FailOpen:    cfg.Rules.OnError == "allow",
 		Challenge:   checker{check: check, settings: cfg.Challenge},
-		Next:        check.StripPass(upstream), // the website never sees the pass cookie
+		Next:        check.StripPass(site), // the website never sees the pass cookie
 		Blocked:     page.Blocked,
 		Unavailable: page.Unavailable,
 		Log:         log,
 	})
 	registry.Register("rules", decisions.Health)
+
+	// Verdicts for a web server that asks instead of passing requests on.
+	var verdicts *verdict.Handler
+	if cfg.Verdict.Enabled {
+		verdicts = verdict.New(decisions)
+		own = withVerdicts(verdicts, own)
+	}
 	opsMux.Handle("GET /decisions", decisions.Handler())
 
 	// The same numbers for a monitoring system.
 	numbers := metrics.New()
-	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare, previews: previews, check: check}
+	sources := parts{started: time.Now(), health: registry, decisions: decisions, crawlers: known, limiter: limiter, snare: snare, previews: previews, check: check, verdicts: verdicts}
 	collect(numbers, sources)
 	opsMux.Handle("GET /metrics", numbers.Handler())
 
@@ -624,7 +651,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		"version", buildinfo.Get().Version,
 		"public", public.Addr(),
 		"ops", ops.Addr(),
-		"upstream", cfg.Upstream.Target().Redacted(),
+		"upstream", upstreamName,
 		"trusted_proxies", len(cfg.Server.TrustedProxies),
 		"rules", engine.Len(),
 		"dry_run", cfg.Rules.DryRun,

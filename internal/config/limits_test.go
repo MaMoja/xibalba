@@ -484,3 +484,37 @@ func TestPreviewAndStatusSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestVerdictSettings(t *testing.T) {
+	noUpstream := "server:\n  trusted_proxies: [\"127.0.0.1\"]\nverdict:\n  enabled: true\n"
+	cfg, err := Parse("xibalba.yaml", []byte(noUpstream))
+	if err != nil {
+		t.Fatalf("verdicts without a website: %v", err)
+	}
+	if !cfg.Verdict.Enabled || cfg.Upstream.Target() != nil {
+		t.Errorf("got %+v", cfg.Verdict)
+	}
+	if cfg, err := Parse("xibalba.yaml", []byte(base)); err != nil || cfg.Verdict.Enabled {
+		t.Errorf("on by default, or: %v", err)
+	}
+	if _, err := Parse("xibalba.yaml", []byte(base+noUpstream)); err != nil {
+		t.Errorf("verdicts beside a website: %v", err)
+	}
+	tests := []struct{ name, yaml, path, message string }{
+		{"no website and no verdicts", "log:\n  level: info\n", "upstream.url", "missing"},
+		{"nobody to believe", "verdict:\n  enabled: true\n", "verdict.enabled", "server.trusted_proxies is empty"},
+		{"previews without a website", noUpstream + "previews:\n  enabled: true\n", "previews.enabled", "upstream.url is empty"},
+		{"pages without a website", noUpstream + "limits:\n  enabled: true\n  windows:\n    - {requests: 50, per: 1m, action: challenge, count: pages}\n", "limits.windows[0].count", "upstream.url is empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse("xibalba.yaml", []byte(tt.yaml))
+			if err == nil || !strings.Contains(err.Error(), tt.path) || !strings.Contains(err.Error(), tt.message) {
+				t.Errorf("error = %v", err)
+			}
+		})
+	}
+	if _, err := Parse("xibalba.yaml", []byte(noUpstream+"previews:\n  enabled: true\n  tags:\n    og:title: \"T\"\n")); err != nil {
+		t.Errorf("fixed tags without a website: %v", err)
+	}
+}

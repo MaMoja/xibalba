@@ -31,6 +31,7 @@ Exit code 0 means every check passed.
 """
 
 import argparse
+import html
 import hashlib
 import http.client
 import http.server
@@ -46,6 +47,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RESULTS = []
@@ -208,19 +210,77 @@ def run_checks(name, port):
         check(f"{name}: an upgraded connection (websocket) passes both ways", False, e)
 
 
-def nginx_config(tmp, port, cert, key):
-    with open(os.path.join(ROOT, "examples", "nginx", "xibalba.conf")) as f:
+def decisions(ops_port):
+    with urllib.request.urlopen(f"http://127.0.0.1:{ops_port}/decisions", timeout=5) as resp:
+        return {s["source"]: s["count"] for s in json.load(resp)["sources"]}
+
+
+def run_verdict_checks(name, port, ops_port, shown):
+    """The web server asks Xibalba about each request and talks to the
+    website itself. shown: the status a visitor sees with the security check
+    (the web servers differ in whose status they pass on)."""
+    before = decisions(ops_port)
+
+    status, _, body = request(port, "GET", "/page?x=1")
+    seen = json.loads(body) if status == 200 else {}
+    check(f"{name}: an allowed request reaches the website", status == 200 and seen.get("path") == "/page?x=1", (status, body[:200]))
+
+    status, headers, body = request(port, "GET", "/admin")
+    csp = header(headers, "Content-Security-Policy")
+    check(f"{name}: a denied request gets the block page with status 403 and its policy",
+          status == 403 and "This request was blocked" in body and csp and csp[0].startswith("default-src 'none'"), (status, csp, body[:200]))
+
+    status, _, _ = request(port, "GET", "/office", {"X-Forwarded-For": SPOOFED})
+    check(f"{name}: an address rule cannot be passed with a made-up address", status == 403, status)
+
+    status, _, body = request(port, "POST", "/form", {"Content-Type": "application/x-www-form-urlencoded"}, "a=1")
+    check(f"{name}: a rule on the request method sees the visitor's method", status == 403 and "This request was blocked" in body, (status, body[:200]))
+    status, _, _ = request(port, "GET", "/form")
+    check(f"{name}: ... and lets the other methods pass", status == 200, status)
+
+    for path in ("/.xibalba/check", "/.xibalba/page"):
+        status, _, body = request(port, "GET", path, {"X-Forwarded-Uri": "/page", "X-Forwarded-Method": "GET"})
+        check(f"{name}: a visitor cannot ask {path} himself", status == 404, (status, body[:100]))
+
+    status, headers, page = request(port, "GET", "/wiki/start?a=1")
+    token = re.search(r'name="token" value="([^"]+)"', page)
+    nonce = re.search(r'data-nonce="([0-9a-f]+)"', page)
+    difficulty = re.search(r'data-difficulty="(\d+)"', page)
+    ret = re.search(r'name="return" value="([^"]*)"', page)
+    check(f"{name}: a challenged path shows the security check (status {shown})",
+          status == shown and bool(token and nonce and difficulty) and bool(ret) and html.unescape(ret.group(1)) == "/wiki/start?a=1", (status, page[:200]))
+    if token and nonce and difficulty:
+        form = urllib.parse.urlencode({"token": token.group(1), "return": "/wiki/start?a=1", "method": "pow",
+                                       "solution": solve(nonce.group(1), int(difficulty.group(1)))})
+        status, headers, _ = request(port, "POST", "/.xibalba/verify", {"Content-Type": "application/x-www-form-urlencoded"}, form)
+        cookies = header(headers, "Set-Cookie")
+        check(f"{name}: a correct answer is accepted", status == 303 and header(headers, "Location") == ["/wiki/start?a=1"], (status, header(headers, "Location")))
+        check(f"{name}: the pass cookie is marked Secure", bool(cookies) and "; Secure" in cookies[0], cookies)
+        if cookies:
+            status, _, body = request(port, "GET", "/wiki/start?a=1", {"Cookie": cookies[0].split(";")[0]})
+            check(f"{name}: with the pass the website answers", status == 200, status)
+
+    after = decisions(ops_port)
+    counted = {k: after.get(k, 0) - before.get(k, 0) for k in after}
+    check(f"{name}: every request is counted once, although refused ones are asked about twice",
+          counted.get("rule:block-admin") == 1 and counted.get("rule:challenge-wiki") == 2 and counted.get("rule:block-post") == 1, counted)
+
+
+def nginx_config(tmp, port, cert, key, example="xibalba.conf", xibalba=None, website=None):
+    with open(os.path.join(ROOT, "examples", "nginx", example)) as f:
         site = f.read()
+    if website:
+        site = site.replace("http://127.0.0.1:3000", f"http://127.0.0.1:{website}")
     # The three things an operator changes too: port, and certificate paths.
     site = site.replace("listen 443 ssl;", f"listen 127.0.0.1:{port} ssl;")
     site = site.replace("/etc/ssl/certs/www.example.org.pem", cert).replace("/etc/ssl/private/www.example.org.key", key)
-    site = site.replace("http://127.0.0.1:8080", f"http://127.0.0.1:{XIBALBA_PORT}")
-    path = os.path.join(tmp, "nginx.conf")
+    site = site.replace("http://127.0.0.1:8080", f"http://127.0.0.1:{xibalba or XIBALBA_PORT}")
+    path = os.path.join(tmp, "nginx-" + example)
     with open(path, "w") as f:
         f.write(f"""daemon off;
 user root;
 worker_processes 1;
-pid {tmp}/nginx.pid;
+pid {tmp}/nginx-{example}.pid;
 error_log {tmp}/nginx-error.log;
 events {{}}
 http {{
@@ -236,20 +296,22 @@ http {{
     return path
 
 
-def caddy_config(tmp, port):
-    with open(os.path.join(ROOT, "examples", "caddy", "Caddyfile")) as f:
+def caddy_config(tmp, port, example="Caddyfile", xibalba=None, website=None):
+    with open(os.path.join(ROOT, "examples", "caddy", example)) as f:
         site = f.read()
+    if website:
+        site = site.replace("127.0.0.1:3000", f"127.0.0.1:{website}")
     # A public certificate cannot be obtained here, so the test lets Caddy
     # sign one with its own local authority, and uses a free port.
     site = site.replace("www.example.org {", f"www.example.org:{port} {{\n\ttls internal")
-    site = site.replace("127.0.0.1:8080", f"127.0.0.1:{XIBALBA_PORT}")
-    path = os.path.join(tmp, "Caddyfile")
+    site = site.replace("127.0.0.1:8080", f"127.0.0.1:{xibalba or XIBALBA_PORT}")
+    path = os.path.join(tmp, example)
     with open(path, "w") as f:
         f.write(f"""{{
 	admin off
 	auto_https disable_redirects
 	skip_install_trust
-	storage file_system {tmp}/caddy-storage
+	storage file_system {tmp}/caddy-storage-{example}
 }}
 {site}""")
     return path
@@ -434,6 +496,81 @@ rules:
                     run_checks(name, port)
                 else:
                     check(f"{name}: starts", False, open(os.path.join(tmp, name + ".log")).read()[-400:])
+
+            # The other way round: the web server talks to the website
+            # itself and only asks Xibalba (docs/VERDICT.md). A second
+            # Xibalba without a website of its own answers.
+            v_port, v_ops = free_port(), free_port()
+            v_config = os.path.join(tmp, "xibalba-verdict.yaml")
+            with open(v_config, "w") as f:
+                f.write(f"""server:
+  listen: "127.0.0.1:{v_port}"
+  trusted_proxies: ["127.0.0.1"]
+verdict:
+  enabled: true
+ops:
+  listen: "127.0.0.1:{v_ops}"
+challenge:
+  difficulty: 10
+rules:
+  list:
+    - name: allow-office
+      match:
+        path: {{prefix: "/office"}}
+        ip: ["{SPOOFED}"]
+      action: allow
+    - name: block-office
+      match:
+        path: {{prefix: "/office"}}
+      action: deny
+    - name: block-admin
+      match:
+        path: {{prefix: "/admin"}}
+      action: deny
+    - name: block-post
+      match:
+        path: {{prefix: "/form"}}
+        method: [POST]
+      action: deny
+    - name: challenge-wiki
+      match:
+        path: {{prefix: "/wiki"}}
+      action: challenge
+""")
+            procs.append(subprocess.Popen([args.binary, "-config", v_config], stderr=subprocess.DEVNULL))
+            if not wait_port(v_ops):
+                raise SystemExit("xibalba (verdicts) did not start")
+
+            if shutil.which("nginx") and shutil.which("openssl"):
+                port = free_port()
+                conf = nginx_config(tmp, port, cert, key, "xibalba-verdict.conf", v_port, site_port)
+                test = subprocess.run(["nginx", "-t", "-c", conf], capture_output=True, text=True)
+                check("nginx, asking: the example configuration is accepted by nginx -t", test.returncode == 0, test.stderr.strip())
+                if test.returncode == 0:
+                    procs.append(subprocess.Popen(["nginx", "-c", conf], stderr=subprocess.DEVNULL))
+                    if wait_port(port):
+                        run_verdict_checks("nginx, asking", port, v_ops, 403)
+                    else:
+                        check("nginx, asking: starts", False)
+            else:
+                print("SKIP  nginx, asking: not installed (or openssl missing)")
+
+            if shutil.which("caddy"):
+                port = free_port()
+                conf = caddy_config(tmp, port, "Caddyfile.verdict", v_port, site_port)
+                env = dict(os.environ, XDG_DATA_HOME=os.path.join(tmp, "caddy-data2"), XDG_CONFIG_HOME=os.path.join(tmp, "caddy-config2"), HOME=tmp)
+                test = subprocess.run(["caddy", "validate", "--config", conf, "--adapter", "caddyfile"], capture_output=True, text=True, env=env)
+                check("caddy, asking: the example configuration is accepted by caddy validate", test.returncode == 0, (test.stdout + test.stderr).strip()[-400:])
+                if test.returncode == 0:
+                    procs.append(subprocess.Popen(["caddy", "run", "--config", conf, "--adapter", "caddyfile"],
+                                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env))
+                    if wait_port(port):
+                        time.sleep(1.0)
+                        run_verdict_checks("caddy, asking", port, v_ops, 401)
+                    else:
+                        check("caddy, asking: starts", False)
+            else:
+                print("SKIP  caddy, asking: not installed")
         finally:
             for p in reversed(procs):
                 p.terminate()

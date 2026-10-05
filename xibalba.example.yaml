@@ -137,6 +137,15 @@ trap:
   # How many clients are remembered at most.
   max_clients: 100000
 
+# Asking instead of passing through. Normally your web server hands every
+# request to Xibalba. With this on, it can instead keep talking to the
+# website itself and only ask Xibalba about each request (nginx
+# auth_request, Caddy forward_auth, Traefik forwardAuth). Needs
+# server.trusted_proxies; upstream.url may then be left out. Off by default.
+# See docs/VERDICT.md.
+verdict:
+  enabled: false
+
 # Link previews. A service that shows a preview of a shared link (title,
 # description, picture) gets the security check instead of the page. With
 # this on, the challenge page carries the preview tags (Open Graph) of the

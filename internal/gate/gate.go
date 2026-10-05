@@ -168,16 +168,30 @@ func New(opts Options) *Gate {
 	return g
 }
 
+// What became of a request, as Serve and Page report it.
+const (
+	OutcomePass        = "pass"        // handed to the next handler
+	OutcomeChallenge   = "challenge"   // answered with the security check
+	OutcomeDeny        = "deny"        // answered with the block page
+	OutcomeLimited     = "limited"     // answered with "too many requests"
+	OutcomeUnavailable = "unavailable" // refused because evaluating failed
+)
+
 // ServeHTTP decides what happens to the request and carries it out.
-func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	decision, client, set, ok := g.decide(r)
+func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) { g.Serve(w, r, g.opts.Next) }
+
+// Serve decides what happens to the request and carries it out: it writes
+// a page, or hands the request to next. It returns which (see the Outcome
+// constants).
+func (g *Gate) Serve(w http.ResponseWriter, r *http.Request, next http.Handler) string {
+	decision, client, set, ok := g.decide(r, g.opts.Identify)
 	if !ok {
 		if g.opts.FailOpen {
-			g.opts.Next.ServeHTTP(w, r)
-		} else {
-			g.opts.Unavailable(w, r, http.StatusServiceUnavailable)
+			next.ServeHTTP(w, r)
+			return OutcomePass
 		}
-		return
+		g.opts.Unavailable(w, r, http.StatusServiceUnavailable)
+		return OutcomeUnavailable
 	}
 
 	set.counts[decision.Source].Add(1)
@@ -222,12 +236,12 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if g.opts.DryRun {
-		g.opts.Next.ServeHTTP(w, r)
-		return
+		next.ServeHTTP(w, r)
+		return OutcomePass
 	}
 	if limited {
 		g.opts.Limited(w, r, retryAfter)
-		return
+		return OutcomeLimited
 	}
 	// Which security check: the one the deciding rule asks for. A check
 	// that a request limit brought about is the default one.
@@ -238,20 +252,63 @@ func (g *Gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case rules.Deny:
 		g.opts.Blocked(w, r, set.sources[decision.Source].Reference)
+		return OutcomeDeny
 	case rules.Challenge:
 		switch {
 		case g.opts.Challenge == nil:
-			g.opts.Next.ServeHTTP(w, r)
 		case g.opts.Challenge.Passed(r, want):
 			g.challengesPassed.Add(1)
-			g.opts.Next.ServeHTTP(w, r)
 		default:
 			g.challengesServed.Add(1)
 			g.opts.Challenge.Serve(w, r, want)
+			return OutcomeChallenge
 		}
-	default:
-		g.opts.Next.ServeHTTP(w, r)
 	}
+	next.ServeHTTP(w, r)
+	return OutcomePass
+}
+
+// Page writes the page for a request that Serve has already decided not to
+// let through, without deciding or counting it a second time. It is for
+// set-ups in which the answer of Serve cannot be shown to the visitor and
+// the page is asked for separately (see internal/verdict).
+//
+// The rules are evaluated again, quietly: nothing is counted, no limit is
+// touched, no lookup is started. What the limits said the first time cannot
+// be learned again without counting, so the caller passes it on: limited
+// and retryAfter. If the request would be let through by now (the visitor
+// passed the check meanwhile), it goes to next.
+func (g *Gate) Page(w http.ResponseWriter, r *http.Request, limited bool, retryAfter time.Duration, next http.Handler) string {
+	identify := g.opts.Peek
+	if identify == nil {
+		identify = g.opts.Identify
+	}
+	decision, _, set, ok := g.decide(r, identify)
+	switch {
+	case !ok && g.opts.FailOpen, g.opts.DryRun:
+		next.ServeHTTP(w, r)
+		return OutcomePass
+	case !ok:
+		g.opts.Unavailable(w, r, http.StatusServiceUnavailable)
+		return OutcomeUnavailable
+	case decision.Action == rules.Deny:
+		g.opts.Blocked(w, r, set.sources[decision.Source].Reference)
+		return OutcomeDeny
+	case limited:
+		g.opts.Limited(w, r, retryAfter)
+		return OutcomeLimited
+	}
+	var want *rules.ChallengeSpec
+	if decision.Action == rules.Challenge {
+		want = set.sources[decision.Source].Challenge
+	}
+	// An allowed request gets here only if a limit asked for the check.
+	if g.opts.Challenge == nil || g.opts.Challenge.Passed(r, want) {
+		next.ServeHTTP(w, r)
+		return OutcomePass
+	}
+	g.opts.Challenge.Serve(w, r, want)
+	return OutcomeChallenge
 }
 
 // pageWatch looks at the answer the website gives and reports a page: a
@@ -293,7 +350,7 @@ func isHTML(contentType string) bool {
 // decide evaluates the request. The engine is built so that it cannot fail,
 // but this stage stands in front of someone's website: if it fails anyway,
 // the failure is contained here and the configured answer applies.
-func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Addr, set *ruleSet, ok bool) {
+func (g *Gate) decide(r *http.Request, identify func(string, netip.Addr) rules.Crawler) (decision rules.Decision, client netip.Addr, set *ruleSet, ok bool) {
 	defer func() {
 		if p := recover(); p != nil {
 			g.recordFailure(fmt.Sprint(p))
@@ -302,7 +359,7 @@ func (g *Gate) decide(r *http.Request) (decision rules.Decision, client netip.Ad
 	}()
 
 	info, _ := clientip.FromContext(r.Context())
-	req := g.request(r, info.Client, g.opts.Identify)
+	req := g.request(r, info.Client, identify)
 	set = g.set.Load()
 	return set.engine.Evaluate(&req), req.Client, set, true
 }

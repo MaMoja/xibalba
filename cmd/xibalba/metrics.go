@@ -12,6 +12,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/metrics"
 	"github.com/MaMoja/xibalba/internal/preview"
 	"github.com/MaMoja/xibalba/internal/trap"
+	"github.com/MaMoja/xibalba/internal/verdict"
 )
 
 // parts are the sources of the numbers served at /metrics. limiter and
@@ -25,6 +26,7 @@ type parts struct {
 	snare     *trap.Trap
 	check     *challenge.Challenge
 	previews  *preview.Cache
+	verdicts  *verdict.Handler
 }
 
 // collect hands every part's numbers to the metrics registry. The numbers
@@ -105,6 +107,18 @@ func collect(m *metrics.Registry, p parts) {
 			w.Counter("xibalba_trap_hits_total", "Requests that followed the hidden link.", float64(r.Hits))
 			w.Counter("xibalba_trap_ignored_total", "Requests to the trap's addresses that were no catch.", float64(r.Ignored))
 			w.Gauge("xibalba_trap_clients", "Clients remembered as caught right now.", float64(r.Clients))
+		})
+	}
+	if p.verdicts != nil {
+		m.Add(func(w *metrics.Writer) {
+			c := p.verdicts.Counts()
+			const help = "Answers to the web server's checks, by outcome. refused: a question not from a trusted proxy or without a usable address."
+			for _, o := range []struct {
+				name string
+				n    uint64
+			}{{"pass", c.Pass}, {"challenge", c.Challenge}, {"deny", c.Deny}, {"limited", c.Limited}, {"unavailable", c.Unavailable}, {"refused", c.Refused}} {
+				w.Counter("xibalba_verdicts_total", help, float64(o.n), "outcome", o.name)
+			}
 		})
 	}
 	if p.previews != nil {

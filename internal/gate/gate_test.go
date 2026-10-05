@@ -764,3 +764,105 @@ func TestSwap(t *testing.T) {
 		t.Errorf("a rule that is gone is still listed: %v", counts)
 	}
 }
+
+func TestServeReportsTheOutcomeAndUsesTheGivenNext(t *testing.T) {
+	over, deny := false, false
+	var counted []string
+	h := limitHarness(t, &over, &deny, &counted, nil)
+	passed := 0
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { passed++ })
+	ask := func(target string) string {
+		req := httptest.NewRequest("GET", target, nil)
+		req = req.WithContext(clientip.NewContext(req.Context(), clientip.Info{Client: netip.MustParseAddr("203.0.113.5")}))
+		return h.gate.Serve(httptest.NewRecorder(), req, next)
+	}
+	if got := ask("/"); got != OutcomePass || passed != 1 || h.reached != 0 {
+		t.Errorf("allowed: %s, next called %d times, website reached %d times", got, passed, h.reached)
+	}
+	if got := ask("/admin"); got != OutcomeDeny {
+		t.Errorf("denied: %s", got)
+	}
+	over = true
+	if got := ask("/"); got != OutcomeChallenge {
+		t.Errorf("over a limit: %s", got)
+	}
+	deny = true
+	if got := ask("/"); got != OutcomeLimited {
+		t.Errorf("refused by a limit: %s", got)
+	}
+	if passed != 1 {
+		t.Errorf("next called %d times", passed)
+	}
+}
+
+func TestPageWritesThePageWithoutCountingAgain(t *testing.T) {
+	over, deny := true, true // would refuse, if it were asked
+	var counted, identified []string
+	var origins int
+	ch := &fakeChallenger{}
+	h := limitHarness(t, &over, &deny, &counted, func(o *Options) {
+		o.Challenge = ch
+		o.Origin = func(netip.Addr, string) { origins++ }
+		o.Identify = func(string, netip.Addr) rules.Crawler {
+			identified = append(identified, "identify")
+			return rules.Crawler{}
+		}
+		o.Peek = func(string, netip.Addr) rules.Crawler {
+			identified = append(identified, "peek")
+			return rules.Crawler{}
+		}
+	})
+	passed := 0
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { passed++ })
+	page := func(target string, limited bool, headers map[string]string) (string, *httptest.ResponseRecorder) {
+		req := httptest.NewRequest("GET", target, nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		req = req.WithContext(clientip.NewContext(req.Context(), clientip.Info{Client: netip.MustParseAddr("203.0.113.5")}))
+		rec := httptest.NewRecorder()
+		return h.gate.Page(rec, req, limited, 30*time.Second, next), rec
+	}
+
+	if got, rec := page("/admin/x", false, nil); got != OutcomeDeny || !strings.HasPrefix(rec.Body.String(), "blocked ") {
+		t.Errorf("denied: %s %q", got, rec.Body)
+	}
+	if got, rec := page("/admin/x", true, nil); got != OutcomeDeny {
+		t.Errorf("a deny stays a deny whatever the limit said: %s %q", got, rec.Body)
+	}
+	if got, rec := page("/", true, nil); got != OutcomeLimited || rec.Body.String() != "limited 30s" {
+		t.Errorf("limited: %s %q", got, rec.Body)
+	}
+	if got, rec := page("/", false, nil); got != OutcomeChallenge || rec.Body.String() != "challenge page" {
+		t.Errorf("check because of a limit: %s %q", got, rec.Body)
+	}
+	if got, _ := page("/", false, map[string]string{"X-Pass": "valid"}); got != OutcomePass || passed != 1 {
+		t.Errorf("passed meanwhile: %s, next called %d times", got, passed)
+	}
+
+	if len(counted) != 0 || origins != 0 || h.count("block-admin") != 0 || h.gate.Snapshot().Challenge.Served != 0 || h.gate.Snapshot().Challenge.Passed != 0 {
+		t.Errorf("the page was counted: limits %v, origins %d, rule %d, %+v", counted, origins, h.count("block-admin"), h.gate.Snapshot().Challenge)
+	}
+	for _, how := range identified {
+		if how != "peek" {
+			t.Fatal("the page started a crawler lookup")
+		}
+	}
+	if h.reached != 0 {
+		t.Error("the website was reached")
+	}
+}
+
+func TestPageInDryRunAndOnFailure(t *testing.T) {
+	passed := 0
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { passed++ })
+	h := newHarness(t, func(o *Options) { o.DryRun = true })
+	if got := h.gate.Page(httptest.NewRecorder(), httptest.NewRequest("GET", "/admin", nil), false, 0, next); got != OutcomePass || passed != 1 {
+		t.Errorf("dry run: %s", got)
+	}
+	h = newHarness(t, func(o *Options) { o.Engine = broken{sources: []rules.Source{{ID: "default"}}}; o.FailOpen = false })
+	rec := httptest.NewRecorder()
+	if got := h.gate.Page(rec, httptest.NewRequest("GET", "/", nil), false, 0, next); got != OutcomeUnavailable || rec.Code != 503 {
+		t.Errorf("failure: %s %d", got, rec.Code)
+	}
+}

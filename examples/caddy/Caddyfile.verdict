@@ -1,0 +1,40 @@
+# Caddy asks Xibalba about each request (forward_auth).
+#
+# Here Caddy talks to your website itself and only asks Xibalba before each
+# request whether it may pass. Xibalba listens on 127.0.0.1:8080 and has
+# "verdict: enabled: true" in xibalba.yaml. Use this if you want to keep
+# your Caddyfile as it is; otherwise Caddyfile (everything passes through
+# Xibalba) is simpler and does more. What differs is listed in
+# docs/VERDICT.md.
+#
+# In xibalba.yaml:
+#
+#   server:
+#     trusted_proxies: ["127.0.0.1"]
+#   verdict:
+#     enabled: true
+#
+# Change the site name and the address of your website (127.0.0.1:3000).
+#
+# Tested with Caddy 2.6 by test/webserver/check.py.
+
+www.example.org {
+	# Xibalba's own addresses: the visitor's answer to the security check
+	# and the check's style sheet. Not checked themselves. The question
+	# below is for Caddy alone to ask, so visitors get "not found" there.
+	handle /.xibalba/* {
+		@question path /.xibalba/check /.xibalba/page
+		respond @question 404
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Everything else: ask Xibalba first. If it says no, Caddy shows the
+	# page Xibalba sent (the security check, "request blocked", "too many
+	# requests"); otherwise the request goes to your website.
+	handle {
+		forward_auth 127.0.0.1:8080 {
+			uri /.xibalba/check
+		}
+		reverse_proxy 127.0.0.1:3000
+	}
+}
