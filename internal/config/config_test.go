@@ -29,6 +29,7 @@ func settings(cfg Config) Config {
 	cfg.Rules.Catalog = nil
 	cfg.Rules.TrapOn = false
 	cfg.Rules.CountriesOn = false
+	cfg.Rules.Lists = nil
 	cfg.Admin.ChangesPath = ""
 	return cfg
 }
@@ -99,6 +100,7 @@ shutdown_timeout: 30s
 		Trap:            defaultTrap(),
 		Previews:        defaultPreviews(),
 		Countries:       defaultCountries(),
+		ASN:             defaultASN(),
 		Statistics:      defaultStatistics(),
 		Admin:           defaultAdmin(),
 		Challenge:       Default().Challenge,

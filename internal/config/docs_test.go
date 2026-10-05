@@ -123,6 +123,22 @@ func TestYAMLExamplesInTheDocumentationAreValid(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			// The same for network operators and for address lists.
+			if strings.Contains(config, "asn.mmdb") {
+				database := geotest.Build(map[string]string{"192.0.2.0/24": "64500"}, geotest.Options{Layout: "asn"})
+				if err := os.WriteFile(filepath.Join(dir, "asn.mmdb"), database, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, list := range regexp.MustCompile(`(?m)^    [a-z0-9_-]+: ([a-z/-]+\.txt)$`).FindAllStringSubmatch(config, -1) {
+				file := filepath.Join(dir, list[1])
+				if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(file, []byte("192.0.2.0/24\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			// Examples name the directory a service would use; give them one that exists here.
 			if strings.Contains(config, "/var/lib/xibalba/statistics") {
 				if err := os.MkdirAll(filepath.Join(dir, "statistics"), 0o700); err != nil {

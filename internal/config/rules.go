@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -47,6 +48,18 @@ type Rules struct {
 	// are evaluated first.
 	List []rules.RuleSpec `yaml:"list"`
 
+	// AddressLists names files of addresses and networks, one per line,
+	// relative to the configuration file. Rules refer to a list by its
+	// name with the condition address_list.
+	AddressLists map[string]string `yaml:"address_lists"`
+
+	// Lists holds the address lists read from AddressLists. It is filled
+	// when the configuration is loaded and is not a setting.
+	Lists map[string]*rules.AddressSet `yaml:"-"`
+	// ASNOn says whether a database of network operators is configured.
+	// It is filled when the configuration is loaded and is not a setting.
+	ASNOn bool `yaml:"-"`
+
 	// Preset holds the rules of Presets, in the order of Presets. It is
 	// filled when the configuration is loaded and is not a setting.
 	Preset []RuleFile `yaml:"-"`
@@ -86,6 +99,7 @@ func defaultRules() Rules {
 		Thresholds:    []rules.ThresholdSpec{},
 		Presets:       []string{},
 		Files:         []string{},
+		AddressLists:  map[string]string{},
 		List:          []rules.RuleSpec{},
 	}
 }
@@ -102,7 +116,87 @@ func (r Rules) Spec() rules.Spec {
 	for _, file := range r.Imported {
 		all = append(all, file.Rules...)
 	}
-	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn}
+	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn,
+		ASN: r.ASNOn, AddressLists: r.Lists}
+}
+
+// Limits on address lists.
+const (
+	maxAddressLists    = 32
+	maxAddressListSize = 64 << 20 // 64 MiB
+)
+
+// loadAddressLists reads the files named in AddressLists into r.Lists.
+func (r *Rules) loadAddressLists(dir string, add func(path, message, hint string)) {
+	r.Lists = map[string]*rules.AddressSet{}
+	if len(r.AddressLists) > maxAddressLists {
+		add("rules.address_lists", fmt.Sprintf("%d address lists are too many", len(r.AddressLists)), fmt.Sprintf("give %d at most; several files can be joined into one", maxAddressLists))
+		return
+	}
+	names := make([]string, 0, len(r.AddressLists))
+	for name := range r.AddressLists {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		field := "rules.address_lists." + name
+		if !listName(name) {
+			add(field, "this cannot be the name of an address list", "use 1 to 40 small letters, digits, - and _, for example vpn or data-centres")
+			continue
+		}
+		// A list that cannot be read is reported once, here; the rules
+		// that name it are not reported on top of that.
+		r.Lists[name] = rules.NewAddressSet(nil)
+		file := r.AddressLists[name]
+		if strings.TrimSpace(file) == "" {
+			add(field, "no file is named", `give the file that holds the addresses, for example "lists/vpn.txt"`)
+			continue
+		}
+		path := file
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(dir, path)
+		}
+		info, err := os.Stat(path)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			add(field, fmt.Sprintf("the file %q does not exist", file), "create it with one address or network per line; an empty file is a list without entries")
+			continue
+		case err != nil || !info.Mode().IsRegular():
+			add(field, fmt.Sprintf("%q cannot be read or is not a file", file), "give a file the user Xibalba runs as may read")
+			continue
+		case info.Size() > maxAddressListSize:
+			add(field, fmt.Sprintf("%q is larger than %d MiB", file, maxAddressListSize>>20), "shorten the list; networks instead of single addresses take far less room")
+			continue
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			add(field, fmt.Sprintf("%q cannot be read", file), "give a file the user Xibalba runs as may read")
+			continue
+		}
+		set, problems := rules.ReadAddressList(io.LimitReader(f, maxAddressListSize+1))
+		_ = f.Close()
+		for _, p := range problems {
+			add(field, fmt.Sprintf("%s, line %d: %s", file, p.Line, p.Message),
+				`write one address or network per line, such as "192.0.2.7" or "2001:db8::/32"; text after "#" is ignored`)
+		}
+		if len(problems) == 0 {
+			r.Lists[name] = set
+		}
+	}
+}
+
+func listName(name string) bool {
+	if name == "" || len(name) > 40 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		letter, digit := c >= 'a' && c <= 'z', c >= '0' && c <= '9'
+		if !letter && !digit && c != '-' && c != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // PresetNames returns the names of the presets that ship with Xibalba, sorted.
@@ -146,6 +240,8 @@ func (r *Rules) load(dir string, lines map[string]int) []Problem {
 		add("rules.on_error", fmt.Sprintf("%q is not a failure mode", r.OnError),
 			"use allow (keep the website reachable) or deny (block until the problem is fixed)")
 	}
+
+	r.loadAddressLists(dir, add)
 
 	origins := make([]origin, 0, len(r.List))
 	for i := range r.List {

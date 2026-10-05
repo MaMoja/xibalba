@@ -73,6 +73,8 @@ All conditions written in one `match` must hold.
 | `ip` | The client's address | A list of addresses and networks |
 | `crawler` | Which known crawler the request claims to be, and whether that is true | `class`, `name`, `verified`; see [CRAWLERS.md](CRAWLERS.md) |
 | `country` | The country the client's address is registered in | A list of two-letter codes such as `["DE", "AT"]`; needs a database, see [COUNTRIES.md](COUNTRIES.md) |
+| `asn` | The network operator the client's address belongs to | A list of AS numbers such as `[64500, 64501]`; needs a database, see [NETWORKS.md](NETWORKS.md) |
+| `address_list` | Whether the client's address is in a list kept in a file | A list of names from `rules.address_lists`, such as `["vpn"]`; see [NETWORKS.md](NETWORKS.md) |
 | `trapped` | Whether the client recently followed the hidden trap link | `true` or `false`; see [TRAP.md](TRAP.md) |
 | `all` | Groups of conditions that must all hold | A list of `match` blocks |
 | `any` | Groups of conditions of which one must hold | A list of `match` blocks |
@@ -212,7 +214,7 @@ and be uncounted.
 
 ## What can be trusted
 
-**Only `ip`, `country`, `trapped` and a verified `crawler` are established by Xibalba.** The user
+**Only `ip`, `address_list`, `country`, `asn`, `trapped` and a verified `crawler` are established by Xibalba.** The user
 agent and every header are whatever the client chooses to send.
 
 - A `deny` rule on a user agent stops crawlers that announce themselves

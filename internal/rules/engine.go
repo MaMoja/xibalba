@@ -17,7 +17,11 @@ type Engine struct {
 	usesCrawlers  bool
 	usesTrap      bool
 	usesCountry   bool
+	usesASN       bool
 }
+
+// UsesASN reports whether any rule has an asn condition.
+func (e *Engine) UsesASN() bool { return e.usesASN }
 
 // UsesCountries reports whether any rule has a country condition.
 func (e *Engine) UsesCountries() bool { return e.usesCountry }
@@ -36,6 +40,8 @@ type compiledRule struct {
 	source int // index into Engine.sources; -1 for weigh rules
 	// needsCountry: the rule has a country condition somewhere.
 	needsCountry bool
+	// needsASN: the rule has an asn condition somewhere.
+	needsASN bool
 }
 
 type threshold struct {
@@ -48,7 +54,7 @@ func (e *Engine) Evaluate(req *Request) Decision {
 	score := 0
 	for i := range e.rules {
 		rule := &e.rules[i]
-		if rule.needsCountry && req.NoCountryData {
+		if (rule.needsCountry && req.NoCountryData) || (rule.needsASN && req.NoASNData) {
 			continue
 		}
 		if !rule.match.match(req) {

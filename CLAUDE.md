@@ -156,7 +156,7 @@ internal/rules/       compile a rule set, decide about a request
 internal/crawlers/    know the crawlers, tell genuine from impostor
 data/                 built-in crawler definitions and presets (embedded)
 internal/limit/       count requests per client, say when one is over a limit
-internal/geo/         country of an address, from a database file
+internal/geo/         country and network operator of an address, from database files
 internal/trap/        hidden link that catches crawlers; optional maze
 internal/verdict/     answer a web server that asks whether a request may pass
 internal/preview/     link-preview tags of the website's pages, fetched in the background
@@ -181,7 +181,7 @@ examples/caddy/       tested Caddy configuration; the handbook shows it
 examples/apache/, haproxy/, traefik/   tested by test/webserver
 examples/docker/, systemd/, kubernetes/  container, service and cluster examples
 Dockerfile            the container image; built and started in CI
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, trap, previews, verdict, metrics, statistics, environments, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, networks, trap, previews, verdict, metrics, statistics, environments, challenge, development
 docs/de/              operator handbook in German
 ```
 

@@ -70,6 +70,11 @@ type Options struct {
 	// whether a country database is loaded at all. If nil, or while no
 	// database is loaded, rules with a country condition are skipped.
 	Country func(client netip.Addr) (code [2]byte, loaded bool)
+	// ASN says which network operator (autonomous system) a client's
+	// address belongs to, and whether a database of them is loaded at all.
+	// If nil, or while none is loaded, rules with an asn condition are
+	// skipped.
+	ASN func(client netip.Addr) (number uint32, loaded bool)
 	// Trapped says whether a client recently followed the hidden trap
 	// link. If nil, trapped conditions see "no".
 	Trapped func(client netip.Addr) bool
@@ -381,6 +386,12 @@ func (g *Gate) request(r *http.Request, client netip.Addr, identify func(string,
 		var loaded bool
 		req.Country, loaded = g.opts.Country(req.Client)
 		req.NoCountryData = !loaded
+	}
+	req.NoASNData = true
+	if g.opts.ASN != nil {
+		var loaded bool
+		req.ASN, loaded = g.opts.ASN(req.Client)
+		req.NoASNData = !loaded
 	}
 	if g.opts.Trapped != nil {
 		req.Trapped = g.opts.Trapped(req.Client)

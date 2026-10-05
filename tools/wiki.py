@@ -29,6 +29,7 @@ SECTIONS = [
         ("CRAWLERS.md", "Crawlers", "Crawler classes, presets, how identity is verified"),
         ("LIMITS.md", "Limits", "Request limits per client"),
         ("COUNTRIES.md", "Countries", "Rules by country"),
+        ("NETWORKS.md", "Networks", "Rules by network operator (AS number) and by address lists"),
         ("TRAP.md", "Trap", "The hidden link that catches crawlers, and the maze"),
         ("VERDICT.md", "Subrequest-Authentication", "The web server asks Xibalba instead of passing requests through"),
         ("PREVIEWS.md", "Link-Previews", "Open Graph tags for pages behind the security check"),

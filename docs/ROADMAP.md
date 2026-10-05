@@ -136,7 +136,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Kind of check, difficulty, wait and extra checks per rule and per threshold; a pass counts for what it was earned with
 - [x] Tried in a real browser: every method, both extra checks (the automated test browser is caught by `headless`), accessibility
 - [x] Security review by a second agent (2026-10-04); no high finding. Fixed: a pass earned by waiting at the button counted like one earned by calculating; a wait could be up to a second short; the page after a report of automation offered no way to try again, and the comparison of the browser's name could lock out real browsers (removed); a blocked style sheet made the page try for ever; a key of its own for the style sheet value.
-- [ ] Conditions by network operator (AS number) and address lists from files, for VPN and hosting networks
+- [x] Conditions by network operator (`asn`, from a database you supply or the free one downloaded) and by address lists from files (`address_list`), for VPN and hosting networks. No list is shipped
 - [ ] Proof of work in WebAssembly: decided against for now, see DECISIONS.md
 
 ## Later
@@ -145,7 +145,7 @@ decision (2026-10-03): all of this comes before statistics.
 - Packages in the rpm format; signed releases (provenance)
 - A path test that means "this directory and everything under it", so `/admin` does not also match `/administrator`
 - A text expression language for rules, if `all`/`any`/`not` turn out not to be enough
-- Reloading rules without a restart
+- Reloading rules and address lists without a restart
 - TLS termination on the public listener
 - Limits on request body size and on slow request bodies
 - Several upstreams, selected by host name

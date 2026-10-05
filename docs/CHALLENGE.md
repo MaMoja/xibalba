@@ -256,10 +256,27 @@ challenge:
   method: script
 ```
 
-**VPNs and hosting providers.** Xibalba cannot tell by itself whether an
-address belongs to a VPN: there is no free, authoritative list. Today you
-list the networks you know with `ip`, as above. Conditions by network
-operator (AS number) and address lists read from files are **planned**.
+**VPNs and hosting providers.** Two conditions are made for this: `asn`
+(all addresses of a network operator, by its number) and `address_list` (a
+list of addresses in a file, for example the exits of VPN providers).
+Xibalba ships no such list; you choose them. See
+[NETWORKS.md](NETWORKS.md).
+
+```yaml
+asn:
+  database: asn.mmdb
+rules:
+  address_lists:
+    vpn: lists/vpn.txt
+  list:
+    - name: check-vpn-and-hosting
+      match:
+        any:
+          - address_list: [vpn]
+          - asn: [64500, 64501]
+      action: challenge
+      challenge: {method: pow, difficulty: 20, checks: [headless]}
+```
 
 ### Difficulty
 

@@ -38,6 +38,11 @@ const (
 
 // Options configures a Locator.
 type Options struct {
+	// Name is the component's name. Empty means "countries".
+	Name string
+	// What the database holds, for messages. Empty means "country".
+	// "network" for a database of network operators.
+	What string
 	// Path is the database file.
 	Path string
 	// Download fetches the database from DownloadURL when the file is
@@ -96,11 +101,17 @@ func New(opts Options) *Locator {
 			},
 		}
 	}
-	return &Locator{opts: opts, log: opts.Log.With("component", "countries")}
+	if opts.Name == "" {
+		opts.Name = "countries"
+	}
+	if opts.What == "" {
+		opts.What = "country"
+	}
+	return &Locator{opts: opts, log: opts.Log.With("component", opts.Name)}
 }
 
 // Name implements lifecycle.Component.
-func (l *Locator) Name() string { return "countries" }
+func (l *Locator) Name() string { return l.opts.Name }
 
 // Start loads the database and keeps watching the file. A file that is
 // missing or broken does not stop Xibalba: countries are then not known,
@@ -150,6 +161,16 @@ func (l *Locator) Country(addr netip.Addr) Code {
 		return Code{}
 	}
 	return db.Country(addr)
+}
+
+// ASN returns the number of the network operator of an address, or 0 if it
+// is not known or no database is loaded.
+func (l *Locator) ASN(addr netip.Addr) uint32 {
+	db := l.db.Load()
+	if db == nil {
+		return 0
+	}
+	return db.ASN(addr)
 }
 
 // CheckURL says whether a download address can be used: https, or plain
@@ -225,14 +246,14 @@ func (l *Locator) reload() {
 	defer l.mu.Unlock()
 	if err != nil {
 		if l.problem != err.Error() { // say it once
-			l.log.Warn("the country database cannot be used", "error", err.Error(), "kept_previous", l.db.Load() != nil)
+			l.log.Warn("the "+l.opts.What+" database cannot be used", "error", err.Error(), "kept_previous", l.db.Load() != nil)
 		}
 		l.problem = err.Error()
 		return
 	}
 	l.db.Store(db)
 	l.loaded, l.problem = modified, ""
-	l.log.Info("country database loaded", "type", db.Type, "built", db.Built.Format("2006-01-02"))
+	l.log.Info(l.opts.What+" database loaded", "type", db.Type, "built", db.Built.Format("2006-01-02"))
 }
 
 // maybeDownload fetches the database if downloading is on and the file is
@@ -276,14 +297,14 @@ func (l *Locator) maybeDownload(ctx context.Context) {
 	if err != nil {
 		problem := "download failed: " + err.Error()
 		if l.problem != problem { // say it once
-			l.log.Warn("the country database could not be downloaded", "error", err.Error())
+			l.log.Warn("the "+l.opts.What+" database could not be downloaded", "error", err.Error())
 		}
 		l.problem = problem
 		return
 	}
 	l.attempts = 0
 	l.problem = ""
-	l.log.Info("country database downloaded")
+	l.log.Info(l.opts.What + " database downloaded")
 }
 
 func (l *Locator) download(ctx context.Context, now time.Time) error {
@@ -304,7 +325,7 @@ func (l *Locator) download(ctx context.Context, now time.Time) error {
 		return fmt.Errorf("the server answered with status %d", resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(l.opts.Path), ".countries-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(l.opts.Path), "."+l.opts.Name+"-*.tmp")
 	if err != nil {
 		return errors.New("the directory of the database file is not writable")
 	}
@@ -358,15 +379,15 @@ func (l *Locator) Health() health.Status {
 	l.mu.Unlock()
 	switch {
 	case db == nil:
-		detail := "no country database is loaded; rules with a country condition are skipped until one is"
+		detail := "no " + l.opts.What + " database is loaded; rules with a condition on it are skipped until one is"
 		if problem != "" {
 			detail += ": " + problem
 		}
 		return health.Status{State: health.Degraded, Detail: detail}
 	case problem != "":
-		return health.Status{State: health.Degraded, Detail: "the country database from " + db.Built.Format("2006-01-02") + " stays in use: " + problem}
+		return health.Status{State: health.Degraded, Detail: "the " + l.opts.What + " database from " + db.Built.Format("2006-01-02") + " stays in use: " + problem}
 	case !db.Built.IsZero() && l.opts.Now().Sub(db.Built) > staleAfter:
-		return health.Status{State: health.Degraded, Detail: "the country database is from " + db.Built.Format("2006-01-02") + "; addresses change hands, replace it with a current one"}
+		return health.Status{State: health.Degraded, Detail: "the " + l.opts.What + " database is from " + db.Built.Format("2006-01-02") + "; addresses change hands, replace it with a current one"}
 	}
 	return health.Status{State: health.OK}
 }

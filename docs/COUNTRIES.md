@@ -44,6 +44,9 @@ Commercial databases in the same format work as well. The reader looks for
 the country code under `country.iso_code`, then `country_code`, then
 `country`.
 
+For rules by network operator (hosting companies, clouds) and by address
+lists (VPN exits), see [NETWORKS.md](NETWORKS.md).
+
 ## Settings
 
 | Setting | Meaning |

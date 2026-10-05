@@ -4,6 +4,29 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-05
 
+- **No list of VPN or hosting networks is shipped.** Agent's choice, in
+  line with rule 6: nothing about who owns which addresses is written from
+  memory, and there is no authoritative source to cite. The operator
+  chooses numbers and lists; the documentation says where such lists come
+  from and that nobody here has checked them.
+- **Address lists are sorted ranges searched by halving, not a tree.**
+  Agent's choice. 8 bytes per IPv4 entry, no allocation per lookup, 125 ns
+  in half a million networks. A tree would be faster by a constant and
+  cost several times the memory, which matters on a Raspberry Pi.
+- **Address lists are read at start only.** Agent's choice for now. A list
+  with a mistake stops the start with file and line; reading a changed file
+  while running needs an answer to "what if the new file is broken" that
+  the rule files do not have either. On the "Later" list together.
+- **An operator is not something to exempt from limits by.** Agent's
+  choice. Anyone can rent a server at a hosting company; `address_list`
+  counts like `ip`, `asn` like `country`.
+- **The setting is called `asn`, like the condition.** Agent's choice.
+  "networks" already means the /24 and /48 networks of the statistics.
+- **The default download address for the operator database is not
+  verified.** It follows the pattern of DB-IP's country database; the
+  provider's page could not be read from the workspace. Documented as not
+  tried.
+
 - **The answer to a web server's question carries the page.** Agent's
   choice. Caddy and Traefik hand the body of a refusing answer to the
   visitor, so they need no redirect and no second request. Only nginx

@@ -76,6 +76,7 @@ flowchart LR
 | Asked for a verdict by nginx (`auth_request`), Caddy (`forward_auth`), Traefik (`forwardAuth`) instead of standing in the path (off by default) | Built; Traefik example not tested |
 | Link previews (Open Graph) for pages behind the security check (off by default) | Built |
 | HTTP status of the security check and the block page can be chosen | Built |
+| Rules by network operator (AS number) and by address lists kept in files, for hosting companies and VPNs | Built; no lists shipped |
 | Country conditions in rules, with a database you supply or the free one downloaded for you | Built |
 | Metrics for monitoring systems (Prometheus format) | Built |
 | Statistics kept on disk by the hour, with a time limit | Built |
@@ -205,6 +206,7 @@ The same pages, easier to browse, are in the [wiki](https://github.com/MaMoja/xi
 | [Crawlers](docs/CRAWLERS.md) | Crawler classes, presets, how identity is verified, the crawlers Xibalba knows |
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |
 | [Countries](docs/COUNTRIES.md) | Rules by country: which database, licences, keeping it current |
+| [Networks](docs/NETWORKS.md) | Rules by network operator and by address lists: hosting companies, VPNs |
 | [Trap](docs/TRAP.md) | The hidden link that catches crawlers, and the optional maze |
 | [Asking instead of passing through](docs/VERDICT.md) | Subrequest authentication with nginx, Caddy, Traefik |
 | [Link previews](docs/PREVIEWS.md) | Title, description and picture of a shared link although the page is behind the check |

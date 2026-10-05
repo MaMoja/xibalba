@@ -2476,3 +2476,89 @@ func TestVerdictsAreOnlyForTheWebServer(t *testing.T) {
 		}
 	}
 }
+
+// The owner's example: whoever comes from outside the listed countries, over
+// a VPN (an address list) or from a hosting company (a network operator)
+// always has to pass the security check.
+func TestCheckByCountryOperatorAndAddressList(t *testing.T) {
+	dir := t.TempDir()
+	countries, operators, vpn := filepath.Join(dir, "countries.mmdb"), filepath.Join(dir, "asn.mmdb"), filepath.Join(dir, "vpn.txt")
+	write := func(path string, data []byte) {
+		t.Helper()
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(countries, geotest.Build(map[string]string{"192.0.2.0/24": "DE", "198.51.100.0/24": "US", "203.0.113.0/24": "DE", "2001:db8::/32": "AT"}, geotest.Options{}))
+	write(operators, geotest.Build(map[string]string{"203.0.113.0/25": "64500", "192.0.2.0/24": "64999"}, geotest.Options{Layout: "asn"}))
+	write(vpn, []byte("# exits of a VPN provider\n192.0.2.128/25\n2001:db8:ffff::/48\n"))
+
+	site := newWebsite(t)
+	inst := start(t, site.URL, `server:
+  listen: PUBLIC
+  trusted_proxies: ["127.0.0.1"]
+countries:
+  database: "`+countries+`"
+asn:
+  database: "`+operators+`"
+rules:
+  address_lists:
+    vpn: "`+vpn+`"
+  list:
+    - name: check-vpn
+      match:
+        address_list: [vpn]
+      action: challenge
+    - name: check-hosting
+      match:
+        asn: [64500, 64501]
+      action: challenge
+    - name: check-abroad
+      match:
+        not:
+          country: [DE, AT, CH]
+      action: challenge
+`)
+	browser := "Mozilla/5.0 Firefox/130.0"
+	cases := map[string]string{
+		"192.0.2.9":        "",                   // Germany, an ordinary provider
+		"192.0.2.200":      "rule:check-vpn",     // Germany, but a VPN exit
+		"203.0.113.9":      "rule:check-hosting", // Germany, a hosting company
+		"203.0.113.200":    "",                   // same country, operator not known
+		"198.51.100.9":     "rule:check-abroad",  // abroad
+		"2001:db8::9":      "",                   // Austria
+		"2001:db8:ffff::9": "rule:check-vpn",     // Austria, VPN
+		"100.64.0.1":       "rule:check-abroad",  // country not known: not in the list
+	}
+	for addr, rule := range cases {
+		before := getDecisions(t, inst).count(rule)
+		resp, body := get(t, inst.public+"/", from(addr, browser))
+		checked := resp.StatusCode == 403 && strings.Contains(body, `name="token"`)
+		if (rule != "") != checked {
+			t.Errorf("%s: status %d, checked %v, want the rule %q", addr, resp.StatusCode, checked, rule)
+		}
+		if rule != "" && getDecisions(t, inst).count(rule) != before+1 {
+			t.Errorf("%s: not decided by %s", addr, rule)
+		}
+	}
+	_, report := health(t, inst)
+	if report.Components["asn"].State != "ok" || report.Components["countries"].State != "ok" {
+		t.Errorf("health = %+v", report)
+	}
+	if !strings.Contains(inst.logs.String(), "network database loaded") {
+		t.Errorf("the log does not say that the database was loaded:\n%s", inst.logs.String())
+	}
+}
+
+// Without a rule that asks for the operator the database is not opened.
+func TestOperatorDatabaseIsIdleWithoutOperatorRules(t *testing.T) {
+	database := filepath.Join(t.TempDir(), "asn.mmdb")
+	if err := os.WriteFile(database, geotest.Build(map[string]string{"192.0.2.0/24": "64500"}, geotest.Options{Layout: "asn"}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	site := newWebsite(t)
+	inst := start(t, site.URL, "asn:\n  database: \""+database+"\"\n")
+	if _, report := health(t, inst); report.Components["asn"].State != "" {
+		t.Errorf("the component runs without a rule on operators: %+v", report)
+	}
+}

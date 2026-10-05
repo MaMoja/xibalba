@@ -553,6 +553,7 @@ mit `-check` prüfen, dann Xibalba neu starten.
 | Regelgruppen oder einzelne Adressen im Browser schalten | `admin.allow_changes` | Abschnitt 4, „Einstellungen im Browser ändern“ |
 | Impressum und Datenschutzerklärung auf den Seiten verlinken | `pages.imprint_url`, `pages.privacy_url` | Abschnitt 8 |
 | den Webserver nur fragen lassen, statt alles durchzureichen | `verdict.enabled` | Abschnitt 4, „Nur fragen statt durchreichen“ |
+| Hoster und VPNs prüfen lassen | `asn.database`, `rules.address_lists`, Bedingungen `asn` und `address_list` | Abschnitt 6, „Netzbetreiber und Adresslisten“ |
 | dass geteilte Links eine Vorschau mit Titel und Bild zeigen | `previews.enabled` | Abschnitt 8, „Vorschau für geteilte Links“ |
 | den Statuscode der Sicherheitsprüfung oder der Blockseite ändern | `pages.status.challenge`, `pages.status.blocked` | Abschnitt 8, „Statuscodes“ |
 | die Zahlen im Browser sehen | `admin.enabled` und ein Passwort | Abschnitt 4, „Auf Wunsch: die Weboberfläche“ |
@@ -1137,6 +1138,116 @@ fehlen oder älter als 100 Tage sind.
 
 Alle Einzelheiten: [COUNTRIES.md](../COUNTRIES.md) (englisch).
 
+### Netzbetreiber und Adresslisten
+
+Zwei weitere Bedingungen fragen, woher eine Anfrage kommt:
+
+- **`asn`**: zu welchem Netzbetreiber die Adresse gehört. Jedes Netz im
+  Internet wird von einem Betreiber mit einer Nummer geführt (AS-Nummer):
+  ein Internetanbieter, eine Hochschule, ein Hosting-Unternehmen, eine
+  Cloud. „Alle Adressen des Hosters X“ ist damit eine Nummer statt
+  hunderter Netze.
+- **`address_list`**: ob die Adresse in einer Liste steht, die Sie in einer
+  Datei führen. Für lange Listen, etwa die Ausgänge von VPN-Anbietern.
+
+Wozu: Anfragen von Hosting-Unternehmen und über VPNs sind weit häufiger
+automatisiert als Anfragen von Heim- und Mobilanschlüssen. Sie bekommen die
+Sicherheitsprüfung, alle anderen kommen ohne durch.
+
+**Xibalba liefert keine solche Liste mit.** Es gibt keine verlässliche: Die
+vorhandenen widersprechen sich, und ein falscher Eintrag sperrt Menschen
+aus. Sie wählen Nummern und Listen, Xibalba wendet sie schnell an. Menschen
+nutzen VPNs aus guten Gründen; nehmen Sie für solche Regeln `challenge`
+statt `deny`.
+
+**Netzbetreiber.** Sie brauchen eine Datenbank im Format `.mmdb`, wie bei
+den Ländern: „IP to ASN Lite“ von DB-IP (ohne Konto) oder „GeoLite2 ASN“
+von MaxMind (mit Konto). Die Lizenzbedingungen stehen beim Anbieter und
+sind von Ihnen einzuhalten.
+
+```yaml
+asn:
+  database: asn.mmdb
+rules:
+  list:
+    - name: hoster-pruefen
+      match:
+        asn: [64500, 64501]
+      action: challenge
+```
+
+| Einstellung | Bedeutung |
+|---|---|
+| `asn.database` | die Datenbankdatei, relativ zur Konfigurationsdatei; leer: Betreiber sind nicht bekannt |
+| `asn.download` | `true`: die Datenbank herunterladen, wenn die Datei fehlt oder einen Monat alt ist (ab Werk `false`) |
+| `asn.download_url` | woher; ab Werk die freie Datenbank von DB-IP. Dieser Abruf ist noch nicht gegen den echten Server erprobt. |
+
+Die Nummern schreiben Sie ohne „AS“. Die Nummer eines Betreibers finden Sie,
+indem Sie eine seiner Adressen in einem Whois-Dienst nachschlagen. Fehlt die
+Datenbank oder ist sie beschädigt, werden Regeln mit `asn` übersprungen,
+damit eine fehlende Datei nicht alle aussperrt; `/healthz` zeigt den
+Bestandteil `asn` dann als `degraded`. Eine neue Datei wird ohne Neustart
+übernommen.
+
+**Adresslisten.** Eine Textdatei mit einer Adresse oder einem Netz pro
+Zeile; alles ab `#` ist Kommentar.
+
+```yaml
+rules:
+  address_lists:
+    vpn: listen/vpn.txt
+  list:
+    - name: vpn-pruefen
+      match:
+        address_list: [vpn]
+      action: challenge
+```
+
+Eine Liste darf bis zu zwei Millionen Einträge haben; das Nachschlagen
+dauert unabhängig von der Länge etwa eine zehntel Mikrosekunde. Steht in
+der Datei etwas, das keine Adresse ist, startet Xibalba nicht und nennt
+Datei und Zeile.
+
+**Die Listen werden beim Start gelesen.** Nach dem Austausch einer Datei
+starten Sie Xibalba neu. Holen Sie eine Liste jede Nacht automatisch, prüfen
+Sie vorher, damit ein kaputter Abruf den Dienst nicht anhält:
+
+```
+xibalba -check -config /etc/xibalba/xibalba.yaml && systemctl restart xibalba
+```
+
+**Alles zusammen:** „Wer nicht aus Deutschland, Österreich oder der Schweiz
+kommt, wer ein VPN nutzt und wer von einem Hoster kommt, muss die
+Sicherheitsprüfung bestehen.“
+
+```yaml
+countries:
+  database: countries.mmdb
+asn:
+  database: asn.mmdb
+rules:
+  address_lists:
+    vpn: listen/vpn.txt
+  list:
+    - name: vpn-pruefen
+      match:
+        address_list: [vpn]
+      action: challenge
+    - name: hoster-pruefen
+      match:
+        asn: [64500, 64501]
+      action: challenge
+    - name: ausland-pruefen
+      match:
+        not:
+          country: [DE, AT, CH]
+      action: challenge
+```
+
+Setzen Sie Regeln, die jemanden durchlassen (Ihr eigenes Netz, geprüfte
+Suchmaschinen), davor. Mehr dazu, auch woher Listen kommen, in
+[NETWORKS.md](../NETWORKS.md) (englisch).
+
 ### Pfade lassen sich nicht umgehen
 
 Eine Regel auf `/admin` greift auch bei `//admin`, `/x/../admin`, `/%61dmin`
@@ -1259,10 +1370,9 @@ gilt nicht für eine Regel mit `no_javascript: deny` oder mit
 Zusatzprüfungen. Soll eine Regel wirklich Rechenzeit kosten, setzen Sie bei
 ihr `no_javascript: deny`.
 
-**VPNs:** Xibalba kann nicht von sich aus erkennen, ob eine Adresse zu einem
-VPN gehört; dafür gibt es keine freie, verlässliche Liste. Heute tragen Sie
-die Netze, die Sie kennen, mit `ip` ein. Bedingungen nach Netzbetreiber
-(AS-Nummer) und Adresslisten aus Dateien sind geplant.
+**VPNs und Hoster:** Dafür gibt es die Bedingungen `address_list` und `asn`;
+siehe Abschnitt 6, „Netzbetreiber und Adresslisten“. Auch solche Regeln
+können eine eigene, strengere Prüfung verlangen.
 
 Einzelheiten: [CHALLENGE.md](../CHALLENGE.md).
 
@@ -1882,7 +1992,8 @@ Damit Sie wissen, woran Sie sind:
 - **Kein Logo, keine Akzentfarbe** auf den Besucherseiten (als Sponsor-Funktion geplant).
 - **Keine Länder-Datenbank mitgeliefert;** der Abruf der kostenlosen
   Datenbank ist noch nicht gegen den echten Server erprobt.
-- **Keine Sperre nach Netzbetreiber (ASN).**
+- **Keine mitgelieferte Liste von VPN- oder Hosting-Netzen;** Sie wählen
+  Nummern und Listen selbst. Adresslisten werden nur beim Start gelesen.
 - **Die Ausnahmeliste der Begrenzung** wird nur in der Datei gepflegt, noch
   nicht in einer Oberfläche.
 - **Meldungen des Programms sind englisch.**

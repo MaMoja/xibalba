@@ -52,6 +52,9 @@ type Config struct {
 	Statistics Statistics `yaml:"statistics"`
 	// Countries is the database that says which country an address is in.
 	Countries Countries `yaml:"countries"`
+	// ASN is the database that says which network operator an address
+	// belongs to.
+	ASN ASN `yaml:"asn"`
 	// Trap is the hidden link that catches crawlers.
 	Trap Trap `yaml:"trap"`
 	// Verdict answers a web server that asks about each request.
@@ -346,6 +349,7 @@ func Default() Config {
 		Trap:       defaultTrap(),
 		Previews:   defaultPreviews(),
 		Countries:  defaultCountries(),
+		ASN:        defaultASN(),
 		Statistics: defaultStatistics(),
 		Challenge: Challenge{
 			Difficulty:        18,
@@ -422,6 +426,10 @@ func ParseWith(name string, data []byte, env Env) (Config, error) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})
 	cfg.Rules.CountriesOn = cfg.Countries.Database != ""
+	cfg.ASN.check(filepath.Dir(name), func(path, message, hint string) {
+		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
+	})
+	cfg.Rules.ASNOn = cfg.ASN.Database != ""
 	cfg.Admin.check(filepath.Dir(name), map[string]string{"server.listen": cfg.Server.Listen, "ops.listen": cfg.Ops.Listen}, func(path, message, hint string) {
 		problems = append(problems, Problem{Path: path, Line: nearestLine(lines, path), Message: message, Hint: hint})
 	})

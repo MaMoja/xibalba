@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"net/netip"
 	"sort"
+	"strconv"
 )
 
 // Options changes how Build writes the file. The zero value gives an IPv6
@@ -17,6 +18,9 @@ type Options struct {
 	IPv4Only bool
 	// Layout is how the country is stored: "" or "nested" for
 	// country.iso_code, "code" for country_code, "plain" for country.
+	// "asn" and "asn-text" write a database of network operators instead:
+	// the values of the networks are then numbers ("64500"), stored as
+	// autonomous_system_number, or as the text "AS64500" under asn.
 	Layout string
 	// Pointers stores the country map once and points to it from each record.
 	Pointers bool
@@ -69,6 +73,19 @@ func Build(networks map[string]string, opts Options) []byte {
 			data = append(data, str("EU")...)
 			data = append(data, str("country_code")...)
 			data = append(data, str(code)...)
+		case "asn":
+			n, _ := strconv.ParseUint(code, 10, 32)
+			data = append(data, mapOf(2)...)
+			data = append(data, str("autonomous_system_number")...)
+			data = append(data, 0xc0|4, byte(n>>24), byte(n>>16), byte(n>>8), byte(n)) // uint32
+			data = append(data, str("autonomous_system_organization")...)
+			data = append(data, str("Operator "+code)...)
+		case "asn-text":
+			data = append(data, mapOf(2)...)
+			data = append(data, str("name")...)
+			data = append(data, str("Operator "+code)...)
+			data = append(data, str("asn")...)
+			data = append(data, str("AS"+code)...)
 		case "plain":
 			data = append(data, mapOf(1)...)
 			data = append(data, str("country")...)

@@ -382,3 +382,80 @@ func TestStartAndStop(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestASN(t *testing.T) {
+	operators := map[string]string{"192.0.2.0/24": "64500", "198.51.100.0/24": "4200000000", "2001:db8::/32": "64501"}
+	for _, opts := range []geotest.Options{{Layout: "asn"}, {Layout: "asn-text"}, {Layout: "asn", RecordSize: 28}, {Layout: "asn", IPv4Only: true}} {
+		db, err := Open(geotest.Build(operators, opts))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !db.HasASN() {
+			t.Errorf("%+v: HasASN is false", opts)
+		}
+		want := map[string]uint32{"192.0.2.9": 64500, "198.51.100.1": 4200000000, "203.0.113.1": 0, "::ffff:192.0.2.9": 64500, "2001:db8::1": 64501, "2001:db9::1": 0}
+		if opts.IPv4Only {
+			want["2001:db8::1"] = 0
+		}
+		for a, n := range want {
+			if got := db.ASN(addr(a)); got != n {
+				t.Errorf("%+v: ASN(%s) = %d, want %d", opts, a, got, n)
+			}
+		}
+		if db.Country(addr("192.0.2.9")) != (Code{}) {
+			t.Error("a database of operators named a country")
+		}
+		probe := addr("192.0.2.9")
+		if n := testing.AllocsPerRun(100, func() { db.ASN(probe) }); n != 0 {
+			t.Errorf("%v allocations per lookup", n)
+		}
+	}
+	countries, _ := Open(geotest.Build(networks, geotest.Options{}))
+	if countries.HasASN() || countries.ASN(addr("192.0.2.1")) != 0 {
+		t.Error("a country database passes for one of network operators")
+	}
+	for text, want := range map[string]uint32{"AS64500": 64500, "as7": 7, "64500": 64500, "AS": 0, "": 0, "AS-1": 0, "AS99999999999": 0, "ASx": 0, "AS4294967296": 0, "AS4294967295": 4294967295} {
+		if got := parseASN([]byte(text)); got != want {
+			t.Errorf("parseASN(%q) = %d, want %d", text, got, want)
+		}
+	}
+}
+
+func TestDamagedOperatorFilesAreSafe(t *testing.T) {
+	good := geotest.Build(map[string]string{"192.0.2.0/24": "64500", "2001:db8::/32": "64501"}, geotest.Options{Layout: "asn"})
+	at := bytes.LastIndex(good, marker)
+	for i := 0; i < at; i++ {
+		for _, flip := range []byte{0xff, 0x01, 0x80, 0x20} {
+			bad := append([]byte{}, good...)
+			bad[i] ^= flip
+			db, err := Open(bad)
+			if err != nil {
+				continue
+			}
+			db.HasASN()
+			db.ASN(addr("192.0.2.1"))
+			db.ASN(addr("2001:db8::1"))
+		}
+	}
+}
+
+func TestLocatorForOperators(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "asn.mmdb")
+	if err := os.WriteFile(path, geotest.Build(map[string]string{"192.0.2.0/24": "64500"}, geotest.Options{Layout: "asn"}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := New(Options{Name: "asn", What: "network", Path: path})
+	if l.Name() != "asn" || l.ASN(addr("192.0.2.1")) != 0 || l.Loaded() {
+		t.Error("before the start")
+	}
+	if !strings.Contains(l.Health().Detail, "no network database is loaded") {
+		t.Errorf("health: %+v", l.Health())
+	}
+	if err := l.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Stop(context.Background()) }()
+	if l.ASN(addr("192.0.2.1")) != 64500 || !l.Loaded() {
+		t.Error("after the start")
+	}
+}

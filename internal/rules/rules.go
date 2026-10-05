@@ -60,6 +60,8 @@ const (
 	// MaxConditions is the largest number of entries in one all, any, ip,
 	// method or header list.
 	MaxConditions = 1024
+	// MaxASNs is how many network operators one asn condition may list.
+	MaxASNs = 20000
 	// MaxPatternLength is the longest text or regular expression in a condition.
 	MaxPatternLength = 512
 	// MaxGroups is the largest number of condition groups in one rule set,
@@ -100,6 +102,12 @@ type Spec struct {
 	// Trap says that the trap is switched on. Without it a trapped
 	// condition is a mistake, because it could never hold.
 	Trap bool
+	// ASN says that a database of network operators is configured.
+	// Without it an asn condition is a mistake.
+	ASN bool
+	// AddressLists are the address lists that address_list conditions may
+	// name.
+	AddressLists map[string]*AddressSet
 }
 
 // Catalog lists what crawler conditions may refer to.
@@ -198,6 +206,13 @@ type MatchSpec struct {
 	// address must be registered in one of them. An address whose country
 	// is not known is in none.
 	Country []string `yaml:"country"`
+	// ASN lists numbers of network operators (autonomous systems); the
+	// client's address must belong to one of them. An address whose
+	// operator is not known belongs to none.
+	ASN []uint32 `yaml:"asn"`
+	// AddressList names address lists (rules.address_lists); the client
+	// address must be in one of them.
+	AddressList []string `yaml:"address_list"`
 	// Trapped tests whether the client recently followed the hidden trap
 	// link (true) or did not (false).
 	Trapped *bool `yaml:"trapped"`
@@ -304,6 +319,13 @@ type Request struct {
 	// rule such as "deny everyone outside Germany" must not shut out
 	// everybody because a file is missing.
 	NoCountryData bool
+	// ASN is the number of the network operator the client's address
+	// belongs to, established by internal/geo. 0 means: not known.
+	ASN uint32
+	// NoASNData reports that no database of network operators is loaded
+	// right now. Rules with an asn condition are then skipped, for the
+	// reason given at NoCountryData.
+	NoASNData bool
 	// Trapped reports that the client recently followed the hidden trap
 	// link, established by internal/trap.
 	Trapped bool

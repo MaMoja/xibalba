@@ -77,6 +77,16 @@ rules:
   # Rule files to import, relative to this file. They are evaluated after
   # the rules in list and the presets, in the order given.
   files: []
+  # Address lists: files with one address or network per line, relative to
+  # this file, each under a name. A rule asks with the condition
+  # "address_list: [name]" whether the client is in a list. For long lists
+  # such as the exits of VPN providers. Read at start. Example:
+  #
+  #   address_lists:
+  #     vpn: lists/vpn.txt
+  #
+  # See docs/NETWORKS.md.
+  address_lists: {}
   # Rules written here are evaluated first, from top to bottom. Example:
   #
   #   list:
@@ -120,6 +130,20 @@ countries:
   download: false
   # Where to download from. {year} and {month} are filled in.
   download_url: "https://download.db-ip.com/free/dbip-country-lite-{year}-{month}.mmdb.gz"
+
+# Network operators. With a database of them, rules can test which operator
+# a client's address belongs to (condition "asn", by AS number): an internet
+# provider, a hosting company, a cloud. Xibalba ships no database. See
+# docs/NETWORKS.md.
+asn:
+  # The database file (.mmdb), relative to this file. Empty: no operators.
+  # Works with DB-IP "IP to ASN Lite" and MaxMind "GeoLite2 ASN".
+  # A newer file put in its place is picked up without a restart.
+  database: ""
+  # Download the database when the file is missing or a month old.
+  download: false
+  # Where to download from. {year} and {month} are filled in.
+  download_url: "https://download.db-ip.com/free/dbip-asn-lite-{year}-{month}.mmdb.gz"
 
 # The trap: a link hidden in the pages Xibalba shows (the security check, the
 # block page). No person can see or reach it; a program that collects every

@@ -186,12 +186,12 @@ func (db *DB) read(node uint32, bit byte) uint32 {
 	}
 }
 
-// Country returns the country an address is registered in, or the zero Code
-// if the database does not know. It does not allocate.
-func (db *DB) Country(addr netip.Addr) Code {
+// find returns where the data for an address starts in the data section.
+// ok is false if the database has none.
+func (db *DB) find(addr netip.Addr) (off int, ok bool) {
 	addr = addr.Unmap().WithZone("")
 	if !addr.IsValid() {
-		return Code{}
+		return 0, false
 	}
 	raw := addr.As16()
 	bits := raw[:]
@@ -202,20 +202,119 @@ func (db *DB) Country(addr netip.Addr) Code {
 			node = db.ipv4Start
 		}
 	} else if !db.ipv6 {
-		return Code{} // an IPv6 address in a database of IPv4 addresses
+		return 0, false // an IPv6 address in a database of IPv4 addresses
 	}
 	for i := 0; i < len(bits)*8 && node < db.nodeCount; i++ {
 		node = db.read(node, bits[i/8]>>(7-i%8)&1)
 	}
 	if node <= db.nodeCount {
-		return Code{} // no data for this address, or the tree is deeper than an address
+		return 0, false // no data for this address, or the tree is deeper than an address
 	}
-	off := int(node-db.nodeCount) - 16
+	off = int(node-db.nodeCount) - 16
 	if off < 0 || off >= len(db.data) {
+		return 0, false
+	}
+	return off, true
+}
+
+// Country returns the country an address is registered in, or the zero Code
+// if the database does not know. It does not allocate.
+func (db *DB) Country(addr netip.Addr) Code {
+	off, ok := db.find(addr)
+	if !ok {
 		return Code{}
 	}
 	code, _ := db.country(off)
 	return code
+}
+
+// ASN returns the number of the network operator (autonomous system) an
+// address is announced by, or 0 if the database does not know. It does not
+// allocate. Databases name the number differently; the layouts in use are
+// tried in turn:
+//
+//	autonomous_system_number   a number: DB-IP ASN Lite, MaxMind GeoLite2 ASN
+//	asn                        a number, or text such as "AS64500": IPinfo and others
+func (db *DB) ASN(addr netip.Addr) uint32 {
+	off, ok := db.find(addr)
+	if !ok {
+		return 0
+	}
+	n, _ := db.asn(off)
+	return n
+}
+
+func (db *DB) asn(off int) (uint32, bool) {
+	d := section(db.data)
+	work := maxWork
+	for _, key := range []string{"autonomous_system_number", "asn"} {
+		value, found, err := d.get(off, key, &work)
+		if err != nil || !found {
+			continue
+		}
+		if n, err := d.uint(value); err == nil {
+			if n == 0 || n > 1<<32-1 {
+				return 0, true
+			}
+			return uint32(n), true
+		}
+		if text, err := d.str(value); err == nil {
+			return parseASN(text), true
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
+// parseASN reads "AS64500" or "64500". 0 if it is neither.
+func parseASN(text []byte) uint32 {
+	if len(text) >= 2 && (text[0] == 'A' || text[0] == 'a') && (text[1] == 'S' || text[1] == 's') {
+		text = text[2:]
+	}
+	if len(text) == 0 || len(text) > 10 {
+		return 0
+	}
+	var n uint64
+	for _, c := range text {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + uint64(c-'0')
+	}
+	if n > 1<<32-1 {
+		return 0
+	}
+	return uint32(n)
+}
+
+// HasASN reports whether the database holds network operators: whether the
+// first record found in it names one. A country database does not.
+func (db *DB) HasASN() bool {
+	// Walk down the tree, left before right, to the first record.
+	type step struct {
+		node  uint32
+		depth int
+	}
+	stack := []step{{0, 0}}
+	for visited := 0; len(stack) > 0 && visited < 100000; visited++ {
+		at := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		switch {
+		case at.node == db.nodeCount:
+			continue // nothing here
+		case at.node > db.nodeCount:
+			off := int(at.node-db.nodeCount) - 16
+			if off < 0 || off >= len(db.data) {
+				return false
+			}
+			_, has := db.asn(off)
+			return has
+		case at.depth >= 128:
+			continue
+		}
+		stack = append(stack, step{db.read(at.node, 1), at.depth + 1}, step{db.read(at.node, 0), at.depth + 1})
+	}
+	return false
 }
 
 // country reads the country code from the record at off. Databases name it

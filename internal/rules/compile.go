@@ -30,7 +30,7 @@ var headersSetByXibalba = map[string]bool{
 // Compile checks spec and turns it into an Engine. If it finds mistakes it
 // returns all of them and no engine.
 func Compile(spec Spec) (*Engine, []Problem) {
-	c := &compiler{catalog: spec.Crawlers, trap: spec.Trap, countries: spec.Countries}
+	c := &compiler{catalog: spec.Crawlers, trap: spec.Trap, countries: spec.Countries, asn: spec.ASN, lists: spec.AddressLists}
 	e := &Engine{}
 
 	if !decides(spec.DefaultAction) {
@@ -94,10 +94,11 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		// A rule that lets requests through, or makes them look better.
 		c.favours = rs.Action == Allow || (rs.Action == Weigh && rs.Weight < 0)
 		c.negated = false
-		before := c.countryConditions
+		before, beforeASN := c.countryConditions, c.asnConditions
 		c.anchored = false
 		rule.match = c.match(rs.Match, "match", 1, true)
 		rule.needsCountry = c.countryConditions > before
+		rule.needsASN = c.asnConditions > beforeASN
 
 		if rs.ExemptFromLimits && rs.Action == Allow && !c.anchored {
 			c.add("exempt_from_limits", "the rule exempts from the limits whoever matches it, and anyone can choose to match it",
@@ -163,6 +164,7 @@ func Compile(spec Spec) (*Engine, []Problem) {
 	e.usesCrawlers = c.usesCrawlers
 	e.usesTrap = c.usesTrap
 	e.usesCountry = c.usesCountry
+	e.usesASN = c.asnConditions > 0
 	return e, nil
 }
 
@@ -244,6 +246,9 @@ type compiler struct {
 	usesCountry bool
 	// countryConditions counts the country conditions compiled so far.
 	countryConditions int
+	asn               bool // a database of network operators is configured
+	asnConditions     int
+	lists             map[string]*AddressSet
 	// anchored: the rule being compiled has a condition the client cannot
 	// choose to meet: its address, or being a verified crawler.
 	anchored     bool
@@ -396,6 +401,57 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 		}
 	}
 
+	if spec.ASN != nil {
+		switch {
+		case !c.asn:
+			c.add(field+".asn", "no database of network operators is configured, so this condition could never hold",
+				"set asn.database to a database file; see docs/NETWORKS.md")
+		case len(spec.ASN) == 0 || len(spec.ASN) > MaxASNs:
+			c.add(field+".asn", fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(spec.ASN), MaxASNs),
+				"list the numbers of network operators, such as [64500, 64501]")
+		default:
+			numbers := append(asnIn(nil), spec.ASN...)
+			sort.Slice(numbers, func(i, j int) bool { return numbers[i] < numbers[j] })
+			if numbers[0] == 0 {
+				c.add(field+".asn", "0 is not the number of a network operator", "remove it")
+			} else {
+				parts = append(parts, numbers)
+				c.asnConditions++
+			}
+		}
+	}
+
+	if spec.AddressList != nil {
+		if !c.negated {
+			c.anchored = true
+		}
+		if len(spec.AddressList) == 0 || len(spec.AddressList) > MaxConditions {
+			c.add(field+".address_list", fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(spec.AddressList), MaxConditions),
+				`name address lists from rules.address_lists, such as ["vpn"]`)
+		}
+		var sets addressIn
+		for i, name := range spec.AddressList {
+			set, ok := c.lists[name]
+			if !ok {
+				known := make([]string, 0, len(c.lists))
+				for k := range c.lists {
+					known = append(known, k)
+				}
+				sort.Strings(known)
+				hint := "add it under rules.address_lists with the file that holds the addresses"
+				if len(known) > 0 {
+					hint = "the lists are: " + strings.Join(known, ", ")
+				}
+				c.add(fmt.Sprintf("%s.address_list[%d]", field, i), fmt.Sprintf("there is no address list named %q", clip(name)), hint)
+				continue
+			}
+			sets = append(sets, set)
+		}
+		if len(sets) > 0 {
+			parts = append(parts, sets)
+		}
+	}
+
 	if spec.Trapped != nil {
 		if c.trap {
 			parts = append(parts, trappedIs(*spec.Trapped))
@@ -422,7 +478,7 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	// Saying "no conditions" on top of that would send the reader looking for
 	// a second mistake that does not exist.
 	declared := spec.Method != nil || spec.Host != nil || spec.Path != nil || spec.Query != nil || spec.UserAgent != nil ||
-		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.Trapped != nil || spec.Country != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
+		spec.Header != nil || spec.IP != nil || spec.Crawler != nil || spec.Trapped != nil || spec.Country != nil || spec.ASN != nil || spec.AddressList != nil || spec.All != nil || spec.Any != nil || spec.Not != nil
 
 	switch len(parts) {
 	case 0:

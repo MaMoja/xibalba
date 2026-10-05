@@ -142,7 +142,8 @@ func (c *Config) ruleSpec(state changes.State, now time.Time) (spec rules.Spec, 
 		all = append(all, file.Rules...)
 	}
 	r := c.Rules
-	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn}, first, count, nil
+	return rules.Spec{DefaultAction: r.DefaultAction, Thresholds: r.Thresholds, Rules: all, Crawlers: r.Catalog, Trap: r.TrapOn, Countries: r.CountriesOn,
+		ASN: r.ASNOn, AddressLists: r.Lists}, first, count, nil
 }
 
 // plainYAML refuses the parts of YAML that a rule text typed into a web

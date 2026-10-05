@@ -119,6 +119,7 @@ What happens to each request. How rules are written is explained in
 | `rules.thresholds` | `[]` | List of `{weight, action}`; weight 1 to 1000, action `challenge` or `deny` | Scores at which a request is challenged or denied. |
 | `rules.presets` | `[]` | List of preset names; see [RULES.md](RULES.md#presets) | Ready-made rule groups. Evaluated after `rules.list` and before `rules.files`, in the order given. |
 | `rules.files` | `[]` | List of paths, relative to the configuration file | Rule files to import. Evaluated after `rules.list` and the presets, in the order given. |
+| `rules.address_lists` | `{}` | Name, then file (relative to the configuration file); up to 32 | Files with one address or network per line, for the rule condition `address_list`. A name is 1 to 40 small letters, digits, `-` and `_`. Read at start. See [NETWORKS.md](NETWORKS.md). |
 | `rules.list` | `[]` | List of rules | Rules written in the configuration file. Evaluated first, top to bottom. |
 
 With the defaults nothing is blocked and nobody is challenged.
@@ -148,6 +149,17 @@ a rule has a `country` condition.
 | `countries.database` | empty | Path of a `.mmdb` file, relative to the configuration file | The country database. Empty: countries are not known, and a `country` condition is reported as a mistake. The file must exist and be usable, unless `countries.download` is `true`. A newer file is picked up within a minute. |
 | `countries.download` | `false` | `true`, `false` | Download the database when the file is missing or a month old. Needs `countries.database`. |
 | `countries.download_url` | DB-IP's free country database | `https://` address; `{year}` and `{month}` are filled in | Where to download from. The answer may be compressed with gzip. Read the provider's licence terms. |
+
+### `asn`
+
+The database that says which network operator an address belongs to, for
+the rule condition `asn`; explained in [NETWORKS.md](NETWORKS.md).
+
+| Setting | Default | Allowed values | Meaning |
+|---|---|---|---|
+| `asn.database` | empty | A file name, relative to the configuration file | The database of network operators in `.mmdb` format. Empty: operators are not known, and a rule with an `asn` condition is a mistake. Read again within a minute when the file changes. |
+| `asn.download` | `false` | `true`, `false` | Download the database when the file is missing or a month old. Makes an outgoing connection. |
+| `asn.download_url` | DB-IP's free database of network operators | `https://` address; `{year}` and `{month}` are filled in | Where to download from. Not tried against the real server yet. Read the provider's licence terms. |
 
 ### `trap`
 

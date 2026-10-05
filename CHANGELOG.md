@@ -17,6 +17,13 @@ All notable changes are listed here. The format follows
 - A check of its own for a rule or threshold: `challenge:` with method,
   difficulty, wait, checks. A pass counts wherever the same or less is asked.
 
+- Rules by network operator: the condition `asn` with a list of AS numbers,
+  from a database you supply (`asn.database`) or the free one of DB-IP
+  downloaded for you. For hosting companies and clouds.
+- Rules by address lists: `rules.address_lists` names files with one
+  address or network per line, and the condition `address_list` asks
+  whether a client is in one. For VPN exits and other long lists; a lookup
+  takes the same time whatever the size. See `docs/NETWORKS.md`.
 - The web server can ask Xibalba about each request instead of passing it
   through (`verdict.enabled`): nginx `auth_request`, Caddy `forward_auth`,
   Traefik `forwardAuth`. `upstream.url` may then be left out. Example files

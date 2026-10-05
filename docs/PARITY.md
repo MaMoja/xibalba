@@ -9,6 +9,8 @@ documentation only, described in our own words), and where Xibalba stands.
 | Feature | Note |
 |---|---|
 | Reverse proxy in front of one website | |
+| Rules by network operator (AS number) | From a local database file (DB-IP, MaxMind); no account with a paid service needed. Anubis offers this through its Thoth service |
+| Rules by address lists from files | Up to two million entries per list, looked up in about a tenth of a microsecond; no tool needed to turn a list into rules |
 | Subrequest authentication (nginx `auth_request`, Caddy `forward_auth`, Traefik `forwardAuth`) | Called "verdict". Caddy and Traefik need no second request; nginx example tested; every request is counted once. No list of redirect domains is needed: a visitor is only ever sent back to a path on the same website. See VERDICT.md |
 | Link previews (Open Graph) for protected pages | Fetched in the background, never while a request waits; or fixed tags. `twitter:`, `article:` and `description` as well. See PREVIEWS.md |
 | Configurable status codes for the check and the block page | From a list of sensible codes; default 403 |

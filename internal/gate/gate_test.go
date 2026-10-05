@@ -866,3 +866,39 @@ func TestPageInDryRunAndOnFailure(t *testing.T) {
 		t.Errorf("failure: %s %d", got, rec.Code)
 	}
 }
+
+func TestNetworkOperatorReachesTheRules(t *testing.T) {
+	e, problems := rules.Compile(rules.Spec{DefaultAction: rules.Allow, ASN: true,
+		Rules: []rules.RuleSpec{{Name: "hosting", Action: rules.Deny, Match: rules.MatchSpec{ASN: []uint32{64500}}}}})
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	loaded := true
+	h := newHarness(t, func(o *Options) {
+		o.Engine = e
+		o.ASN = func(client netip.Addr) (uint32, bool) {
+			if client == netip.MustParseAddr("203.0.113.66") {
+				return 64500, loaded
+			}
+			return 0, loaded
+		}
+	})
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != http.StatusForbidden {
+		t.Errorf("a client of the denied operator got %d", rec.Code)
+	}
+	if rec := h.do(call{target: "/", remote: "203.0.113.67:1"}); rec.Code != 200 {
+		t.Errorf("a client of an unknown operator got %d", rec.Code)
+	}
+	if action, source, _, ok := h.gate.Explain(httptest.NewRequest("GET", "/", nil), netip.MustParseAddr("203.0.113.66"), nil); !ok || action != rules.Deny || source != "rule:hosting" {
+		t.Errorf("the box to try a request does not see the operator: %s %s", action, source)
+	}
+	loaded = false
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != 200 {
+		t.Errorf("without a database: %d", rec.Code)
+	}
+	// Without the function at all, as when no database is configured.
+	h = newHarness(t, func(o *Options) { o.Engine = e })
+	if rec := h.do(call{target: "/", remote: "203.0.113.66:1"}); rec.Code != 200 {
+		t.Errorf("without the function: %d", rec.Code)
+	}
+}

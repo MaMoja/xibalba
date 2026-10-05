@@ -461,6 +461,23 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		country = func(client netip.Addr) ([2]byte, bool) { return locator.Country(client), locator.Loaded() }
 	}
 
+	// Network operators, on the same terms as countries.
+	var operator func(netip.Addr) (uint32, bool)
+	if cfg.ASN.Path != "" && (engine.UsesASN() || mayChange) {
+		operators := geo.New(geo.Options{
+			Name:        "asn",
+			What:        "network",
+			Path:        cfg.ASN.Path,
+			Download:    cfg.ASN.Download,
+			DownloadURL: cfg.ASN.DownloadURL,
+			UserAgent:   "Xibalba/" + buildinfo.Get().Version + " (+https://github.com/MaMoja/xibalba)",
+			Log:         log,
+		})
+		registry.Register(operators.Name(), operators.Health)
+		supervisor.Add(operators)
+		operator = func(client netip.Addr) (uint32, bool) { return operators.ASN(client), operators.Loaded() }
+	}
+
 	var trapped func(netip.Addr) bool
 	own := check.Handler()
 	if snare != nil {
@@ -482,6 +499,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Origin:      originFn,
 		Trapped:     trapped,
 		Country:     country,
+		ASN:         operator,
 		Engine:      engine,
 		Identify:    identify,
 		Peek:        peek,
