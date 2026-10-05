@@ -121,7 +121,7 @@ decision (2026-10-03): all of this comes before statistics.
   - [ ] Advice for sites with their own Content-Security-Policy
   - [ ] For visitors: "Why do I see this check?", questions and answers, browser extensions known to break the check
   - [ ] Questions and answers for operators
-- [x] Link previews (Open Graph): the challenge page carries the preview tags of the page that was asked for (`previews`, off by default); fetched in the background, or fixed in the configuration
+- [x] Link previews (Open Graph): the challenge page carries the preview tags of the page that was asked for (`previews`, off by default); fetched in the background, or fixed in the configuration. Security review by a second agent (2026-10-05); two high findings fixed before release: a visitor's host name could end up in everyone's preview, and memory use far above the documented bound
 - [x] HTTP status of the security check and the block page can be chosen (`pages.status`)
 - [x] Imprint and privacy links on the visitor pages
 - [ ] Allowed redirect domains for setups with several host names

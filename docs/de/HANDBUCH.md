@@ -1390,9 +1390,10 @@ So arbeitet es:
 |---|---|---|
 | `previews.enabled` | `false` | Vorschau-Angaben auf die Prüfseite setzen |
 | `previews.ttl` | `24h` | wie lange die Angaben einer Seite gelten, bevor sie neu geholt werden (`1m` bis `720h`) |
-| `previews.max_pages` | `1000` | wie viele Seiten höchstens gemerkt werden (1 bis 100000) |
+| `previews.max_pages` | `1000` | wie viele Seiten höchstens gemerkt werden (1 bis 20000); 1000 Seiten brauchen höchstens 6 MB, meist unter 1 MB |
 | `previews.fetch_per_minute` | `30` | wie viele Seiten pro Minute höchstens von Ihrer Website geholt werden (1 bis 600) |
 | `previews.query` | `false` | `false`: der Teil der Adresse nach dem `?` wird weggelassen. `true`: jede Abfrage ist eine eigene Seite; nötig, wenn Ihre Seiten sich nur darin unterscheiden (`/artikel?id=7`) |
+| `previews.skip_paths` | `[]` | Pfadanfänge, deren Seiten nie geholt werden, etwa `["/intern/"]` |
 | `previews.tags` | `{}` | feste Angaben für alle Seiten; dann wird nichts geholt |
 
 Reicht Ihnen eine Vorschau für die ganze Website, geben Sie die Angaben
@@ -1430,8 +1431,9 @@ Abschnitt).
 **Nicht öffentliche Seiten.** Die Angaben sieht jeder, der die Prüfseite
 bekommt. Bei öffentlichen Seiten ist das der Zweck. Achten Sie auf Seiten,
 die Ihre Website ohne Anmeldung ausliefert, nur weil die Anfrage vom eigenen
-Rechner kommt: deren Titel würden gezeigt. Seiten, die eine Anmeldung
-verlangen, verraten nichts, denn Xibalba meldet sich nicht an.
+Rechner kommt: deren Titel würden gezeigt. Nehmen Sie solche Bereiche mit
+`previews.skip_paths` aus. Seiten, die eine Anmeldung verlangen, verraten
+nichts, denn Xibalba meldet sich nicht an.
 
 Ob die Abrufe gelingen, zeigt `/healthz` (Bestandteil `previews`) und der
 Zähler `xibalba_preview_fetches_total` unter `/metrics`. Mehr dazu in
@@ -1466,7 +1468,9 @@ Wann ein anderer Code sinnvoll ist:
 
 Gleich welcher Code: Die Seiten sind als „nicht speichern“ und „nicht in
 Suchmaschinen aufnehmen“ gekennzeichnet. „Zu viele Anfragen“ hat immer den
-Status 429.
+Status 429. Wählen Sie 429 oder 503, lassen Sie `/robots.txt` mit einer
+Regel durch: Suchmaschinen lesen eine solche Antwort auf `/robots.txt` als
+„diese Website gar nicht abrufen“.
 
 ### Ihren Namen zeigen (Sponsor-Lizenz)
 

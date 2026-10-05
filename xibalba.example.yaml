@@ -147,13 +147,16 @@ previews:
   # How long the tags of a page are kept before they are fetched again
   # (1m to 720h).
   ttl: 24h
-  # How many pages are remembered at most (1 to 100000).
+  # How many pages are remembered at most (1 to 20000).
   max_pages: 1000
   # How many pages are fetched from your website per minute at most (1 to 600).
   fetch_per_minute: 30
   # true: addresses that differ after the "?" are different pages.
   # false: the part after "?" is left out.
   query: false
+  # Beginnings of paths whose pages are never fetched and get no tags,
+  # for example ["/intern/"].
+  skip_paths: []
   # Tags used for every page; nothing is fetched then. Example:
   #
   #   tags:

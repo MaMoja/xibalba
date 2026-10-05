@@ -466,6 +466,8 @@ func TestPreviewAndStatusSettings(t *testing.T) {
 	tests := []struct{ name, yaml, path, message string }{
 		{"ttl too short", "previews:\n  ttl: 1s\n", "previews.ttl", "out of range"},
 		{"no pages", "previews:\n  max_pages: 0\n", "previews.max_pages", "out of range"},
+		{"skip path", "previews:\n  skip_paths: [intern]\n", "previews.skip_paths[0]", "not the beginning of a path"},
+		{"status zero", "pages:\n  status:\n    blocked: 0\n", "pages.status.blocked", "0 is not an HTTP status"},
 		{"too many pages", "previews:\n  max_pages: 10000000\n", "previews.max_pages", "out of range"},
 		{"too fast", "previews:\n  fetch_per_minute: 100000\n", "previews.fetch_per_minute", "out of range"},
 		{"tag name", "previews:\n  tags:\n    refresh: \"0;url=x\"\n", "previews.tags.refresh", "cannot be used"},

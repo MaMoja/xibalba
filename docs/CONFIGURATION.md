@@ -169,10 +169,11 @@ Link previews (Open Graph) for pages behind the security check; explained in
 |---|---|---|---|
 | `previews.enabled` | `false` | `true`, `false` | Puts the preview tags of the page that was asked for on the challenge page. Xibalba fetches them from your website in the background. |
 | `previews.ttl` | `24h` | `1m` to `720h` | How long the tags of a page are kept before they are fetched again. |
-| `previews.max_pages` | `1000` | 1 to 100000 | How many pages are remembered at most. About 2 MB per 1000 at the very most; usually far less. |
+| `previews.max_pages` | `1000` | 1 to 20000 | How many pages are remembered at most. 6 MB per 1000 at the very most (4 KiB of tags per page plus its address); usually under 1 MB. |
 | `previews.fetch_per_minute` | `30` | 1 to 600 | How many pages are fetched from your website per minute at most. |
 | `previews.query` | `false` | `true`, `false` | `true` treats addresses that differ after the `?` as different pages. `false` leaves that part out. |
-| `previews.tags` | `{}` | Tag name, then text (up to 1000 bytes, one line); up to 40 | Tags used for every page. Nothing is fetched then. A name is `description` or starts with `og:`, `twitter:` or `article:`. |
+| `previews.skip_paths` | `[]` | Up to 100 beginnings of paths, each starting with `/` | Pages under these paths are never fetched and get no tags. For parts of the website that are not public. |
+| `previews.tags` | `{}` | Tag name, then text (up to 1000 bytes, one line); up to 40, 4096 bytes together | Tags used for every page. Nothing is fetched then. A name is `description` or starts with `og:`, `twitter:` or `article:`. |
 
 ### `limits`
 
@@ -235,7 +236,9 @@ previews only from answers with status 200 (see [PREVIEWS.md](PREVIEWS.md)),
 and for web servers or CDNs in front that replace every error answer with a
 page of their own. `404` or `410` for the block page tell a crawler that
 there is nothing to come back for. `429` and `503` ask a program to come
-back later; that is rarely what you want for a block. "Too many requests"
+back later; that is rarely what you want for a block, and search engines
+read such an answer for `/robots.txt` as "do not crawl this website at all",
+so let `/robots.txt` through with a rule if you choose one of them. "Too many requests"
 always has status 429 and "website unavailable" 502, 503 or 504.
 
 Text names for `pages.texts`:

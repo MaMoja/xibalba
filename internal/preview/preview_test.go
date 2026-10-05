@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/MaMoja/xibalba/internal/health"
 )
@@ -40,6 +41,10 @@ func TestParse(t *testing.T) {
 			[]Tag{{"og:image", `"><script>alert(1)</script>`, false}}},
 		{"greater-than sign in a value", `<meta property="og:title" content="Home > Town"><meta name="description" content='<script>alert(1)</script>'>`,
 			[]Tag{{"og:title", "Home > Town", false}, {"description", "<script>alert(1)</script>", true}}},
+		{"comments, scripts and the body are not the page's own tags", `<head><!-- <meta property="og:title" content="old"> --><script>var s = '<meta property="og:title" content="js">';</script>
+<noscript><meta property="og:image" content="n"></noscript><meta property="og:title" content="real"><body><meta property="og:description" content="from a comment field">`,
+			[]Tag{{"og:title", "real", false}}},
+		{"unfinished comment and script", `<meta property="og:title" content="a"><script`, []Tag{{"og:title", "a", false}}},
 		{"unfinished", `<meta property="og:title" content="never closed`, nil},
 		{"unfinished quote", `<meta property="og:title content=x><title>t`, nil},
 		{"nothing", "", nil},
@@ -339,5 +344,128 @@ func TestCheckTag(t *testing.T) {
 		if CheckTag(c[0], c[1]) == "" {
 			t.Errorf("%q accepted", c)
 		}
+	}
+}
+
+func TestTagsOfAPageAreBoundedAndCopied(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < MaxTags; i++ {
+		fmt.Fprintf(&b, `<meta property="og:t%d" content="%s">`, i, strings.Repeat("x", MaxValue))
+	}
+	page := b.String()
+	total := 0
+	for _, tag := range Parse(page) {
+		total += len(tag.Key) + len(tag.Value)
+		at, from := uintptr(unsafe.Pointer(unsafe.StringData(tag.Value))), uintptr(unsafe.Pointer(unsafe.StringData(page)))
+		if at >= from && at < from+uintptr(len(page)) {
+			t.Fatal("a value is a piece of the page and keeps the page in memory")
+		}
+	}
+	if total == 0 || total > MaxBytes {
+		t.Errorf("%d bytes of tags, limit %d", total, MaxBytes)
+	}
+}
+
+func TestAVisitorsHostNameDoesNotReachOtherVisitors(t *testing.T) {
+	s := newSite(t)
+	s.reply = func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprintf(w, `<meta property="og:image" content="https://%s%s/logo.png">`, r.Header.Get("X-Forwarded-Host"), r.Header.Get("Forwarded"))
+	}
+	c := start(t, s, nil) // the website is not told the host name
+	c.Tags("evil.example", "/rathaus", "")
+	eventually(t, "known", func() bool { return len(c.Tags("www.example.org", "/rathaus", "")) == 1 })
+	if got := c.Tags("www.example.org", "/rathaus", "")[0].Value; got != "https:///logo.png" {
+		t.Errorf("the first visitor's host name is in everyone's tags: %q", got)
+	}
+	if r := s.last.Load().(*http.Request); strings.Contains(r.Host, "evil") {
+		t.Errorf("host sent: %q", r.Host)
+	}
+}
+
+func TestPagesWithTagsAreNotPushedOut(t *testing.T) {
+	s := newSite(t)
+	s.reply = func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if strings.HasPrefix(r.URL.Path, "/real") {
+			_, _ = w.Write([]byte(`<meta property="og:title" content="real">`))
+		}
+	}
+	c := start(t, s, func(o *Options) { o.MaxEntries = 20 })
+	for i := 0; i < 20; i++ {
+		path := fmt.Sprintf("/real%d", i)
+		c.Tags("h", path, "")
+		eventually(t, path, func() bool { return len(c.Tags("h", path, "")) == 1 })
+	}
+	for i := 0; i < 5000; i++ {
+		c.Tags("h", fmt.Sprintf("/junk%d", i), "")
+	}
+	for i := 0; i < 20; i++ {
+		if len(c.Tags("h", fmt.Sprintf("/real%d", i), "")) != 1 {
+			t.Fatalf("/real%d was pushed out by addresses without tags", i)
+		}
+	}
+	c.mu.Lock()
+	n := len(c.entries)
+	c.mu.Unlock()
+	if n > 20 {
+		t.Errorf("%d entries, limit 20", n)
+	}
+}
+
+func TestOldTagsSurviveAFailedFetch(t *testing.T) {
+	s := newSite(t)
+	var down atomic.Bool
+	s.reply = func(w http.ResponseWriter, _ *http.Request) {
+		if down.Load() {
+			w.WriteHeader(503)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<meta property="og:title" content="t">`))
+	}
+	var now atomic.Int64
+	now.Store(1_700_000_000)
+	c := start(t, s, func(o *Options) { o.Now = func() time.Time { return time.Unix(now.Load(), 0) } })
+	c.Tags("h", "/a", "")
+	eventually(t, "known", func() bool { return len(c.Tags("h", "/a", "")) == 1 })
+	down.Store(true)
+	now.Add(3601)
+	c.Tags("h", "/a", "")
+	eventually(t, "second fetch", func() bool { return s.hits.Load() == 2 })
+	time.Sleep(20 * time.Millisecond)
+	if len(c.Tags("h", "/a", "")) != 1 {
+		t.Error("a failed fetch threw the old tags away")
+	}
+}
+
+func TestSkippedPathsAndEscapedPaths(t *testing.T) {
+	s := newSite(t)
+	c := start(t, s, func(o *Options) { o.Skip = []string{"/intern/"} })
+	for _, path := range []string{"/intern/plan", "/%69ntern/plan", "/a/%2e%2e/intern/x", "/a%3Fb?c", "/bad%zz"} {
+		if c.Tags("h", path, "") != nil {
+			t.Errorf("tags for %s", path)
+		}
+	}
+	time.Sleep(30 * time.Millisecond)
+	if n := s.hits.Load(); n != 0 {
+		t.Fatalf("%d fetches for paths not to fetch", n)
+	}
+	c.Tags("h", "/a%2Fb%20c", "")
+	eventually(t, "fetched", func() bool { return s.hits.Load() == 1 })
+	if got := s.last.Load().(*http.Request).URL.EscapedPath(); got != "/a%2Fb%20c" {
+		t.Errorf("the website was asked for %s", got)
+	}
+}
+
+func BenchmarkTagsOnAFullTable(b *testing.B) {
+	u, _ := url.Parse("http://127.0.0.1:1")
+	c := New(Options{Upstream: u, TTL: time.Hour, MaxEntries: 20000, PerMinute: 1})
+	for i := 0; i < 20000; i++ {
+		c.entries[fmt.Sprintf("/p%d?", i)] = entry{tags: []Tag{{Key: "og:title", Value: "t"}}, expires: time.Now().Add(time.Hour)}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Tags("h", "/junk"+fmt.Sprint(i), "")
 	}
 }

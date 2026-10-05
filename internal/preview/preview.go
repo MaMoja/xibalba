@@ -38,7 +38,10 @@ const (
 	maxKey   = 64
 	maxHead  = 256 << 10 // how much of a page is read
 	maxQuery = 512       // an address with a longer query gets no tags
-	maxPath  = 1024
+	maxPath  = 512
+	// MaxBytes is how much the names and values of one page's tags may
+	// take together.
+	MaxBytes = 4096
 	queue    = 64
 )
 
@@ -66,6 +69,8 @@ type Options struct {
 	// fetched and remembered on its own. Without it the query is left out,
 	// so that one page is fetched once however the link was decorated.
 	Query bool
+	// Skip lists beginnings of paths that are never fetched.
+	Skip []string
 	// Fixed, if not empty, is used for every address, and nothing is
 	// fetched.
 	Fixed []Tag
@@ -194,8 +199,9 @@ func (c *Cache) Counts() (fetched, failed, dropped uint64) {
 }
 
 // Tags returns the tags for an address of the website, or nil if none are
-// known yet. It never waits: an address not known is put in line to be
-// fetched, and a later call has the answer.
+// known yet. path is the path as it was sent (escaped). Tags never waits:
+// an address not known is put in line to be fetched, and a later call has
+// the answer.
 func (c *Cache) Tags(host, path, query string) []Tag {
 	if len(c.opts.Fixed) > 0 {
 		return c.opts.Fixed
@@ -203,12 +209,26 @@ func (c *Cache) Tags(host, path, query string) []Tag {
 	if !c.opts.Query {
 		query = ""
 	}
-	if len(query) > maxQuery || len(path) > maxPath || len(host) > 255 || !plainPath(path) {
+	if len(query) > maxQuery || len(path) > maxPath || len(host) > 255 {
 		return nil
 	}
+	plain, err := url.PathUnescape(path)
+	if err != nil || !plainPath(plain) || strings.ContainsAny(path, "?#") {
+		return nil
+	}
+	for _, prefix := range c.opts.Skip {
+		if strings.HasPrefix(plain, prefix) {
+			return nil
+		}
+	}
+	// The escaped path holds no "?", so the key is one address only.
 	key := path + "?" + query
 	if c.opts.PreserveHost {
-		key = strings.ToLower(host) + key
+		// The website answers by host name, so each name has its own tags.
+		host = strings.TrimSuffix(lowerASCII(host), ".")
+		key = host + key
+	} else {
+		host = "" // the website never learns the name; one set of tags for all
 	}
 	now := c.opts.Now()
 
@@ -218,16 +238,13 @@ func (c *Cache) Tags(host, path, query string) []Tag {
 		c.mu.Unlock()
 		return e.tags
 	}
-	// Note that the fetch is under way, so the address is asked for once:
-	// what was known stays in use until the new answer is there.
-	if !known && len(c.entries) >= c.opts.MaxEntries {
-		c.makeRoom(now)
-	}
-	if len(c.entries) >= c.opts.MaxEntries && !known {
+	if !known && len(c.entries) >= c.opts.MaxEntries && !c.makeRoom(now) {
 		c.mu.Unlock()
 		c.dropped.Add(1)
 		return nil
 	}
+	// Note that the fetch is under way, so the address is asked for once:
+	// what was known stays in use until the new answer is there.
 	c.entries[key] = entry{tags: e.tags, expires: now.Add(time.Minute)}
 	c.mu.Unlock()
 
@@ -239,25 +256,42 @@ func (c *Cache) Tags(host, path, query string) []Tag {
 	return e.tags
 }
 
-// makeRoom forgets expired entries, and if none has expired, any one. The
-// caller holds the lock.
-func (c *Cache) makeRoom(now time.Time) {
+// makeRoom forgets one entry of a full table and reports whether it did. It
+// looks at a few entries only, so its cost does not grow with the table,
+// and it takes one that has expired or holds no tags: pages with tags are
+// never pushed out by addresses that have none, however many are asked
+// for. The caller holds the lock.
+func (c *Cache) makeRoom(now time.Time) bool {
+	looked := 0
 	for key, e := range c.entries {
-		if !now.Before(e.expires) {
+		if len(e.tags) == 0 || !now.Before(e.expires) {
 			delete(c.entries, key)
+			return true
 		}
-	}
-	for key := range c.entries {
-		if len(c.entries) < c.opts.MaxEntries {
+		if looked++; looked >= 16 {
 			break
 		}
-		delete(c.entries, key)
 	}
+	return false
 }
 
+// store keeps the answer for an address, unless the address was forgotten
+// while it was fetched.
 func (c *Cache) store(key string, tags []Tag, keep time.Duration) {
 	c.mu.Lock()
-	c.entries[key] = entry{tags: tags, expires: c.opts.Now().Add(keep)}
+	if _, ok := c.entries[key]; ok {
+		c.entries[key] = entry{tags: tags, expires: c.opts.Now().Add(keep)}
+	}
+	c.mu.Unlock()
+}
+
+// retry keeps what is known about an address and asks again after a while.
+func (c *Cache) retry(key string) {
+	c.mu.Lock()
+	if e, ok := c.entries[key]; ok {
+		e.expires = c.opts.Now().Add(min(c.opts.TTL, 5*time.Minute))
+		c.entries[key] = e
+	}
 	c.mu.Unlock()
 }
 
@@ -265,10 +299,14 @@ func (c *Cache) store(key string, tags []Tag, keep time.Duration) {
 // cannot be fetched, or has no tags, is remembered as such for a while, so
 // that it is not asked for again and again.
 func (c *Cache) fetch(ctx context.Context, j job) {
-	target := *c.opts.Upstream
-	target.Path = strings.TrimSuffix(target.Path, "/") + j.path
-	target.RawQuery = j.query
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	// The path goes on as it came, like the proxy passes it on.
+	base := *c.opts.Upstream
+	base.RawQuery, base.Fragment = "", ""
+	target := strings.TrimSuffix(base.String(), "/") + j.path
+	if j.query != "" {
+		target += "?" + j.query
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		c.store(j.key, nil, c.opts.TTL)
 		return
@@ -276,7 +314,6 @@ func (c *Cache) fetch(ctx context.Context, j job) {
 	if c.opts.PreserveHost && j.host != "" {
 		req.Host = j.host
 	}
-	req.Header.Set("X-Forwarded-Host", j.host)
 	req.Header.Set("User-Agent", c.opts.UserAgent)
 	req.Header.Set("Accept", "text/html")
 
@@ -284,18 +321,20 @@ func (c *Cache) fetch(ctx context.Context, j job) {
 	if err != nil {
 		c.failed.Add(1)
 		c.lastErr.Store("the website did not answer")
-		c.store(j.key, nil, min(c.opts.TTL, 5*time.Minute))
+		c.retry(j.key)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	c.fetched.Add(1)
 	c.lastErr.Store("")
 	if resp.StatusCode >= 500 { // a passing trouble: ask again soon
-		c.store(j.key, nil, min(c.opts.TTL, 5*time.Minute))
+		c.retry(j.key)
 		return
 	}
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
-		c.store(j.key, nil, c.opts.TTL)
+		// Nothing to show. Not kept as long as tags: such an address is
+		// more often a mistake or a probe than a page.
+		c.store(j.key, nil, min(c.opts.TTL, time.Hour))
 		return
 	}
 	head, _ := io.ReadAll(io.LimitReader(resp.Body, maxHead))
@@ -308,49 +347,95 @@ func (c *Cache) fetch(ctx context.Context, j job) {
 // used. Whatever the page holds, the result is bounded and plain text.
 func Parse(page string) []Tag {
 	lower := lowerASCII(page)
-	if end := strings.Index(lower, "</head"); end >= 0 {
-		page, lower = page[:end], lower[:end]
+	for _, stop := range []string{"</head", "<body"} {
+		if end := strings.Index(lower, stop); end >= 0 {
+			page, lower = page[:end], lower[:end]
+		}
 	}
 	var tags []Tag
 	seen := map[string]bool{}
-	hasTitle := false
-	for at := 0; len(tags) < MaxTags; {
-		i := strings.Index(lower[at:], "<meta")
+	hasTitle, size, title := false, 0, ""
+	add := func(tag Tag) {
+		if size+len(tag.Key)+len(tag.Value) > MaxBytes {
+			return
+		}
+		size += len(tag.Key) + len(tag.Value)
+		// Copies: a piece of the page would keep the whole page in memory.
+		tag.Key, tag.Value = strings.Clone(tag.Key), strings.Clone(tag.Value)
+		tags = append(tags, tag)
+	}
+	for at := 0; at < len(lower) && len(tags) < MaxTags; {
+		i := strings.IndexByte(lower[at:], '<')
 		if i < 0 {
 			break
 		}
-		start := at + i + len("<meta")
-		end := tagEnd(page[start:])
-		if end < 0 {
-			break
-		}
-		at = start + end + 1
-		attrs := attributes(page[start : start+end])
-		key, name := attrs["property"], false
-		if key == "" {
-			key, name = attrs["name"], true
-		}
-		key = lowerASCII(strings.TrimSpace(key))
-		value := clean(attrs["content"])
-		wanted := strings.HasPrefix(key, "og:") || strings.HasPrefix(key, "twitter:") || strings.HasPrefix(key, "article:") || key == "description"
-		if !wanted || !plainKey(key) || value == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		hasTitle = hasTitle || key == "og:title"
-		tags = append(tags, Tag{Key: key, Value: value, Name: name && !strings.HasPrefix(key, "og:") && !strings.HasPrefix(key, "article:")})
-	}
-	if !hasTitle && len(tags) < MaxTags {
-		if i := strings.Index(lower, "<title"); i >= 0 {
-			if open := strings.IndexByte(lower[i:], '>'); open >= 0 {
-				rest := page[i+open+1:]
-				if end := strings.Index(lowerASCII(rest), "</title"); end >= 0 {
-					if title := clean(rest[:end]); title != "" {
-						tags = append(tags, Tag{Key: "og:title", Value: title})
-					}
-				}
+		at += i
+		rest := lower[at:]
+		switch {
+		case strings.HasPrefix(rest, "<!--"):
+			// What is commented out is not part of the page.
+			end := strings.Index(rest, "-->")
+			if end < 0 {
+				at = len(lower)
+			} else {
+				at += end + 3
 			}
+		case strings.HasPrefix(rest, "<script"), strings.HasPrefix(rest, "<style"), strings.HasPrefix(rest, "<noscript"), strings.HasPrefix(rest, "<template"):
+			// Text of a program is not markup, whatever it looks like.
+			stop := strings.IndexAny(rest, " \t\r\n>/")
+			if stop < 0 {
+				at = len(lower)
+				break
+			}
+			name := rest[1:stop]
+			end := strings.Index(rest, "</"+name)
+			if end < 0 {
+				at = len(lower)
+			} else {
+				at += end + 2
+			}
+		case strings.HasPrefix(rest, "<title") && title == "":
+			open := strings.IndexByte(rest, '>')
+			if open < 0 {
+				at = len(lower)
+				break
+			}
+			body := page[at+open+1:]
+			end := strings.Index(lower[at+open+1:], "</title")
+			if end < 0 {
+				at = len(lower)
+				break
+			}
+			title = clean(body[:end])
+			at += open + 1 + end
+		case strings.HasPrefix(rest, "<meta"):
+			start := at + len("<meta")
+			end := tagEnd(page[start:])
+			if end < 0 {
+				at = len(lower)
+				break
+			}
+			at = start + end + 1
+			attrs := attributes(page[start : start+end])
+			key, name := attrs["property"], false
+			if key == "" {
+				key, name = attrs["name"], true
+			}
+			key = lowerASCII(strings.TrimSpace(key))
+			value := clean(attrs["content"])
+			wanted := strings.HasPrefix(key, "og:") || strings.HasPrefix(key, "twitter:") || strings.HasPrefix(key, "article:") || key == "description"
+			if !wanted || !plainKey(key) || value == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			hasTitle = hasTitle || key == "og:title"
+			add(Tag{Key: key, Value: value, Name: name && !strings.HasPrefix(key, "og:") && !strings.HasPrefix(key, "article:")})
+		default:
+			at++
 		}
+	}
+	if !hasTitle && title != "" && len(tags) < MaxTags {
+		add(Tag{Key: "og:title", Value: title})
 	}
 	return tags
 }
@@ -497,7 +582,7 @@ func CheckTag(key, value string) string {
 	case !wanted || !plainKey(key):
 		return `the name has to be "description" or start with "og:", "twitter:" or "article:", in small letters`
 	case value == "" || value != tidy(value):
-		return fmt.Sprintf("the value has to be plain text of 1 to %d characters, on one line", MaxValue)
+		return fmt.Sprintf("the value has to be plain text of 1 to %d bytes, on one line", MaxValue)
 	}
 	return ""
 }

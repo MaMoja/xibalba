@@ -516,6 +516,12 @@ func (c Config) validate(lines map[string]int) []Problem {
 		add("upstream.response_header_timeout", fmt.Sprintf("%s must be greater than zero", c.Upstream.ResponseHeaderTimeout),
 			`use a duration such as "60s"`)
 	}
+	if c.Pages.Status.Challenge == 0 {
+		add("pages.status.challenge", "0 is not an HTTP status", "use 403, or leave the setting out")
+	}
+	if c.Pages.Status.Blocked == 0 {
+		add("pages.status.blocked", "0 is not an HTTP status", "use 403, or leave the setting out")
+	}
 	for _, p := range pages.Check(c.Pages.Options()) {
 		add("pages."+p.Field, p.Message, p.Hint)
 	}

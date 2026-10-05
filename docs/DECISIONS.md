@@ -25,6 +25,19 @@ Newest first. One entry per decision: what, why, who decided.
   Agent's choice. The standard library has none and a dependency for forty
   tags is not worth it. It is fuzzed; what it returns is escaped again by
   the page template.
+- **The website is not told the visitor's host name by the preview fetch
+  unless it is part of what the tags are kept under.** Found by the review:
+  a website that builds addresses from `X-Forwarded-Host` would have put
+  the first asker's host name into everyone's preview. With
+  `preserve_host` each host name has its own tags; without it no name is
+  sent.
+- **Pages with tags are never pushed out of the table by addresses without
+  tags.** Found by the review: asking for many invented addresses emptied
+  the table. Making room looks at 16 entries, not at all of them, so its
+  cost does not grow with the table (0.7 µs at 20000 pages).
+- **Tags are copied and capped at 4096 bytes per page; `max_pages` ends at
+  20000.** Found by the review: a value cut out of a page kept the whole
+  256 KiB of it in memory.
 - **Previews are free.** Agent's choice in line with rule 12: they are
   about being found and shared, not about appearance.
 

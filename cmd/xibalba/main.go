@@ -102,7 +102,7 @@ func previewTags(previews *preview.Cache, r *http.Request) []pages.MetaTag {
 	if previews == nil || (r.Method != http.MethodGet && r.Method != http.MethodHead) || strings.HasPrefix(r.URL.Path, "/.xibalba/") {
 		return nil
 	}
-	tags := previews.Tags(r.Host, r.URL.Path, r.URL.RawQuery)
+	tags := previews.Tags(r.Host, r.URL.EscapedPath(), r.URL.RawQuery)
 	if len(tags) == 0 {
 		return nil
 	}
@@ -339,6 +339,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			MaxEntries:   cfg.Previews.MaxPages,
 			PerMinute:    cfg.Previews.FetchPerMinute,
 			Query:        cfg.Previews.Query,
+			Skip:         cfg.Previews.SkipPaths,
 			Fixed:        preview.Fixed(cfg.Previews.Tags),
 			UserAgent:    "Xibalba/" + buildinfo.Get().Version + " (link preview; +" + pages.RepoURL + ")",
 			Log:          log,

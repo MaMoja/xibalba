@@ -45,17 +45,23 @@ three lines after the title come from the website's own page):
   time and at most `previews.fetch_per_minute` pages a minute, reads the
   first 256 KiB, and keeps the tags it finds in the head.
 - Later challenge pages for the address carry the tags. After
-  `previews.ttl` they are fetched again; the old ones stay in use meanwhile.
+  `previews.ttl` they are fetched again; the old ones stay in use meanwhile,
+  and also if that fetch fails.
 - Nothing is written to disk. After a restart the tags are fetched again.
 
 Which tags are taken: those whose name starts with `og:`, `twitter:` or
 `article:`, and `description`. If the page has no `og:title`, its `<title>`
-is used. At most 40 tags per page, each value at most 1000 bytes, as plain
-text. Nothing else of the page is passed on.
+is used. At most 40 tags per page, each value at most 1000 bytes and all
+of them together at most 4096 bytes, as plain text. Tags inside comments,
+scripts or the body are not taken. Nothing else of the page is passed on.
 
 The fetch goes straight to `upstream.url`, with the method GET, the user
 agent `Xibalba/<version> (link preview; …)`, and without cookies or any
-other header of the visitor. Redirects are not followed. Only an answer
+other header of the visitor. With `upstream.preserve_host: true` the host
+name the visitor asked for is sent, as the proxy sends it, and every host
+name has its own tags; otherwise the website is not told the name, so that
+one visitor's request cannot shape the tags others see. Redirects are not
+followed. Only an answer
 with status 200 and the type `text/html` is read.
 
 ## Settings
@@ -64,9 +70,10 @@ with status 200 and the type `text/html` is read.
 |---|---|---|
 | `previews.enabled` | `false` | Put the tags on the challenge page. |
 | `previews.ttl` | `24h` | How long the tags of a page are kept before they are fetched again. `1m` to `720h`. |
-| `previews.max_pages` | `1000` | How many pages are remembered at most. 1 to 100000. When the table is full, pages make way for new ones. |
+| `previews.max_pages` | `1000` | How many pages are remembered at most. 1 to 20000. When the table is full, addresses without tags and expired ones make way; pages with tags stay until they expire. |
 | `previews.fetch_per_minute` | `30` | How many pages are fetched from your website per minute at most. 1 to 600. |
 | `previews.query` | `false` | `false`: the part of an address after `?` is left out, so a page is fetched once however a link was decorated (`?utm_source=…`). `true`: every query is a page of its own; needed if your pages are told apart by the query (`/artikel?id=7`). |
+| `previews.skip_paths` | `[]` | Beginnings of paths whose pages are never fetched, for example `["/intern/"]`. |
 | `previews.tags` | `{}` | Tags used for every page. Nothing is fetched then. |
 
 ### The same preview for every page
@@ -121,8 +128,8 @@ on a public website they say nothing the page would not. Mind two cases:
 
 - Pages that are not public but answer Xibalba without a login, for example
   because your website trusts requests from the machine Xibalba runs on.
-  Their titles would be shown. Xibalba sends no login, so pages that need
-  one give nothing away.
+  Their titles would be shown. Name such parts in `previews.skip_paths`.
+  Xibalba sends no login, so pages that need one give nothing away.
 - Rules with the action `deny`: the block page never carries tags.
 
 ## What can go wrong
@@ -130,12 +137,20 @@ on a public website they say nothing the page would not. Mind two cases:
 | What happens | What Xibalba does | Where you see it |
 |---|---|---|
 | The website does not answer a fetch | No tags for that page; asked again after five minutes at the earliest. Visitors notice nothing. | `previews` is `degraded` in `/healthz` until a fetch succeeds |
-| A page has no tags, is not HTML, redirects, or is not found | Remembered as "no tags" for `previews.ttl`. | Nothing; that is normal |
+| A page has no tags, is not HTML, redirects, or is not found | Remembered as "no tags" for an hour at most. | Nothing; that is normal |
 | Many different addresses are asked for (a crawler) | At most `fetch_per_minute` fetches a minute reach the website, 64 wait in line, the rest is dropped and tried again when asked for later. | `xibalba_preview_fetches_total{result="dropped"}` in `/metrics` |
-| More pages than `max_pages` | Pages make way for new ones and are fetched again when next asked for. | Nothing |
+| More pages than `max_pages` | Addresses without tags and expired ones make way. If every place is taken by a page with tags, new pages get none until one expires. | `dropped`, as above |
+
+What it cannot do: a program that asks for very many different addresses
+keeps the line of waiting fetches busy. Your website is not asked more often
+because of it, and pages whose tags are known keep them, but pages asked
+for the first time may wait longer for their tags. With `previews.query:
+true`, anyone can also make Xibalba ask your website for a path with a query
+of their choice (GET only, at the limited rate); leave it off if addresses
+of your website do things when merely fetched.
 
 ## Privacy
 
 A fetch carries the address of the page and, with `upstream.preserve_host`,
-the host name. It carries nothing about the visitor whose request caused
-it: no address, no cookie, no user agent.
+the host name that was asked for. It carries nothing else of the request
+that caused it: no client address, no cookie, no user agent.
