@@ -169,6 +169,7 @@ internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
 internal/memhard/     the function that needs memory, for the proof of work pow-memory
+internal/robots/      turn a robots.txt into rules
 internal/license/     verify sponsor licenses, offline
 internal/pages/       pages shown to visitors; texts in assets/locales
 internal/proxy/       forward to the website, answer when it is unreachable
@@ -182,7 +183,7 @@ examples/caddy/       tested Caddy configuration; the handbook shows it
 examples/apache/, haproxy/, traefik/   tested by test/webserver
 examples/docker/, systemd/, kubernetes/  container, service and cluster examples
 Dockerfile            the container image; built and started in CI
-docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, networks, trap, previews, verdict, metrics, statistics, environments, challenge, development
+docs/                 spec, roadmap, decisions, architecture, configuration, rules, crawlers, limits, countries, networks, trap, previews, verdict, applications, metrics, statistics, environments, challenge, development
 docs/de/              operator handbook in German
 ```
 

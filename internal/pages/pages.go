@@ -588,6 +588,12 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 		http.Error(w, http.StatusText(r.statusCh), r.statusCh)
 		return
 	}
+	// A page that loads parts of itself with htmx would put the check
+	// into the middle of the page, where it cannot work. Told so, htmx
+	// loads the whole page anew, and the check appears as a page.
+	if req.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Refresh", "true")
+	}
 	r.send(w, req, r.statusCh, primary, csp, &body)
 }
 

@@ -876,3 +876,25 @@ func TestResendAndNoMemoryTextOnThePage(t *testing.T) {
 		t.Error("resend or the memory text on a page that needs neither")
 	}
 }
+
+func TestHtmxIsToldToLoadTheWholePage(t *testing.T) {
+	r := renderer(t)
+	for header, want := range map[string]string{"true": "true", "": "", "false": "", "1": ""} {
+		req := httptest.NewRequest("GET", "/part", nil)
+		if header != "" {
+			req.Header.Set("HX-Request", header)
+		}
+		rec := httptest.NewRecorder()
+		r.Challenge(rec, req, ChallengeView{Method: "pow", Nonce: "abc", Difficulty: 18})
+		if got := rec.Header().Get("HX-Refresh"); got != want {
+			t.Errorf("HX-Request %q: HX-Refresh %q, want %q", header, got, want)
+		}
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/part", nil)
+	req.Header.Set("HX-Request", "true")
+	r.Blocked(rec, req, "ref")
+	if rec.Header().Get("HX-Refresh") != "" {
+		t.Error("the block page asks for a reload, which would only block again")
+	}
+}

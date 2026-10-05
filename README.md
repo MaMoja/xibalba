@@ -75,6 +75,8 @@ flowchart LR
 | Trap link for crawlers, optional maze (off by default) | Built |
 | Asked for a verdict by nginx (`auth_request`), Caddy (`forward_auth`), Traefik (`forwardAuth`) instead of standing in the path (off by default) | Built; Traefik example not tested |
 | Security check that costs memory as well as time (`pow-memory`, scrypt in plain JavaScript) | Built |
+| Rules made from a `robots.txt` (`xibalba -robots`) | Built |
+| htmx: a part of a page that meets the check makes the page load anew | Built |
 | Link previews (Open Graph) for pages behind the security check (off by default) | Built |
 | HTTP status of the security check and the block page can be chosen | Built |
 | Rules by network operator (AS number) and by address lists kept in files, for hosting companies and VPNs | Built; no lists shipped |
@@ -203,6 +205,7 @@ The same pages, easier to browse, are in the [wiki](https://github.com/MaMoja/xi
 | [Configuration](docs/CONFIGURATION.md) | Every setting, its default and its allowed values |
 | [Handbuch (Deutsch)](docs/de/HANDBUCH.md) | Für Betreiber: installieren, einrichten, wo man was einstellt |
 | [Environments](docs/ENVIRONMENTS.md) | Web servers, containers, systemd, Kubernetes, CDNs: example files and how far each is tested |
+| [Applications](docs/APPLICATIONS.md) | WordPress, htmx and pages that load parts of themselves; rules from a robots.txt |
 | [Rules](docs/RULES.md) | How to write rules, how they are evaluated, what can be trusted |
 | [Crawlers](docs/CRAWLERS.md) | Crawler classes, presets, how identity is verified, the crawlers Xibalba knows |
 | [Limits](docs/LIMITS.md) | Request limits per client: actions, exemptions, choosing numbers, privacy |

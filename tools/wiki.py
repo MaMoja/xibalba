@@ -24,6 +24,7 @@ SECTIONS = [
     ("Administrative guides", [
         ("GETTING-STARTED.md", "Getting-Started", "Install and set up, step by step"),
         ("ENVIRONMENTS.md", "Environments", "nginx, Caddy, Apache, HAProxy, Traefik, Docker, systemd, Kubernetes"),
+        ("APPLICATIONS.md", "Applications", "WordPress, htmx and pages that load parts of themselves, starting from a robots.txt"),
         ("CONFIGURATION.md", "Configuration", "Every setting, its default and its allowed values"),
         ("RULES.md", "Rules", "How to write rules and how they are evaluated"),
         ("CRAWLERS.md", "Crawlers", "Crawler classes, presets, how identity is verified"),

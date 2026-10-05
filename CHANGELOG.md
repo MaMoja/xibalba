@@ -29,6 +29,12 @@ All notable changes are listed here. The format follows
   address or network per line, and the condition `address_list` asks
   whether a client is in one. For VPN exits and other long lists; a lookup
   takes the same time whatever the size. See `docs/NETWORKS.md`.
+- `xibalba -robots robots.txt` writes a rule file that enforces what the
+  `robots.txt` asks for.
+- htmx: a request made by htmx that meets the security check is answered so
+  that htmx loads the whole page anew, where the check can be shown.
+- Guides for WordPress and for pages that load parts of themselves
+  (`docs/APPLICATIONS.md`).
 - The web server can ask Xibalba about each request instead of passing it
   through (`verdict.enabled`): nginx `auth_request`, Caddy `forward_auth`,
   Traefik `forwardAuth`. `upstream.url` may then be left out. Example files

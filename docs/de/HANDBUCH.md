@@ -1257,6 +1257,34 @@ Setzen Sie Regeln, die jemanden durchlassen (Ihr eigenes Netz, geprüfte
 Suchmaschinen), davor. Mehr dazu, auch woher Listen kommen, in
 [NETWORKS.md](../NETWORKS.md) (englisch).
 
+### Regeln aus einer robots.txt
+
+Eine `robots.txt` bittet Crawler, bestimmte Pfade zu meiden. Xibalba kann
+aus der Datei Regeln machen, die das durchsetzen:
+
+```
+xibalba -robots robots.txt > robots-regeln.yaml
+```
+
+Die erzeugte Datei binden Sie mit `rules: {files: [robots-regeln.yaml]}`
+ein. Lesen Sie sie vorher: Die Regeln gelten für alle Besucher, nicht nur
+für Crawler, und ein Crawler, der seinen Namen verschweigt, wird von einer
+Regel auf den Namen nicht erfasst. Mit `-robots-action deny` werden die
+Pfade gesperrt statt geprüft. Einzelheiten und ein Beispiel:
+[APPLICATIONS.md](../APPLICATIONS.md#starting-from-a-robotstxt) (englisch).
+
+### Seiten, die Teile nachladen (htmx), und WordPress
+
+Lädt eine Seite Teile von sich nach und trifft so eine Anfrage auf die
+Sicherheitsprüfung, bekäme das Skript eine Seite statt der erwarteten
+Daten. Bei htmx ist nichts einzurichten: Xibalba antwortet so, dass htmx
+die ganze Seite neu lädt, und die Prüfung erscheint als Seite. Voraussetzung
+ist, dass Seite und nachgeladene Teile unter dieselbe Prüfung fallen. Für
+andere Skripte und für WordPress (welche Pfade keine Prüfung brauchen, wie
+die Anmeldung strenger geprüft wird) siehe
+[APPLICATIONS.md](../APPLICATIONS.md) (englisch). Die WordPress-Anleitung
+ist noch nicht mit einer echten Installation erprobt.
+
 ### Pfade lassen sich nicht umgehen
 
 Eine Regel auf `/admin` greift auch bei `//admin`, `/x/../admin`, `/%61dmin`

@@ -41,6 +41,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/preview"
 	"github.com/MaMoja/xibalba/internal/proxy"
+	"github.com/MaMoja/xibalba/internal/robots"
 	"github.com/MaMoja/xibalba/internal/rules"
 	"github.com/MaMoja/xibalba/internal/stats"
 	"github.com/MaMoja/xibalba/internal/token"
@@ -253,8 +254,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	showVersion := flags.Bool("version", false, "print the version and exit")
 	healthCheck := flags.Bool("healthcheck", false, "ask the running Xibalba of this configuration whether it is healthy, and exit with 0 or 1")
 	newPassword := flags.Bool("set-password", false, "set the password of the web interface and exit")
+	robotsFile := flags.String("robots", "", "turn a robots.txt file into a rule file on standard output and exit (\"-\" reads standard input)")
+	robotsAction := flags.String("robots-action", "challenge", "with -robots: what happens to requests for a disallowed path: challenge or deny")
+	robotsCrawlers := flags.String("robots-crawlers", "deny", "with -robots: what happens to a crawler the file shuts out of the whole site: deny or challenge")
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
+	}
+	if *robotsFile != "" {
+		return robotsToRules(*robotsFile, robots.Options{Action: *robotsAction, AgentAction: *robotsCrawlers}, os.Stdin, stdout, stderr)
 	}
 	if *newPassword {
 		return setPassword(ctx, *configPath, os.Stdin, stdout, stderr)

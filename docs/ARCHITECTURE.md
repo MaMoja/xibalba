@@ -41,6 +41,7 @@ flowchart TD
     challenge --> memhard
     config --> memhard
     main --> verdict
+    main --> robots
     verdict --> clientip
     preview --> health
     config --> preview
@@ -101,6 +102,7 @@ the same code that later uses them.
 | `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
 | `internal/memhard` | Compute the function that needs a fixed amount of memory, for the proof of work `pow-memory`; check answers a few at a time |
+| `internal/robots` | Turn a robots.txt into a rule file (`xibalba -robots`) |
 | `internal/verdict` | Answer a web server's question whether a request may pass (subrequest authentication) |
 | `internal/preview` | Remember the link-preview tags of the website's pages, fetched in the background |
 | `internal/stats` | Keep the other parts' counters on disk by the hour, with a time limit |

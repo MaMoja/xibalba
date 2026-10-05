@@ -1,6 +1,7 @@
 # Parity with Anubis
 
-What Anubis offers according to its public documentation (read on 2026-10-03,
+What Anubis offers according to its public documentation (read on 2026-10-03
+and 2026-10-05,
 documentation only, described in our own words), and where Xibalba stands.
 "Milestone" refers to [ROADMAP.md](ROADMAP.md).
 
@@ -10,9 +11,13 @@ documentation only, described in our own words), and where Xibalba stands.
 |---|---|
 | Reverse proxy in front of one website | |
 | Rules by network operator (AS number) | From a local database file (DB-IP, MaxMind); no account with a paid service needed. Anubis offers this through its Thoth service |
-| Rules by address lists from files | Up to two million entries per list, looked up in about a tenth of a microsecond; no tool needed to turn a list into rules |
+| Rules by address lists from files | Up to two million entries per list, looked up in well under a microsecond; no tool needed to turn a list into rules |
 | Subrequest authentication (nginx `auth_request`, Caddy `forward_auth`, Traefik `forwardAuth`) | Called "verdict". Caddy and Traefik need no second request; nginx example tested; every request is counted once. No list of redirect domains is needed: a visitor is only ever sent back to a path on the same website. See VERDICT.md |
 | A proof of work that costs memory (Anubis: Argon2id in WebAssembly; "Soteria" in its paid edition) | `pow-memory`: scrypt (RFC 7914) in plain JavaScript, no WebAssembly, free. Per rule, 1 to 16 MiB per try. No easier task for clients that say they are phones. See CHALLENGE.md |
+| robots.txt to rules | `xibalba -robots`, part of the one program. Reads a file, not an address |
+| IP list to rules | Not needed: a list is used as it is (`rules.address_lists`) |
+| htmx | Works without a rule: htmx is told to load the page anew. Anubis' guide lets htmx requests through on the mere presence of a cookie |
+| WordPress guide | Written, not tried with a real installation |
 | Link previews (Open Graph) for protected pages | Fetched in the background, never while a request waits; or fixed tags. `twitter:`, `article:` and `description` as well. See PREVIEWS.md |
 | Configurable status codes for the check and the block page | From a list of sensible codes; default 403 |
 | Imprint and privacy links on the pages | |
@@ -58,18 +63,19 @@ documentation only, described in our own words), and where Xibalba stands.
 | Ready-made exceptions for uptime monitors and Google's user-triggered fetchers (git, feeds and registries exist; small browsers pass without JavaScript) | Later |
 | Weights for browser headers that depend on HTTPS (client hints) | M5 |
 | Address file of trapped clients for fail2ban | Later |
-| Network-operator (ASN) conditions | Later |
 | Server load as a condition (stricter when the machine is busy) | Later |
-| A solved task cannot be used twice | Later: needs stored state; today a solution can be reused until it expires, by clients of the same network and browser |
+| A solved task cannot be used twice | Done for `pow-memory`. For the other checks a solution can be reused until the task expires, by clients of the same network and browser |
+| Proof of work on several processor cores at once (Anubis: "fast") | Later. Xibalba's calculations run on one core, in short slices |
+| An expression language for rules (CEL) | Not planned for now: structured conditions with `all`, `any`, `not` instead; see DECISIONS.md |
+| Logo, own style sheet and images on the pages (Anubis: paid edition) | Logo and accent colour planned, for sponsors |
 | Storage backends for shared state: Valkey/Redis, S3 | M9 |
 | rpm packages | Later |
 | Token that the web server in front can verify itself (HAProxy) | Later |
 | Running under a path prefix; website reached over a unix socket; TLS options towards the website | Later |
 | Serving a robots.txt that disallows AI crawlers | Later |
-| Tools: robots.txt to rules, IP list to rules | Later |
 | Headers that tell the website which rule decided | Later |
 | Log to a file with rotation | Later |
-| Guides tested in a real cluster or on Windows; guides for WordPress, HTMX | M10 |
+| Guides tested in a real cluster or on Windows; a WordPress guide tried with a real installation | M10 |
 | A list of browser extensions known to break the check (a page for visitors that explains the check exists) | Later |
 | DNS blocklist lookup (off by default in Anubis) | Not planned: sends visitor addresses to a third party |
 | More languages | Later |
@@ -78,7 +84,12 @@ documentation only, described in our own words), and where Xibalba stands.
 
 - Crawler classes by purpose and verification of AI crawlers' identity.
 - Rules that trust a crawler's name alone are refused.
-- Request limits per client with exempt addresses.
+- Request limits per client with exempt addresses, also by number of different pages.
+- A web interface: overview, switches, own rules with a box to try a request, earlier versions.
+- Rules by address lists read from files, as they are.
+- Statistics kept on disk, per hour and optionally per network.
+- Subrequest authentication without a second request (Caddy, Traefik) and without a list of redirect domains.
+- A request made by htmx is answered so that the page loads anew.
 - Rules that let through by path only apply to plainly written addresses.
 - Trusted-proxy list for the client address.
 - Configured answer when Xibalba itself fails (`rules.on_error`).
