@@ -107,7 +107,7 @@ func TestAddressLists(t *testing.T) {
 	tests := []struct{ name, yaml, path, message string }{
 		{"file missing", "rules:\n  address_lists:\n    vpn: none.txt\n", "rules.address_lists.vpn", "does not exist"},
 		{"not a file", "rules:\n  address_lists:\n    vpn: folder\n", "rules.address_lists.vpn", "is not a file"},
-		{"bad line", "rules:\n  address_lists:\n    vpn: bad.txt\n", "rules.address_lists.vpn", `bad.txt, line 2: "example.org" is not an IP address or network`},
+		{"bad line", "rules:\n  address_lists:\n    vpn: bad.txt\n", "rules.address_lists.vpn", "bad.txt, line 2: the entry is not an IP address or network"},
 		{"second bad line", "rules:\n  address_lists:\n    vpn: bad.txt\n", "rules.address_lists.vpn", "bad.txt, line 4"},
 		{"name", "rules:\n  address_lists:\n    \"VPN list\": bad.txt\n", "rules.address_lists.VPN list", "cannot be the name"},
 		{"no file", "rules:\n  address_lists:\n    vpn: \"\"\n", "rules.address_lists.vpn", "no file is named"},

@@ -12,22 +12,29 @@ Newest first. One entry per decision: what, why, who decided.
   fifteen years, and can be tested against other implementations. What is
   our own is how it is used.
 - **In plain JavaScript, no WebAssembly.** Agent's choice, confirming the
-  entry of 2026-10-04. Measured: one try with 4 MiB takes about 15 ms in
-  the browser's JavaScript and 15 ms in the server's compiled Go on the
-  same machine. The reason usually given for WebAssembly, that JavaScript
-  leaves a large advantage to native programs, did not show for this
-  function. No build chain, no dependency, and the script is on the page
+  entry of 2026-10-04. Measured with 4 MiB on one machine: 14 ms per try in
+  the browser's JavaScript, 14 ms in our Go, 12 ms in OpenSSL. The reason
+  usually given for WebAssembly, that JavaScript leaves a large advantage
+  to native programs, is small for this function (code using vector
+  instructions would widen it). No build chain, no dependency, and the script is on the page
   only when the method is used.
 - **scrypt is written here rather than taken from golang.org/x/crypto.**
   Agent's choice. Rule 2: about 120 lines, on top of the standard library's
   PBKDF2, against a dependency. Tested against OpenSSL's implementation.
-- **An answer must solve a 16-bit plain proof of work before the server
-  computes anything costly, and two answers are checked at a time.**
-  Agent's choice. Checking costs what a try costs (15 ms and 4 MiB at the
-  default). Without the first condition anyone could send numbers and make
-  the server pay; with it the sender has paid about as much before. Fewer
-  bits would shift more of the work into the memory-hard part, at the
-  server's risk; 16 was chosen for the server.
+- **What bounds the server's cost of checking memory answers: each task is
+  checked once, five wrong answers per network and minute, two checks at a
+  time.** Agent's choice, after the review showed that the first design (a
+  16-bit plain proof of work in front of the check) did not hold: one
+  wrong answer that cleared it could be sent again for nothing and kept
+  both processor cores busy. The plain condition stays at 12 bits only to
+  throw out random numbers; at 16 it was two thirds of a visitor's time,
+  the part that special hardware gets for free.
+- **A right answer that cannot be checked right now is kept, not thrown
+  away.** Found by the review: "busy" gave the visitor a new task and
+  seconds of work again. The page now sends the same answer again.
+- **A pass earned with memory is ranked by tries times memory.** Agent's
+  choice. One number in the pass, as for the other checks; documented as
+  an approximation.
 - **No lighter task for clients that say they are phones.** Agent's choice.
   The user agent is the client's own word. Operators who want to spare
   phones can give a rule on it a gentler check and see that they do.
@@ -47,6 +54,16 @@ Newest first. One entry per decision: what, why, who decided.
   with a mistake stops the start with file and line; reading a changed file
   while running needs an answer to "what if the new file is broken" that
   the rule files do not have either. On the "Later" list together.
+- **A line of an address list is only taken if it can mean one thing.**
+  Found by the review: "a - b" and "address mask" were read as the first
+  address alone, and `1.2.3.4/0` as everything. Such lines now stop the
+  start. Stricter than most tools; a list decides who is locked out.
+- **Whether a rule is anchored for `exempt_from_limits` is worked out from
+  the structure of its conditions.** Found by the review: an address
+  condition in one group of `any` passed the test although anyone could
+  take the other group. This was so for `ip` before; fixed for all.
+- **A database of the wrong kind is never put in use, also not when it
+  turns up while running.** Found by the review.
 - **An operator is not something to exempt from limits by.** Agent's
   choice. Anyone can rent a server at a hosting company; `address_list`
   counts like `ip`, `asn` like `country`.

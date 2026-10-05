@@ -116,6 +116,14 @@
   }
   function finish() { send(String(n)); }
 
+  // An answer that was right to send but could not be checked just now:
+  // send it again after a short while, not all at the same moment.
+  var again = form.getAttribute("data-resend") || "";
+  if (/^[0-9]{1,15}$/.test(again)) {
+    window.setTimeout(function () { send(again); }, 1500 + Math.floor(Math.random() * 1500));
+    return;
+  }
+
   if (method === "script") {
     // Nothing to calculate: running this, and waiting, is the check.
     window.setTimeout(function () {
@@ -125,21 +133,27 @@
     return;
   }
   if (method === "pow-memory") {
-    // A number has to start with 16 zero bits in its plain hash before
-    // the costly value is worked out for it; the server looks at nothing
-    // else, so that checking an answer cannot be made to cost it much.
+    // A number has to start with 12 zero bits in its plain hash before
+    // the costly value is worked out for it: the server throws out
+    // everything else without working anything out.
     var working = false;
     var runMemory = function () {
       var stop = Date.now() + 25, k, out;
       do {
         if (!working) {
           for (k = 0; k < 2000; k++) {
-            if (Math.clz32(firstWord(n)) >= 16) {
+            if (Math.clz32(firstWord(n)) >= 12) {
               if (!memory.start(nonce + n, size * 1024)) {
                 // The browser does not give the memory. Leave the page to
-                // the path without JavaScript, if there is one.
-                status.hidden = true;
-                if (manual) { manual.hidden = false; }
+                // the path without JavaScript if there is one; say what
+                // is wrong if there is none.
+                if (manual && manual.querySelector("button")) {
+                  status.hidden = true;
+                  manual.hidden = false;
+                } else {
+                  status.setAttribute("role", "alert");
+                  status.textContent = form.getAttribute("data-nomemory") || "";
+                }
                 return;
               }
               working = true;

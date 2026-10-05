@@ -459,3 +459,63 @@ func TestLocatorForOperators(t *testing.T) {
 		t.Error("after the start")
 	}
 }
+
+// A database of the wrong kind that turns up while running is not put in
+// use: it would answer "not known" for everyone, and rules would act on it.
+func TestAWrongKindOfDatabaseIsNeverPutInUse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "asn.mmdb")
+	write := func(data []byte, age time.Duration) {
+		t.Helper()
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		when := time.Now().Add(-age)
+		_ = os.Chtimes(path, when, when)
+	}
+	write(geotest.Build(map[string]string{"192.0.2.0/24": "64500"}, geotest.Options{Layout: "asn"}), time.Hour)
+	l := New(Options{Name: "asn", What: "network", Path: path, Wants: WantsASN})
+	l.reload()
+	if l.ASN(addr("192.0.2.1")) != 64500 {
+		t.Fatal("not loaded")
+	}
+	write(geotest.Build(map[string]string{"192.0.2.0/24": "DE"}, geotest.Options{}), 0)
+	l.reload()
+	if l.ASN(addr("192.0.2.1")) != 64500 {
+		t.Error("a country database took the place of the operators")
+	}
+	if st := l.Health(); st.State != health.Degraded || !strings.Contains(st.Detail, "holds no network operators") {
+		t.Errorf("health: %+v", st)
+	}
+
+	// With nothing loaded before, it stays that way.
+	fresh := New(Options{Name: "asn", What: "network", Path: path, Wants: WantsASN})
+	fresh.reload()
+	if fresh.Loaded() {
+		t.Error("a country database was loaded as one of operators")
+	}
+
+	// The same for a download.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(geotest.Build(map[string]string{"192.0.2.0/24": "DE"}, geotest.Options{}))
+	}))
+	defer server.Close()
+	target := filepath.Join(t.TempDir(), "new.mmdb")
+	d := New(Options{Name: "asn", What: "network", Path: target, Wants: WantsASN, Download: true, DownloadURL: server.URL, Client: server.Client()})
+	if err := d.download(context.Background(), time.Now()); err == nil {
+		t.Error("the download of a country database was accepted")
+	}
+	if _, err := os.Stat(target); err == nil {
+		t.Error("the wrong database was put in place")
+	}
+}
+
+func TestHasASNLooksPastRecordsWithoutAnOperator(t *testing.T) {
+	// The lowest networks of a real database may be reserved space.
+	db, err := Open(geotest.Build(map[string]string{"0.0.0.0/8": "0", "10.0.0.0/8": "0", "192.0.2.0/24": "64500"}, geotest.Options{Layout: "asn-text"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !db.HasASN() {
+		t.Error("HasASN is false")
+	}
+}

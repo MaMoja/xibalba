@@ -12,7 +12,7 @@ import (
 
 // The values come from Python's hashlib.scrypt (OpenSSL), with the salt of
 // this package, N = size · 1024, r = 8, p = 1, 32 bytes.
-func TestSumAgreesWithAnotherImplementation(t *testing.T) {
+func TestScryptAgreesWithAnotherImplementation(t *testing.T) {
 	cases := []struct {
 		password string
 		size     int
@@ -25,16 +25,16 @@ func TestSumAgreesWithAnotherImplementation(t *testing.T) {
 	}
 	scratch := &Scratch{}
 	for _, c := range cases {
-		sum := Sum([]byte(c.password), c.size, nil)
-		if got := hex.EncodeToString(sum[:]); got != c.want {
-			t.Errorf("Sum(%q, %d) = %s, want %s", c.password, c.size, got, c.want)
+		value := sum([]byte(c.password), c.size, nil)
+		if got := hex.EncodeToString(value[:]); got != c.want {
+			t.Errorf("scrypt(%q, %d) = %s, want %s", c.password, c.size, got, c.want)
 		}
 		// The same with memory that was used before, larger and smaller.
 		for _, first := range []int{16, 1} {
-			Sum([]byte("something else"), first, scratch)
-			sum = Sum([]byte(c.password), c.size, scratch)
-			if got := hex.EncodeToString(sum[:]); got != c.want {
-				t.Errorf("with used memory: Sum(%q, %d) = %s", c.password, c.size, got)
+			sum([]byte("something else"), first, scratch)
+			value = sum([]byte(c.password), c.size, scratch)
+			if got := hex.EncodeToString(value[:]); got != c.want {
+				t.Errorf("with used memory: scrypt(%q, %d) = %s", c.password, c.size, got)
 			}
 		}
 	}
@@ -45,7 +45,7 @@ func solve(nonce string, size, difficulty int) string {
 	scratch := &Scratch{}
 	for n := 0; ; n++ {
 		s := strconv.Itoa(n)
-		if Filter(nonce, s) && leadingZeros(Sum([]byte(nonce+s), size, scratch)) >= difficulty {
+		if Filter(nonce, s) && leadingZeros(sum([]byte(nonce+s), size, scratch)) >= difficulty {
 			return s
 		}
 	}
@@ -83,7 +83,7 @@ func TestSolves(t *testing.T) {
 	// An answer that passes the first condition but not the second.
 	for n := 0; ; n++ {
 		s := strconv.Itoa(n)
-		if Filter(nonce, s) && leadingZeros(Sum([]byte(nonce+s), 1, nil)) < 10 {
+		if Filter(nonce, s) && leadingZeros(sum([]byte(nonce+s), 1, nil)) < 10 {
 			if Solves(nonce, s, 1, 10, nil) {
 				t.Errorf("%s passes only the first condition and is accepted", s)
 			}
@@ -165,7 +165,7 @@ func BenchmarkSum(b *testing.B) {
 			password := []byte("5f1d3c9a7b2e4f60123456")
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				Sum(password, size, scratch)
+				sum(password, size, scratch)
 			}
 		})
 	}

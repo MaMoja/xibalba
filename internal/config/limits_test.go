@@ -526,7 +526,7 @@ func TestProofOfWorkWithMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Challenge.Method != "pow" || cfg.Challenge.Memory != 4 || cfg.Challenge.MemoryDifficulty != 4 {
+	if cfg.Challenge.Method != "pow" || cfg.Challenge.Memory != 4 || cfg.Challenge.MemoryDifficulty != 6 {
 		t.Errorf("defaults: %+v", cfg.Challenge)
 	}
 	cfg, err = Parse("xibalba.yaml", []byte(base+`challenge:

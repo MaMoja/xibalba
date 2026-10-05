@@ -2384,11 +2384,21 @@ func TestVerdictsWithoutAWebsite(t *testing.T) {
 		t.Errorf("the visitor would be sent to %q", k.ret)
 	}
 	// ... and as nginx fetches it: the page alone, with its own status.
-	resp, page = asWebServer(t, inst, "/.xibalba/page", "GET", "/wiki/Start?a=1", "203.0.113.5", nil)
+	resp, page = asWebServer(t, inst, "/.xibalba/page", "GET", "/wiki/Start?a=1", "203.0.113.5", map[string]string{"X-Xibalba-Verdict": "challenge"})
 	if resp.StatusCode != 403 || !strings.Contains(page, "A quick security check") {
 		t.Errorf("page: %d", resp.StatusCode)
 	}
-	resp, page = asWebServer(t, inst, "/.xibalba/page", "GET", "/admin/x", "203.0.113.5", nil)
+	// A page without a refusal of ours before it: plain, and no way on.
+	if resp, page := asWebServer(t, inst, "/.xibalba/page", "GET", "/wiki/Start?a=1", "203.0.113.5", nil); resp.StatusCode != 403 || strings.Contains(page, "security check") {
+		t.Errorf("page without a verdict: %d", resp.StatusCode)
+	}
+	// An address dressed up as one of Xibalba's own is decided like any other.
+	for _, uri := range []string{"/.xibalba/../admin/x", "/.xibalba/%2e%2e/admin/x", "/.xibalba/..%2fadmin/x"} {
+		if resp, _ := asWebServer(t, inst, "/.xibalba/check", "GET", uri, "203.0.113.77", nil); resp.StatusCode == 204 {
+			t.Errorf("%s passes", uri)
+		}
+	}
+	resp, page = asWebServer(t, inst, "/.xibalba/page", "GET", "/admin/x", "203.0.113.5", map[string]string{"X-Xibalba-Verdict": "deny"})
 	if resp.StatusCode != 403 || !strings.Contains(page, "This request was blocked") {
 		t.Errorf("block page: %d", resp.StatusCode)
 	}
@@ -2427,6 +2437,7 @@ func TestVerdictsWithoutAWebsite(t *testing.T) {
 		r.Header.Set("X-Forwarded-For", "203.0.113.5")
 		r.Header.Set("User-Agent", "Mozilla/5.0 (test)")
 		r.Header.Set("Cookie", pass)
+		r.Header.Set("X-Xibalba-Verdict", "challenge")
 		return r
 	}())
 	if err != nil {
@@ -2440,7 +2451,7 @@ func TestVerdictsWithoutAWebsite(t *testing.T) {
 	// Counted once each: pages are not counted, nor are questions that
 	// were refused.
 	d := getDecisions(t, inst)
-	if d.count("rule:block-admin") != 1 || d.count("rule:challenge-wiki") != 3 || d.count("rule:block-post") != 1 {
+	if d.count("rule:block-admin") != 4 || d.count("rule:challenge-wiki") != 3 || d.count("rule:block-post") != 1 {
 		t.Errorf("counts: admin %d, wiki %d, post %d", d.count("rule:block-admin"), d.count("rule:challenge-wiki"), d.count("rule:block-post"))
 	}
 	// Nothing but verdicts lives here.
@@ -2458,7 +2469,7 @@ func TestVerdictsAreOnlyForTheWebServer(t *testing.T) {
 	inst := start(t, site.URL, "server:\n  listen: PUBLIC\n  trusted_proxies: [\"192.0.2.1\"]\nverdict:\n  enabled: true\n"+verdictRules)
 	for _, path := range []string{"/.xibalba/check", "/.xibalba/page"} {
 		resp, body := asWebServer(t, inst, path, "GET", "/admin", "203.0.113.5", nil)
-		if resp.StatusCode != 403 || strings.Contains(body, "This request was blocked") || resp.Header.Get("X-Xibalba-Verdict") != "" {
+		if resp.StatusCode != 403 || strings.Contains(body, "This request was blocked") || !strings.HasPrefix(resp.Header.Get("X-Xibalba-Verdict"), "refused") {
 			t.Errorf("%s answered a stranger: %d %q", path, resp.StatusCode, body)
 		}
 	}

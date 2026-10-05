@@ -54,7 +54,7 @@ func (c *ASN) check(dir string, add func(path, message, hint string)) {
 	db, _, err := geo.ReadFile(c.Path)
 	const want = "give a database of network operators in .mmdb format (DB-IP IP to ASN Lite, MaxMind GeoLite2 ASN), or set asn.download to true; see docs/NETWORKS.md"
 	switch {
-	case err == nil && !db.HasASN():
+	case err == nil && geo.WantsASN(db) != nil:
 		add("asn.database", fmt.Sprintf("the database %q holds no network operators (it says it is %q)", c.Database, db.Type), want)
 	case err == nil:
 	case c.Download:

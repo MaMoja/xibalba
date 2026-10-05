@@ -90,8 +90,8 @@ func TestAddressSetAgreesWithPlainSearch(t *testing.T) {
 }
 
 func TestReadAddressList(t *testing.T) {
-	set, problems := ReadAddressList(strings.NewReader("\xef\xbb\xbf# VPN exits\n192.0.2.0/24\n\n  198.51.100.7   # one host\n2001:db8::/32;comment\n203.0.113.0/24,AS64500,Example\r\n10.0.0.1\tnote\n"))
-	if len(problems) != 0 || set.Len() != 5 {
+	set, problems := ReadAddressList(strings.NewReader("\xef\xbb\xbf# VPN exits\n192.0.2.0/24\n\n  198.51.100.7   # one host\n2001:db8::/32;comment\n203.0.113.0/24,AS64500,Example\r\n10.0.0.1\tnote\n::ffff:192.0.2.0/120\n"))
+	if len(problems) != 0 || set.Len() != 6 {
 		t.Fatalf("problems %+v, %d entries", problems, set.Len())
 	}
 	for _, a := range []string{"192.0.2.9", "198.51.100.7", "2001:db8::9", "203.0.113.200", "10.0.0.1"} {
@@ -110,6 +110,40 @@ func TestReadAddressList(t *testing.T) {
 	}
 	if len(problems[4].Message) > 200 {
 		t.Errorf("a long line is repeated in the message: %d characters", len(problems[4].Message))
+	}
+
+	// A line is only taken if it can mean one thing.
+	for _, line := range []string{
+		"192.0.2.1 - 192.0.2.99", "192.0.2.1 -192.0.2.99", "10.0.0.0 255.0.0.0", "10.0.0.0\t10.255.255.255", "2001:db8::/32 2001:db8::/16", "192.0.2.0/24, 198.51.100.0/24",
+		"10.0.0.5/8", "192.0.2.1/24", "2001:db8::1/32", "1.2.3.4/0", "0.0.0.0/0", "::/0", "128.0.0.0/1", "2000::/3", "::ffff:0:0/96", "::ffff:1.2.3.4/97",
+		"fe80::1%eth0/64", "fe80::1%eth0", "192.0.2.1:8080", "10.0.0.0/8-10.255.255.255", "010.0.0.1", "192.0.2.0/33",
+	} {
+		if set, problems := ReadAddressList(strings.NewReader(line + "\n")); set != nil || len(problems) != 1 {
+			t.Errorf("%q was taken: %+v", line, problems)
+		}
+	}
+	for _, line := range []string{"10.0.0.0/8", "2001::/16", "192.0.2.0/24,AS64500,Example Net", "192.0.2.7 exit node 7", "192.0.2.0/24 # 192.0.2.0 - 192.0.2.255"} {
+		if _, problems := ReadAddressList(strings.NewReader(line + "\n")); len(problems) != 0 {
+			t.Errorf("%q was refused: %+v", line, problems)
+		}
+	}
+	// A file that is no list is not quoted back.
+	_, problems = ReadAddressList(strings.NewReader("root:$6$salt$hash:19000:0:99999:7:::\n"))
+	if len(problems) != 1 || strings.Contains(problems[0].Message, "salt") {
+		t.Errorf("content repeated: %+v", problems)
+	}
+	// The longest line allowed, and one longer.
+	if _, problems := ReadAddressList(strings.NewReader("192.0.2.1 #" + strings.Repeat("x", 500) + "\n")); len(problems) != 0 {
+		t.Errorf("a line of 511 characters: %+v", problems)
+	}
+	if _, problems := ReadAddressList(strings.NewReader("192.0.2.1 #" + strings.Repeat("x", 520) + "\n")); len(problems) != 1 || !strings.Contains(problems[0].Message, "longer than") {
+		t.Errorf("a line of 531 characters: %+v", problems)
+	}
+	if set := NewAddressSet([]netip.Prefix{{}}); set.Contains(netip.MustParseAddr("2001:db8::1")) || set.Len() != 0 {
+		t.Error("a network that is not one matches")
+	}
+	if set := NewAddressSet([]netip.Prefix{netip.MustParsePrefix("::ffff:192.0.2.0/120")}); !set.Contains(netip.MustParseAddr("192.0.2.9")) {
+		t.Error("an IPv4-mapped network matches nothing")
 	}
 	var many strings.Builder
 	for i := 0; i < 50; i++ {
@@ -229,5 +263,44 @@ func BenchmarkAddressSet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		set.Contains(addrs[i&1023])
+	}
+}
+
+// Exempt from the limits only where nobody can choose to match: one group
+// under "any" that anyone can meet opens the whole rule.
+func TestExemptionNeedsEveryWayInToBeAnchored(t *testing.T) {
+	lists := map[string]*AddressSet{"office": NewAddressSet(prefixes("192.0.2.0/24"))}
+	ua := &StringSpec{Contains: "curl"}
+	yes := true
+	office := MatchSpec{AddressList: []string{"office"}}
+	ip := MatchSpec{IP: []string{"192.0.2.0/24"}}
+	crawler := MatchSpec{Crawler: &CrawlerSpec{Class: []string{"search-engine"}, Verified: &yes}}
+	anyone := MatchSpec{UserAgent: ua}
+	cases := []struct {
+		name  string
+		match MatchSpec
+		ok    bool
+	}{
+		{"address list", office, true},
+		{"address list and user agent", MatchSpec{AddressList: []string{"office"}, UserAgent: ua}, true},
+		{"any of address list, ip, verified crawler", MatchSpec{Any: []MatchSpec{office, ip, crawler}}, true},
+		{"any of address list or user agent", MatchSpec{Any: []MatchSpec{office, anyone}}, false},
+		{"any of ip or user agent", MatchSpec{Any: []MatchSpec{ip, anyone}}, false},
+		{"user agent and (any of (all of list) or user agent)", MatchSpec{UserAgent: ua, Any: []MatchSpec{{All: []MatchSpec{office}}, anyone}}, false},
+		{"all of list and user agent", MatchSpec{All: []MatchSpec{office, anyone}}, true},
+		{"not not any", MatchSpec{Not: &MatchSpec{Not: &MatchSpec{Any: []MatchSpec{office, anyone}}}}, false},
+		{"not address list", MatchSpec{Not: &office}, false},
+		{"path and any that is anchored", MatchSpec{Path: &StringSpec{Prefix: "/x"}, Any: []MatchSpec{office, ip}}, true},
+	}
+	for _, c := range cases {
+		_, problems := Compile(Spec{DefaultAction: Challenge, AddressLists: lists, Crawlers: &Catalog{Classes: []string{"search-engine"}},
+			Rules: []RuleSpec{{Name: "x", Action: Allow, ExemptFromLimits: true, Match: c.match}}})
+		refused := false
+		for _, p := range problems {
+			refused = refused || p.Field == "exempt_from_limits"
+		}
+		if refused == c.ok {
+			t.Errorf("%s: refused %v, want %v (%+v)", c.name, refused, !c.ok, problems)
+		}
 	}
 }

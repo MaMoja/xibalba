@@ -16,6 +16,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -94,6 +95,15 @@ func crawlerOf(id crawlers.Identity) rules.Crawler {
 		c.Status = rules.CrawlerUnknown
 	}
 	return c
+}
+
+func sortedListNames(lists map[string]*rules.AddressSet) []string {
+	names := make([]string, 0, len(lists))
+	for name := range lists {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // previewTags returns the link-preview tags for the page a request asked
@@ -391,7 +401,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			page.Challenge(w, r, pages.ChallengeView{
 				Meta:   previewTags(previews, r),
 				Action: v.Action, Token: v.Token, Return: v.Return,
-				Nonce: v.Nonce, Difficulty: v.Difficulty, Memory: v.Memory,
+				Nonce: v.Nonce, Difficulty: v.Difficulty, Memory: v.Memory, Resend: v.Resend,
 				Method: v.Method, WaitSeconds: v.WaitSeconds, RefreshURL: v.RefreshURL,
 				StyleURL: v.StyleURL, Headless: v.Headless,
 				AllowButton: v.AllowButton, Notice: string(v.Message),
@@ -446,9 +456,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Countries. The database is only loaded, and only downloaded, if a
-	// rule asks for a country.
+	// rule asks for a country, or if one may be added in the web interface.
 	var country func(netip.Addr) ([2]byte, bool)
-	if engine.UsesCountries() {
+	if engine.UsesCountries() || (mayChange && cfg.Countries.Path != "") {
 		locator := geo.New(geo.Options{
 			Path:        cfg.Countries.Path,
 			Download:    cfg.Countries.Download,
@@ -467,6 +477,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		operators := geo.New(geo.Options{
 			Name:        "asn",
 			What:        "network",
+			Wants:       geo.WantsASN,
 			Path:        cfg.ASN.Path,
 			Download:    cfg.ASN.Download,
 			DownloadURL: cfg.ASN.DownloadURL,
@@ -676,6 +687,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		"crawlers", len(cfg.Crawlers.Definitions),
 		"limits", cfg.Limits.Enabled,
 	)
+	for _, name := range sortedListNames(cfg.Rules.Lists) {
+		// Valid, and almost never meant: a list that was fetched and came
+		// back empty turns "in the list" into never and "not in the list"
+		// into always.
+		if cfg.Rules.Lists[name].Len() == 0 {
+			log.Warn("an address list has no entries: rules that ask for it never match, and rules that ask for its opposite always do",
+				"component", "rules", "list", name)
+		}
+	}
 	if found := cfg.License.Info; found != nil {
 		switch cfg.License.State {
 		case license.Valid:

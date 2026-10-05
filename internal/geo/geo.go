@@ -43,6 +43,11 @@ type Options struct {
 	// What the database holds, for messages. Empty means "country".
 	// "network" for a database of network operators.
 	What string
+	// Wants, if set, says whether a database holds what this locator is
+	// for, and if not, why. A database that does not is never put in use:
+	// one of countries in the place of one of network operators would
+	// answer "not known" for every address, and rules would act on that.
+	Wants func(*DB) error
 	// Path is the database file.
 	Path string
 	// Download fetches the database from DownloadURL when the file is
@@ -173,6 +178,14 @@ func (l *Locator) ASN(addr netip.Addr) uint32 {
 	return db.ASN(addr)
 }
 
+// WantsASN is Options.Wants for a database of network operators.
+func WantsASN(db *DB) error {
+	if !db.HasASN() {
+		return fmt.Errorf("it holds no network operators (it says it is %q)", db.Type)
+	}
+	return nil
+}
+
 // CheckURL says whether a download address can be used: https, or plain
 // http to this machine itself. A database fetched over an unprotected
 // connection could be replaced on the way.
@@ -241,6 +254,9 @@ func (l *Locator) reload() {
 		return
 	}
 	db, modified, err := ReadFile(l.opts.Path)
+	if err == nil && l.opts.Wants != nil {
+		err = l.opts.Wants(db)
+	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -359,7 +375,11 @@ func (l *Locator) download(ctx context.Context, now time.Time) error {
 		return fmt.Errorf("the download is larger than %d MiB", MaxFileSize>>20)
 	}
 	// Only a file that is a usable database replaces the one in place.
-	if _, _, err := ReadFile(tmp.Name()); err != nil {
+	db, _, err := ReadFile(tmp.Name())
+	if err == nil && l.opts.Wants != nil {
+		err = l.opts.Wants(db)
+	}
+	if err != nil {
 		return fmt.Errorf("the download is not a usable database: %v", err)
 	}
 	if err := os.Chmod(tmp.Name(), 0o644); err != nil {

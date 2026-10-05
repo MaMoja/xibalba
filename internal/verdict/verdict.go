@@ -14,6 +14,10 @@
 // nginx throws it away, so it asks a second time at PagePath for the page
 // alone; that second request is neither decided nor counted again.
 //
+// The web server routes requests by its own reading of an address, so
+// nothing is passed because of how an address is written: every question
+// is decided by the rules.
+//
 // The questions are believed only from a trusted proxy: anyone else could
 // claim to ask on behalf of any address.
 package verdict
@@ -103,22 +107,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	asked, problem := original(r)
 	if problem != "" {
+		// Refused, and nothing more is said: with some web servers the
+		// visitor gets to see this answer. Why is in the header, for the
+		// operator who looks.
 		h.refused.Add(1)
 		w.Header().Set("Cache-Control", "no-store")
-		http.Error(w, problem, http.StatusForbidden)
+		w.Header().Set(HeaderVerdict, "refused: "+problem)
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 		return
 	}
 	if r.URL.Path == PagePath {
 		h.page(w, asked, r)
 		return
 	}
-	// Xibalba's own addresses (the answer to the check, its style sheet)
-	// are not checked: they are how a visitor passes.
-	if strings.HasPrefix(asked.URL.Path, ownPrefix) {
-		h.pass.Add(1)
-		answer(w, nil, http.StatusNoContent, outPass)
-		return
-	}
+	// Every address is decided about, also one that looks like Xibalba's
+	// own ("/.xibalba/../admin" is not): the web server decides where a
+	// request goes, by rules of its own, and must not be told "pass" for
+	// an address on the strength of how it is written. A web server set
+	// up as in the examples never asks about Xibalba's own addresses.
 
 	// The page goes into memory first: which status the answer gets is
 	// known only when the decision is.
@@ -151,6 +157,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // anywhere else. A visitor who may pass by now is sent to where they
 // wanted to go, where the web server asks again.
 func (h *Handler) page(w http.ResponseWriter, asked, r *http.Request) {
+	// A page is only due if the question was answered with a refusal. The
+	// web server may land here for refusals of its own (a directory
+	// without an index, its own access rules); those are not ours to
+	// explain, and sending the visitor back would send them in a circle.
+	switch r.Header.Get(HeaderVerdict) {
+	case outCheck, outDeny, outLimit, outBroken:
+	default:
+		w.Header().Set("Cache-Control", "no-store")
+		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		return
+	}
 	limited := r.Header.Get(HeaderVerdict) == outLimit
 	var retry time.Duration
 	if seconds, err := strconv.Atoi(r.Header.Get(HeaderRetry)); err == nil && seconds > 0 {
@@ -174,6 +191,9 @@ func original(r *http.Request) (asked *http.Request, problem string) {
 	if !ok || !info.PeerTrusted {
 		return nil, "checks are answered only for the web server in front (server.trusted_proxies)"
 	}
+	if len(r.Header.Values("X-Forwarded-Uri")) > 1 || len(r.Header.Values("X-Forwarded-Method")) > 1 {
+		return nil, "the question names more than one address or method"
+	}
 	uri := r.Header.Get("X-Forwarded-Uri")
 	if uri == "" || uri[0] != '/' || len(uri) > maxURI {
 		return nil, "the header X-Forwarded-Uri has to hold the path the visitor asked for"
@@ -186,6 +206,7 @@ func original(r *http.Request) (asked *http.Request, problem string) {
 	if method == "" {
 		method = http.MethodGet
 	}
+	method = strings.ToUpper(method)
 	if !plainMethod(method) {
 		return nil, "the header X-Forwarded-Method does not hold a request method"
 	}
@@ -207,11 +228,12 @@ func plainMethod(method string) bool {
 		return false
 	}
 	for i := 0; i < len(method); i++ {
-		if method[i] < 'A' || method[i] > 'Z' {
+		c := method[i]
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
 			return false
 		}
 	}
-	return true
+	return method != ""
 }
 
 // answer writes the answer to a check: the recorded page, if any, under

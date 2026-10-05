@@ -13,11 +13,13 @@
 //	SHA-256(nonce + n)               starts with FilterBits zero bits, and
 //	scrypt(nonce + n, Salt, N, 8, 1) starts with the task's zero bits.
 //
-// The first condition is there for the server's sake: checking an answer
-// costs one scrypt, a few milliseconds and megabytes, and without it anyone
-// could make the server pay that by sending numbers at random. With it,
-// every answer that reaches scrypt has cost its sender tens of thousands
-// of hashes. A Verifier further bounds how many checks run at once.
+// The first condition lets the server throw out numbers sent at random
+// for the price of one hash. It is a small hurdle, not a defence: checking
+// an answer that clears it costs one scrypt, a few milliseconds and
+// megabytes. What bounds that cost is the caller's business (each task
+// checked once, a budget of wrong answers per network; see
+// internal/challenge) and the Verifier, which runs only a few checks at
+// once.
 package memhard
 
 import (
@@ -35,7 +37,7 @@ const (
 	Salt = "xibalba/pow-memory/1"
 	// FilterBits is how many zero bits SHA-256(nonce + n) must start with
 	// before an answer is looked at any further.
-	FilterBits = 16
+	FilterBits = 12
 	// MinDifficulty and MaxDifficulty bound the zero bits the scrypt
 	// value must start with. Each bit doubles the tries.
 	MinDifficulty = 1
@@ -68,9 +70,10 @@ type Scratch struct {
 	tmp [blockWords]uint32
 }
 
-// Sum returns the first 32 bytes of scrypt(password, Salt, N, r = 8, p = 1)
-// with N = size · 1024, which makes it need size MiB. scratch may be nil.
-func Sum(password []byte, size int, scratch *Scratch) [32]byte {
+// sum returns the first 32 bytes of scrypt(password, Salt, N, r = 8, p = 1)
+// with N = size · 1024, which makes it need size MiB. size must be one of
+// Sizes; the exported functions see to that. scratch may be nil.
+func sum(password []byte, size int, scratch *Scratch) [32]byte {
 	if scratch == nil {
 		scratch = &Scratch{}
 	}
@@ -106,9 +109,9 @@ func Sum(password []byte, size int, scratch *Scratch) [32]byte {
 		binary.LittleEndian.PutUint32(b[4*i:], word)
 	}
 	out, _ := pbkdf2.Key(sha256.New, string(password), b, 1, 32)
-	var sum [32]byte
-	copy(sum[:], out)
-	return sum
+	var result [32]byte
+	copy(result[:], out)
+	return result
 }
 
 // blockMix is scrypt's BlockMix for r = 8: sixteen 64-byte pieces, each
@@ -171,8 +174,8 @@ func salsa8(b *[16]uint32) {
 	}
 }
 
-func leadingZeros(sum [32]byte) int {
-	return bits.LeadingZeros32(binary.BigEndian.Uint32(sum[:4]))
+func leadingZeros(value [32]byte) int {
+	return bits.LeadingZeros32(binary.BigEndian.Uint32(value[:4]))
 }
 
 // plain reports whether nonce and solution have the form a task gives them.
@@ -204,7 +207,7 @@ func Solves(nonce, solution string, size, difficulty int, scratch *Scratch) bool
 	if !ValidSize(size) || difficulty < MinDifficulty || difficulty > MaxDifficulty || !Filter(nonce, solution) {
 		return false
 	}
-	return leadingZeros(Sum([]byte(nonce+solution), size, scratch)) >= difficulty
+	return leadingZeros(sum([]byte(nonce+solution), size, scratch)) >= difficulty
 }
 
 // Verifier checks answers, a few at a time, and keeps the memory for it.
@@ -240,7 +243,7 @@ func (v *Verifier) Solves(ctx context.Context, nonce, solution string, size, dif
 	select {
 	case scratch := <-v.slots:
 		defer func() { v.slots <- scratch }()
-		return leadingZeros(Sum([]byte(nonce+solution), size, scratch)) >= difficulty, false
+		return leadingZeros(sum([]byte(nonce+solution), size, scratch)) >= difficulty, false
 	case <-timer.C:
 		return false, true
 	case <-ctx.Done():

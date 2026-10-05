@@ -188,7 +188,7 @@ func (c *Challenge) check(dir string, add func(path, message, hint string)) {
 	}
 	if c.MemoryDifficulty < memhard.MinDifficulty || c.MemoryDifficulty > memhard.MaxDifficulty {
 		add("challenge.memory_difficulty", fmt.Sprintf("%d is out of range", c.MemoryDifficulty),
-			fmt.Sprintf("use a value from %d to %d; 4 suits most sites", memhard.MinDifficulty, memhard.MaxDifficulty))
+			fmt.Sprintf("use a value from %d to %d; 6 suits most sites", memhard.MinDifficulty, memhard.MaxDifficulty))
 	}
 	if !contains(challenge.Methods, c.Method) {
 		add("challenge.method", fmt.Sprintf("%q is not a kind of security check", c.Method),
@@ -367,7 +367,7 @@ func Default() Config {
 		Challenge: Challenge{
 			Difficulty:        18,
 			Memory:            4,
-			MemoryDifficulty:  4,
+			MemoryDifficulty:  6,
 			Method:            "pow",
 			Checks:            []string{},
 			NoJavaScript:      "button",

@@ -223,7 +223,7 @@ consider; this table lists the settings.
 | `challenge.checks` | empty | `css`, `headless` | Extra checks on top of `pow` or `script`. They need JavaScript. See [CHALLENGE.md](CHALLENGE.md#extra-checks). |
 | `challenge.difficulty` | `18` | `8` to `24` | For `pow`: how much the visitor's browser has to calculate. Each step up doubles the work. |
 | `challenge.memory` | `4` | `1`, `2`, `4`, `8`, `16` | For `pow-memory`: how much memory one try needs, in MiB. Xibalba needs the same to check an answer, for at most two answers at a time. |
-| `challenge.memory_difficulty` | `4` | `1` to `10` | For `pow-memory`: each step up doubles the tries. See [CHALLENGE.md](CHALLENGE.md#a-calculation-that-costs-memory). |
+| `challenge.memory_difficulty` | `6` | `1` to `10` | For `pow-memory`: each step up doubles the tries. See [CHALLENGE.md](CHALLENGE.md#a-calculation-that-costs-memory). |
 | `challenge.no_javascript` | `button` | `button`, `deny` | What visitors without JavaScript get: wait and press a button, or a note that JavaScript is needed. |
 | `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor has to wait: with `wait`, `refresh` and `script`, and without JavaScript before the button counts. |
 | `challenge.challenge_lifetime` | `5m` | `30s` to `1h`, longer than `wait` | How long a client has to finish before it gets a new task. |
@@ -287,6 +287,7 @@ Text names for `pages.texts`:
 | `challenge_text_refresh` | First paragraph with the method `refresh` | {operator} protects these pages against automated mass requests. Please wait a few seconds; you are then sent on automatically. If nothing happens, choose “Continue”. |
 | `challenge_automated` | Shown when the `headless` check found signs of automation | This browser reports that it is steered by a program, so the check was not passed. If you are using an ordinary browser, please get in touch with the operator of this website. |
 | `challenge_try_again` | The link on the page shown after a report of automation | Try again |
+| `challenge_no_memory` | Shown when the check `pow-memory` cannot run because the browser gets too little memory, and there is no path without JavaScript | The check could not be finished: this device did not give the browser enough memory for it. Please close other tabs or apps and load the page again. |
 | `challenge_no_style` | Shown when the `css` check cannot finish because the style sheet was not loaded | The check could not be finished: your browser did not load a style sheet that belongs to this page. If an extension blocks style sheets, please allow them for this website and reload the page. |
 | `challenge_cookie` | Second paragraph of the security check | Afterwards a cookie is stored that only records that the check was passed. |
 | `challenge_working` | Status while the browser calculates | The check is running … |

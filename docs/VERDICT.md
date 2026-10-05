@@ -55,10 +55,13 @@ request is counted once.
 
 Each example does three things:
 
-- It sends requests for `/.xibalba/…` to Xibalba. That is where a visitor's
-  answer to the security check goes.
+- It sends requests for `/.xibalba/…` to Xibalba, without asking about
+  them. That is where a visitor's answer to the security check goes.
 - It asks `/.xibalba/check` before every other request.
 - It keeps visitors from asking that question themselves.
+
+Xibalba decides about every address it is asked about by the rules, also
+one that is written to look like its own (`/.xibalba/../admin`).
 
 ## What Xibalba is asked and what it answers
 
@@ -97,11 +100,17 @@ X-Xibalba-Verdict: deny
 | 403 | `limited` | Refused by a request limit; `Retry-After` says for how long. | the "too many requests" page |
 | 503 | `unavailable` | Xibalba could not evaluate the request and `rules.on_error` is `deny`. | the "unavailable" page |
 
+A question that Xibalba does not answer (not from a trusted proxy, no
+usable `X-Forwarded-Uri`) gets a bare 403; the reason is in the header
+`X-Xibalba-Verdict` of that answer, starting with `refused:`. With
+`rules.dry_run`, every question is answered 204.
+
 Caddy and Traefik show the visitor the body that came with the answer.
 nginx does not pass on the body of such an answer, so the nginx example
-fetches the page with a second request, to `/.xibalba/page`. That request
-is not decided about or counted again: rules, limits and statistics see
-every visitor request once.
+fetches the page with a second request, to `/.xibalba/page`, and hands over
+what the first answer said in the header `X-Xibalba-Verdict`. That request
+is not decided about or counted again. Without a refusal handed over, it
+answers a bare 403: nginx also lands there for refusals of its own.
 
 A visitor who passes the security check gets the pass cookie from
 `/.xibalba/verify` and is sent back to the page they wanted, on the same
@@ -124,12 +133,25 @@ of allowed redirect domains to keep.
 ## Things to mind
 
 - **Do not set `pages.status.challenge: 200` and expect it in the answer to
-  the question.** A web server reads 2xx as "pass". Xibalba therefore
-  always answers the question with 401 or 403, whatever `pages.status`
-  says.
+  the question.** A web server reads 2xx as "pass". A refusal is therefore
+  always answered with 401, 403 or 503, whatever `pages.status` says.
 - **Leave out what needs no check.** Every location that does not ask
   (`auth_request off` in nginx, a route without the middleware elsewhere) is
   not protected. That is useful for static files and has to be a decision.
+- **nginx asks again after an internal redirect.** A request for `/` that
+  nginx turns into `/index.html` (`index`), or one rewritten by
+  `try_files`, is asked about twice and counted twice: in the statistics,
+  and by request limits, which such requests then reach at half the
+  number. With `proxy_pass` to the website, as in the example, every
+  request is counted once.
+- **nginx's own 401 and 403.** The example's `error_page` catches them
+  too: a directory without an index, `deny`, `auth_basic`. The visitor then
+  gets a bare "Forbidden" instead of nginx's page or the password prompt.
+  Give such a location an `error_page` of its own.
+- **Limits by `count: pages` do not count** what is only asked about, also
+  when `upstream.url` is set as well.
+- **The request's `Content-Length` is not passed on** with the question;
+  a rule on that header never matches here.
 - **The question must come from the web server only.** The nginx example
   marks it `internal`, the Caddy example answers visitors "not found". If a
   visitor could ask it, they would learn what Xibalba thinks of a request

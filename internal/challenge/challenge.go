@@ -28,6 +28,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -179,9 +180,9 @@ func (p Profile) level() int {
 	case MethodPoW:
 		return 10 + p.Difficulty
 	case MethodPoWMemory:
-		// Above every plain proof of work, and higher with more tries
-		// and with more memory.
-		return 50 + 5*p.Difficulty + bits.Len(uint(p.Memory))
+		// Above every plain proof of work, and ordered by the work
+		// done: twice the tries or twice the memory is one step up.
+		return 50 + p.Difficulty + bits.Len(uint(p.Memory)) - 1
 	case MethodScript:
 		return 2
 	default:
@@ -216,6 +217,10 @@ type View struct {
 	StyleURL string
 	// Headless says that the script has to report on automation.
 	Headless bool
+	// Resend, if not empty, is an answer the page sends again by itself
+	// after a short while: it could not be checked because too many
+	// answers were being checked at once.
+	Resend string
 	// Message is a note about the previous attempt.
 	Message Message
 }
@@ -256,7 +261,27 @@ type Challenge struct {
 	failed    atomic.Uint64
 	automated atomic.Uint64
 	busy      atomic.Uint64
+
+	// What keeps the cost of checking answers to MethodPoWMemory bounded.
+	mu      sync.Mutex
+	checked map[string]time.Time // tasks whose answer was checked, until they expire
+	wrong   map[string]*tally    // wrong answers per network, this minute
 }
+
+// tally counts within one minute.
+type tally struct {
+	since time.Time
+	n     int
+}
+
+// Bounds on checking answers to MethodPoWMemory.
+const (
+	// A network that sent this many wrong answers within a minute gets no
+	// further answer checked until the minute is over.
+	memoryWrongPerMinute = 5
+	maxChecked           = 200000
+	maxTallies           = 100000
+)
 
 // How answers to MethodPoWMemory are checked: each check needs the task's
 // memory and some milliseconds, so only a few run at once, and an answer
@@ -272,7 +297,8 @@ func New(opts Options) *Challenge {
 		opts.Now = time.Now
 	}
 	return &Challenge{opts: opts, log: opts.Log.With("component", "challenge"),
-		memory: memhard.NewVerifier(memoryChecksAtOnce, memoryCheckWait)}
+		memory:  memhard.NewVerifier(memoryChecksAtOnce, memoryCheckWait),
+		checked: map[string]time.Time{}, wrong: map[string]*tally{}}
 }
 
 // profile returns p, or the default if p is nil.
@@ -463,13 +489,38 @@ func (c *Challenge) Handler() http.Handler {
 				return
 			}
 		case answer == MethodPoWMemory && claims.Method == MethodPoWMemory:
-			ok, busy := c.memory.Solves(r.Context(), claims.Nonce, form.Get("solution"), claims.Memory, claims.Difficulty)
+			// Checking costs memory and milliseconds, so it is done once
+			// per task, not at all for a network that keeps sending wrong
+			// answers, and never for a number that fails the cheap test.
+			solution, network := form.Get("solution"), c.network(r)
+			if !memhard.Filter(claims.Nonce, solution) {
+				c.reject(w, r, ret, MessageRetry, p)
+				return
+			}
+			if c.tooManyWrong(network, now) {
+				// Not checked for now. Someone else in the same network
+				// may be the cause, so the visitor's work is kept: the
+				// page sends the answer again.
+				c.busy.Add(1)
+				c.again(w, r, ret, form.Get("token"), claims, solution, now)
+				return
+			}
+			if !c.reserve(claims.Nonce, claims.Expires, now) {
+				c.reject(w, r, ret, MessageRetry, p)
+				return
+			}
+			ok, busy := c.memory.Solves(r.Context(), claims.Nonce, solution, claims.Memory, claims.Difficulty)
 			if busy {
 				// Too many answers are being checked at once. This one is
-				// neither right nor wrong; the client gets a fresh task.
+				// neither right nor wrong: the task stays open and the page
+				// sends the same answer again, so no work is lost.
+				c.release(claims.Nonce)
 				c.busy.Add(1)
+				c.again(w, r, ret, form.Get("token"), claims, solution, now)
+				return
 			}
 			if !ok {
+				c.noteWrong(network, now)
 				c.reject(w, r, ret, MessageRetry, p)
 				return
 			}
@@ -552,6 +603,92 @@ func (c *Challenge) style(w http.ResponseWriter, r *http.Request) {
 func (c *Challenge) reject(w http.ResponseWriter, r *http.Request, ret string, msg Message, p Profile) {
 	c.failed.Add(1)
 	c.issue(w, r, ret, msg, p)
+}
+
+// again shows the page for a task that is still open, with the answer the
+// page is to send once more.
+func (c *Challenge) again(w http.ResponseWriter, r *http.Request, ret, task string, claims token.Claims, solution string, now time.Time) {
+	v := View{
+		Action: VerifyPath, Token: task, Return: ret, Method: claims.Method, Nonce: claims.Nonce,
+		Difficulty: claims.Difficulty, Memory: claims.Memory, Resend: solution,
+		WaitSeconds: max(0, int((claims.NotBefore.Sub(now)+time.Second-1)/time.Second)),
+		AllowButton: claims.Checks&bitButton != 0,
+		Headless:    claims.Checks&bitHeadless != 0,
+	}
+	if claims.Checks&bitCSS != 0 {
+		v.StyleURL = CSSPath + "?" + url.Values{"n": {claims.Nonce}}.Encode()
+	}
+	w.Header().Set("Retry-After", "2")
+	c.opts.Page(w, r, v)
+}
+
+// network names the network a request comes from, for counting.
+func (c *Challenge) network(r *http.Request) string {
+	if info, ok := clientip.FromContext(r.Context()); ok && info.Client.IsValid() {
+		return networkOf(info.Client)
+	}
+	return "unknown"
+}
+
+// reserve notes that the answer to a task is being checked and reports
+// whether it may be: false if it was checked before, or if no more tasks
+// can be noted.
+func (c *Challenge) reserve(nonce string, expires, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, done := c.checked[nonce]; done {
+		return false
+	}
+	if len(c.checked) >= maxChecked {
+		for key, until := range c.checked {
+			if !now.Before(until) {
+				delete(c.checked, key)
+			}
+		}
+		if len(c.checked) >= maxChecked {
+			return false
+		}
+	}
+	c.checked[nonce] = expires
+	return true
+}
+
+// release takes back a reserve: the answer was not checked after all.
+func (c *Challenge) release(nonce string) {
+	c.mu.Lock()
+	delete(c.checked, nonce)
+	c.mu.Unlock()
+}
+
+// tooManyWrong reports whether a network has used up its wrong answers
+// for this minute.
+func (c *Challenge) tooManyWrong(network string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := c.wrong[network]
+	return t != nil && now.Sub(t.since) < time.Minute && t.n >= memoryWrongPerMinute
+}
+
+// noteWrong counts a wrong answer for a network.
+func (c *Challenge) noteWrong(network string, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := c.wrong[network]
+	if t == nil || now.Sub(t.since) >= time.Minute {
+		if t == nil && len(c.wrong) >= maxTallies {
+			for key, old := range c.wrong {
+				if now.Sub(old.since) >= time.Minute {
+					delete(c.wrong, key)
+				}
+			}
+			if len(c.wrong) >= maxTallies {
+				return // a flood from very many networks; the Verifier still bounds the cost
+			}
+		}
+		t = &tally{since: now}
+		c.wrong[network] = t
+	}
+	t.n++
 }
 
 // Busy returns how many answers to MethodPoWMemory could not be checked

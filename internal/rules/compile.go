@@ -95,12 +95,11 @@ func Compile(spec Spec) (*Engine, []Problem) {
 		c.favours = rs.Action == Allow || (rs.Action == Weigh && rs.Weight < 0)
 		c.negated = false
 		before, beforeASN := c.countryConditions, c.asnConditions
-		c.anchored = false
 		rule.match = c.match(rs.Match, "match", 1, true)
 		rule.needsCountry = c.countryConditions > before
 		rule.needsASN = c.asnConditions > beforeASN
 
-		if rs.ExemptFromLimits && rs.Action == Allow && !c.anchored {
+		if rs.ExemptFromLimits && rs.Action == Allow && !anchored(rs.Match) {
 			c.add("exempt_from_limits", "the rule exempts from the limits whoever matches it, and anyone can choose to match it",
 				"exempt only by something the client cannot choose: add an ip condition or a crawler condition with verified: true")
 		}
@@ -270,12 +269,9 @@ type compiler struct {
 	asn               bool // a database of network operators is configured
 	asnConditions     int
 	lists             map[string]*AddressSet
-	// anchored: the rule being compiled has a condition the client cannot
-	// choose to meet: its address, or being a verified crawler.
-	anchored     bool
-	favours      bool // the rule being compiled allows, or lowers the score
-	negated      bool // the conditions being compiled are inside an odd number of "not"
-	usesCrawlers bool
+	favours           bool // the rule being compiled allows, or lowers the score
+	negated           bool // the conditions being compiled are inside an odd number of "not"
+	usesCrawlers      bool
 }
 
 func (c *compiler) add(field, message, hint string) {
@@ -390,9 +386,6 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	}
 
 	if spec.IP != nil {
-		if !c.negated {
-			c.anchored = true
-		}
 		if len(spec.IP) == 0 || len(spec.IP) > MaxConditions {
 			c.add(field+".ip", fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(spec.IP), MaxConditions),
 				`list addresses or networks such as ["192.0.2.7", "2001:db8::/32"]`)
@@ -443,9 +436,6 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	}
 
 	if spec.AddressList != nil {
-		if !c.negated {
-			c.anchored = true
-		}
 		if len(spec.AddressList) == 0 || len(spec.AddressList) > MaxConditions {
 			c.add(field+".address_list", fmt.Sprintf("the list has %d entries; it needs 1 to %d", len(spec.AddressList), MaxConditions),
 				`name address lists from rules.address_lists, such as ["vpn"]`)
@@ -518,6 +508,35 @@ func (c *compiler) match(spec MatchSpec, field string, depth int, top bool) matc
 	default:
 		return parts
 	}
+}
+
+// anchored reports whether nobody can meet the conditions by choice: every
+// way of meeting them goes through something the client cannot choose, its
+// address (ip, address_list) or being a verified crawler. The conditions
+// written side by side must all hold, so one of them is enough; of the
+// groups under "any" a client picks the easiest, so every one of them has
+// to be anchored; what stands under "not" anchors nothing.
+func anchored(spec MatchSpec) bool {
+	if len(spec.IP) > 0 || len(spec.AddressList) > 0 {
+		return true
+	}
+	if spec.Crawler != nil && spec.Crawler.Verified != nil && *spec.Crawler.Verified {
+		return true
+	}
+	for _, group := range spec.All {
+		if anchored(group) {
+			return true
+		}
+	}
+	if len(spec.Any) > 0 {
+		for _, group := range spec.Any {
+			if !anchored(group) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // country compiles a country condition.
@@ -629,9 +648,6 @@ func (c *compiler) crawler(spec CrawlerSpec, field string) (matcher, bool) {
 	}
 	if !ok {
 		return nil, false
-	}
-	if !c.negated && spec.Verified != nil && *spec.Verified {
-		c.anchored = true
 	}
 	c.usesCrawlers = true
 	return m, true

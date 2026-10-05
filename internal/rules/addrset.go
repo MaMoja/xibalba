@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -31,30 +33,50 @@ type span4 struct{ first, last uint32 }
 type span6 struct{ first, last [16]byte }
 
 // NewAddressSet builds a set from networks. Overlapping and adjacent
-// networks are merged.
+// networks are merged. Networks that are not valid are left out.
 func NewAddressSet(networks []netip.Prefix) *AddressSet {
-	set := &AddressSet{n: len(networks)}
+	set := &AddressSet{}
 	for _, p := range networks {
-		p = p.Masked()
-		addr := p.Addr()
-		if addr.Is4() {
-			a := addr.As4()
-			first := uint32(a[0])<<24 | uint32(a[1])<<16 | uint32(a[2])<<8 | uint32(a[3])
-			last := first | (1<<(32-p.Bits()) - 1)
-			if p.Bits() == 0 {
-				last = 1<<32 - 1
-			}
-			set.v4 = append(set.v4, span4{first, last})
-			continue
-		}
-		first := addr.As16()
-		last := first
-		for bit := p.Bits(); bit < 128; bit++ {
-			last[bit/8] |= 1 << (7 - bit%8)
-		}
-		set.v6 = append(set.v6, span6{first, last})
+		set.add(p)
 	}
+	set.finish()
+	return set
+}
 
+// add puts one network into a set that is being built.
+func (set *AddressSet) add(p netip.Prefix) {
+	if !p.IsValid() {
+		return
+	}
+	if addr := p.Addr(); addr.Is4In6() { // "::ffff:192.0.2.0/120" means 192.0.2.0/24
+		if p.Bits() < 96 {
+			return
+		}
+		p = netip.PrefixFrom(addr.Unmap(), p.Bits()-96)
+	}
+	p = p.Masked()
+	set.n++
+	addr := p.Addr()
+	if addr.Is4() {
+		a := addr.As4()
+		first := uint32(a[0])<<24 | uint32(a[1])<<16 | uint32(a[2])<<8 | uint32(a[3])
+		last := uint32(1<<32 - 1)
+		if p.Bits() > 0 {
+			last = first | (1<<(32-p.Bits()) - 1)
+		}
+		set.v4 = append(set.v4, span4{first, last})
+		return
+	}
+	first := addr.As16()
+	last := first
+	for bit := p.Bits(); bit < 128; bit++ {
+		last[bit/8] |= 1 << (7 - bit%8)
+	}
+	set.v6 = append(set.v6, span6{first, last})
+}
+
+// finish sorts and merges what was added. After it the set can be asked.
+func (set *AddressSet) finish() {
 	sort.Slice(set.v4, func(i, j int) bool { return set.v4[i].first < set.v4[j].first })
 	merged4 := set.v4[:0]
 	for _, s := range set.v4 {
@@ -66,7 +88,7 @@ func NewAddressSet(networks []netip.Prefix) *AddressSet {
 		}
 		merged4 = append(merged4, s)
 	}
-	set.v4 = merged4
+	set.v4 = slices.Clip(merged4)
 
 	sort.Slice(set.v6, func(i, j int) bool { return bytes.Compare(set.v6[i].first[:], set.v6[j].first[:]) < 0 })
 	merged6 := set.v6[:0]
@@ -79,8 +101,7 @@ func NewAddressSet(networks []netip.Prefix) *AddressSet {
 		}
 		merged6 = append(merged6, s)
 	}
-	set.v6 = merged6
-	return set
+	set.v6 = slices.Clip(merged6)
 }
 
 // Len returns how many entries the set was built from.
@@ -134,10 +155,17 @@ type ListProblem struct {
 // ReadAddressList reads an address list: one address or network per line.
 // Empty lines are skipped, and so is everything from a "#" or ";" on. A
 // line may hold more after the address, separated by a blank or a comma
-// (many published lists are tables); only the first field is read. Up to
-// ten problems are reported; a list with problems gives no set.
+// (many published lists are tables); only the first field is read.
+//
+// A list decides who is checked or refused, so a line is only taken if it
+// can mean one thing. Refused are: a second address on the line (a range
+// "a - b", or address and mask: write a network), a network with bits set
+// beyond its length ("10.0.0.5/8": write 10.0.0.0/8), and a network so
+// wide that it is surely a slip (shorter than /8, or /16 for IPv6).
+//
+// Up to ten problems are reported; a list with problems gives no set.
 func ReadAddressList(r io.Reader) (*AddressSet, []ListProblem) {
-	var networks []netip.Prefix
+	set := &AddressSet{}
 	var problems []ListProblem
 	add := func(line int, message string) {
 		if len(problems) < 10 {
@@ -145,42 +173,94 @@ func ReadAddressList(r io.Reader) (*AddressSet, []ListProblem) {
 		}
 	}
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 4096), maxAddressListLine)
+	scanner.Buffer(make([]byte, 0, maxAddressListLine), maxAddressListLine)
 	line := 0
 	for scanner.Scan() {
 		line++
-		text := scanner.Text()
+		text := scanner.Bytes()
 		if line == 1 {
-			text = strings.TrimPrefix(text, "\xef\xbb\xbf") // a byte-order mark from an editor
+			text = bytes.TrimPrefix(text, []byte("\xef\xbb\xbf")) // a byte-order mark from an editor
 		}
-		if i := strings.IndexAny(text, "#;"); i >= 0 {
+		if i := bytes.IndexAny(text, "#;"); i >= 0 {
 			text = text[:i]
 		}
-		text = strings.TrimSpace(text)
-		if i := strings.IndexAny(text, " \t,"); i >= 0 {
-			text = text[:i]
+		text = bytes.TrimSpace(text)
+		rest := []byte(nil)
+		if i := bytes.IndexAny(text, " \t,"); i >= 0 {
+			text, rest = text[:i], bytes.TrimLeft(text[i:], " \t,")
 		}
-		if text == "" {
+		if len(text) == 0 {
 			continue
 		}
-		prefix, err := parsePrefix(text)
-		if err != nil {
-			add(line, fmt.Sprintf("%q is not an IP address or network", clip(text)))
+		entry := string(text)
+		prefix, message := listEntry(entry)
+		if message == "" && len(rest) > 0 {
+			// What follows must not be the other half of what was meant.
+			second := string(rest)
+			if i := strings.IndexAny(second, " \t,"); i >= 0 {
+				second = second[:i]
+			}
+			if _, err := parsePrefix(second); err == nil || strings.HasPrefix(second, "-") {
+				message = "holds a second address after " + entry + "; a range or an address with a mask is written as a network, such as 192.0.2.0/24"
+			}
+		}
+		if message != "" {
+			add(line, message)
 			continue
 		}
-		if len(networks) >= MaxAddressListEntries {
+		if set.n >= MaxAddressListEntries {
 			add(line, fmt.Sprintf("the list has more than %d entries", MaxAddressListEntries))
 			break
 		}
-		networks = append(networks, prefix)
+		set.add(prefix)
 	}
-	if err := scanner.Err(); err != nil {
-		add(line+1, fmt.Sprintf("the line is longer than %d characters, or the file cannot be read", maxAddressListLine))
+	switch err := scanner.Err(); {
+	case err == bufio.ErrTooLong:
+		add(line+1, fmt.Sprintf("the line is longer than %d characters", maxAddressListLine))
+	case err != nil:
+		add(line+1, "the file cannot be read")
 	}
 	if len(problems) > 0 {
 		return nil, problems
 	}
-	return NewAddressSet(networks), nil
+	set.finish()
+	return set, nil
+}
+
+// listEntry reads one entry of an address list. message says what is wrong
+// with it, or is empty.
+func listEntry(entry string) (prefix netip.Prefix, message string) {
+	// Only text that can be part of an address is repeated in a message:
+	// a file named by mistake must not be quoted line by line.
+	shown := "the entry"
+	if strings.Trim(entry, "0123456789abcdefABCDEF:./") == "" {
+		shown = strconv.Quote(clip(entry))
+	}
+	if strings.Contains(entry, "%") {
+		return prefix, "holds an address with a zone (\"%\"), which has no meaning in a list"
+	}
+	prefix, err := netip.ParsePrefix(entry)
+	if err != nil {
+		addr, err := netip.ParseAddr(entry)
+		if err != nil {
+			return prefix, shown + " is not an IP address or network"
+		}
+		addr = addr.Unmap()
+		return netip.PrefixFrom(addr, addr.BitLen()), ""
+	}
+	if addr := prefix.Addr(); addr.Is4In6() {
+		if prefix.Bits() < 96 {
+			return prefix, shown + " is an IPv4-mapped network shorter than /96"
+		}
+		prefix = netip.PrefixFrom(addr.Unmap(), prefix.Bits()-96)
+	}
+	if prefix.Masked() != prefix {
+		return prefix, fmt.Sprintf("%s has bits set beyond its length; if the network is meant, write %s", shown, prefix.Masked())
+	}
+	if widest := map[bool]int{true: 8, false: 16}[prefix.Addr().Is4()]; prefix.Bits() < widest {
+		return prefix, fmt.Sprintf("%s is wider than /%d, a large part of the internet; that is surely a slip", shown, widest)
+	}
+	return prefix, ""
 }
 
 func clip(s string) string {

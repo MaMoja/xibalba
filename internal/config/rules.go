@@ -173,8 +173,15 @@ func (r *Rules) loadAddressLists(dir string, add func(path, message, hint string
 			add(field, fmt.Sprintf("%q cannot be read", file), "give a file the user Xibalba runs as may read")
 			continue
 		}
-		set, problems := rules.ReadAddressList(io.LimitReader(f, maxAddressListSize+1))
+		// Never a part of a file: a line cut short could name a wider
+		// network than the one that was written.
+		counted := &countingReader{r: io.LimitReader(f, maxAddressListSize+1)}
+		set, problems := rules.ReadAddressList(counted)
 		_ = f.Close()
+		if counted.n > maxAddressListSize {
+			add(field, fmt.Sprintf("%q is larger than %d MiB", file, maxAddressListSize>>20), "shorten the list; networks instead of single addresses take far less room")
+			continue
+		}
 		for _, p := range problems {
 			add(field, fmt.Sprintf("%s, line %d: %s", file, p.Line, p.Message),
 				`write one address or network per line, such as "192.0.2.7" or "2001:db8::/32"; text after "#" is ignored`)
@@ -183,6 +190,17 @@ func (r *Rules) loadAddressLists(dir string, add func(path, message, hint string
 			r.Lists[name] = set
 		}
 	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func listName(name string) bool {

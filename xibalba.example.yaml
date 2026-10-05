@@ -273,9 +273,9 @@ challenge:
   difficulty: 18
   # For pow-memory: the memory one try needs, in MiB (1, 2, 4, 8 or 16), and
   # how many tries it takes: 1 (two on average) to 10 (a thousand); each
-  # step up doubles them. 4 and 4 take about a second on a computer.
+  # step up doubles them. 4 and 6 take about a second on a computer.
   memory: 4
-  memory_difficulty: 4
+  memory_difficulty: 6
   # What visitors without JavaScript get:
   # button: they wait a few seconds and press a button.
   # deny:   they are told that JavaScript is needed.

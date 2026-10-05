@@ -861,3 +861,18 @@ func TestMemoryScriptIsOnlyOnPagesThatNeedIt(t *testing.T) {
 		t.Errorf("the memory script has grown to %d bytes", len(r.memory))
 	}
 }
+
+func TestResendAndNoMemoryTextOnThePage(t *testing.T) {
+	r := renderer(t)
+	rec := httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "pow-memory", Nonce: "abc", Difficulty: 5, Memory: 4, Resend: `12"><script>`})
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-resend="12&#34;&gt;&lt;script&gt;"`) || !strings.Contains(body, `data-nomemory="`) || strings.Count(body, "<script>") != 2 {
+		t.Errorf("resend is missing or not escaped:\n%s", body[:1500])
+	}
+	rec = httptest.NewRecorder()
+	r.Challenge(rec, httptest.NewRequest("GET", "/", nil), ChallengeView{Method: "pow", Nonce: "abc", Difficulty: 18})
+	if strings.Contains(rec.Body.String(), `data-resend="`) || strings.Contains(rec.Body.String(), `data-nomemory="`) {
+		t.Error("resend or the memory text on a page that needs neither")
+	}
+}

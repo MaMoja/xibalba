@@ -60,7 +60,7 @@ var keys = []string{
 	"imprint_label", "privacy_label",
 	"challenge_title", "challenge_text", "challenge_cookie",
 	"challenge_text_script", "challenge_text_wait", "challenge_text_refresh", "challenge_automated",
-	"challenge_try_again", "challenge_no_style",
+	"challenge_try_again", "challenge_no_style", "challenge_no_memory",
 	"challenge_working", "challenge_done",
 	"challenge_manual", "challenge_button", "challenge_needs_script",
 	"challenge_too_early", "challenge_retry",
@@ -453,6 +453,9 @@ type ChallengeView struct {
 	// into the head, for the services that build the preview of a shared
 	// link; a person never sees them.
 	Meta []MetaTag
+	// Resend, if not empty, is an answer the script sends again after a
+	// short while instead of working it out anew.
+	Resend string
 	// Notice selects a note about the previous attempt: "", "too_early",
 	// "retry" or "automated".
 	Notice string
@@ -517,7 +520,7 @@ type challengePage struct {
 	Notice                                     string
 	Scripted, Stopped                          bool
 	Working, Done, Manual, Button, NeedsScript string
-	TryAgain, NoStyle                          string
+	TryAgain, NoStyle, NoMemory                string
 }
 
 // Challenge shows the security check. It is sent with status 403 unless the
@@ -534,6 +537,7 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 		Manual: texts["challenge_manual"], Button: texts["challenge_button"],
 		NeedsScript: texts["challenge_needs_script"],
 		TryAgain:    texts["challenge_try_again"], NoStyle: texts["challenge_no_style"],
+		NoMemory: texts["challenge_no_memory"],
 	}
 	switch v.Notice {
 	case "too_early":

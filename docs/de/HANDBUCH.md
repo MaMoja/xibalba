@@ -1204,9 +1204,18 @@ rules:
 ```
 
 Eine Liste darf bis zu zwei Millionen Einträge haben; das Nachschlagen
-dauert unabhängig von der Länge etwa eine zehntel Mikrosekunde. Steht in
-der Datei etwas, das keine Adresse ist, startet Xibalba nicht und nennt
-Datei und Zeile.
+dauert auch dann weniger als eine Mikrosekunde. Eine Zeile wird nur
+übernommen, wenn sie eindeutig ist. Xibalba startet nicht und nennt Datei
+und Zeile bei: etwas, das keine Adresse ist; einem Bereich „von - bis“ oder
+Adresse mit Maske (schreiben Sie ein Netz); einem Netz mit gesetzten Bits
+hinter der Länge (`10.0.0.5/8`); einem Netz, das breiter ist als /8 (IPv6:
+/16), denn das ist sicher ein Versehen.
+
+**Eine leere Datei ist eine gültige Liste.** Schlägt ein nächtlicher Abruf
+fehl und hinterlässt eine leere Datei, trifft „in der Liste“ nie zu und
+„nicht in der Liste“ immer. Xibalba schreibt dafür eine Warnung ins
+Protokoll; lassen Sie Ihr Abruf-Skript prüfen, dass die Datei nicht leer
+ist, bevor es die alte ersetzt.
 
 **Die Listen werden beim Start gelesen.** Nach dem Austausch einer Datei
 starten Sie Xibalba neu. Holen Sie eine Liste jede Nacht automatisch, prüfen
@@ -1333,27 +1342,35 @@ Tausend Versuche gleichzeitig brauchen tausendmal den Speicher.
 challenge:
   method: pow-memory
   memory: 4              # MiB je Versuch: 1, 2, 4, 8 oder 16
-  memory_difficulty: 4   # 1 bis 10; jede Stufe verdoppelt die Versuche
+  memory_difficulty: 6   # 1 bis 10; jede Stufe verdoppelt die Versuche
 ```
 
 | `memory` | `memory_difficulty` | Dauer im Mittel (Entwicklungsrechner, echter Browser) |
 |---|---|---|
-| 4 | 3 | 0,7 s |
-| 4 | 5 | 1,4 s |
-| 4 | 7 | 7 s |
-| 16 | 5 | 2,8 s |
+| 4 | 4 | unter 1 s |
+| 4 | 6 (ab Werk) | 1 s |
+| 4 | 8 | 3,5 s |
+| 16 | 6 | 5,6 s |
 
 Telefone sind langsamer; das ist nicht gemessen. Das Verfahren ist scrypt,
 ein veröffentlichtes und lange untersuchtes Verfahren, nichts Eigenes. Es
 läuft als einfaches JavaScript im Browser, ohne WebAssembly, und steht nur
 auf der Seite, wenn es gebraucht wird.
 
+**Wichtig:** Mit `no_javascript: button` (ab Werk) kann jeder statt zu
+rechnen ein paar Sekunden warten und „Weiter“ drücken, auch ein Programm.
+Soll die Aufgabe wirklich bezahlt werden, setzen Sie für diese Prüfung
+`no_javascript: deny`.
+
 Ihr Server muss zum Prüfen einer Antwort denselben Speicher einmal
 aufwenden (bei 4 MiB etwa 15 Millisekunden). Damit das niemand gegen Sie
-verwendet, prüft Xibalba höchstens zwei Antworten gleichzeitig und schaut
-eine Antwort nur an, wenn sie zusätzlich eine kleine übliche Rechenaufgabe
-löst. Xibalba unterscheidet auch hier nicht zwischen Mensch und Programm:
-Ein Crawler mit echtem Browser löst die Aufgabe, zahlt aber denselben Preis.
+verwendet, gilt: Jede Aufgabe wird nur einmal geprüft, aus einem Netz
+werden höchstens fünf falsche Antworten pro Minute geprüft, und es laufen
+höchstens zwei Prüfungen gleichzeitig. Kann eine richtige Antwort gerade
+nicht geprüft werden, geht die Arbeit des Besuchers nicht verloren; die
+Seite sendet dieselbe Antwort nach zwei bis drei Sekunden erneut. Xibalba
+unterscheidet auch hier nicht zwischen Mensch und Programm: Ein Crawler mit
+echtem Browser löst die Aufgabe, zahlt aber denselben Preis.
 
 **Hinweis zur Barrierefreiheit:** Bei `refresh` wird der Besucher nach einer
 Zeit weitergeleitet, die er nicht verlängern kann. Das widerspricht WCAG 2.1

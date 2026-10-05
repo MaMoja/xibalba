@@ -30,7 +30,7 @@ func (f *fake) write(w http.ResponseWriter, r *http.Request, next http.Handler) 
 		w.WriteHeader(http.StatusOK) // an operator may have chosen 200 for the page
 		_, _ = io.WriteString(w, "challenge page")
 		return "challenge"
-	case strings.HasPrefix(r.URL.Path, "/admin"), r.Method == "POST":
+	case strings.HasPrefix(r.URL.Path, "/admin"), strings.Contains(r.URL.Path, "/../admin"), r.Method == "POST":
 		w.WriteHeader(http.StatusNotFound) // and 404 for the block page
 		_, _ = io.WriteString(w, "block page")
 		return "deny"
@@ -84,7 +84,8 @@ func TestCheck(t *testing.T) {
 		{"denied by method", "/form", "POST", 403, "deny", "block page"},
 		{"limited", "/busy", "GET", 403, "limited", "limited page"},
 		{"failure inside", "/broken", "GET", 503, "unavailable", ""},
-		{"xibalba's own address", "/.xibalba/verify", "POST", 204, "pass", ""},
+		{"dressed up as xibalba's own address", "/.xibalba/../admin", "GET", 403, "deny", "block page"},
+		{"webdav method", "/page", "VERSION-CONTROL", 204, "pass", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -98,13 +99,10 @@ func TestCheck(t *testing.T) {
 			if rec.Header().Get("Cache-Control") != "no-store" {
 				t.Error("the answer may be stored")
 			}
-			if c.uri == "/.xibalba/verify" {
-				if len(f.served) != 0 {
-					t.Error("an address of Xibalba's own was decided about")
-				}
+			r := f.served[0]
+			if c.uri == "/.xibalba/../admin" {
 				return
 			}
-			r := f.served[0]
 			if r.URL.RequestURI() != c.uri || r.Method != c.method || r.Host != "www.example.org" || r.Header.Get("User-Agent") != "Browser" {
 				t.Errorf("decided about %s %s on %s", r.Method, r.URL.RequestURI(), r.Host)
 			}
@@ -143,7 +141,7 @@ func TestQuestionsThatAreNotAnswered(t *testing.T) {
 		{"broken escape", true, map[string]string{"X-Forwarded-Uri": "/a%zz"}},
 		{"huge address", true, map[string]string{"X-Forwarded-Uri": "/" + strings.Repeat("a", 9000)}},
 		{"method", true, map[string]string{"X-Forwarded-Uri": "/", "X-Forwarded-Method": "GET /x HTTP/1.1"}},
-		{"lower-case method", true, map[string]string{"X-Forwarded-Uri": "/", "X-Forwarded-Method": "get"}},
+		{"two addresses", true, nil},
 	}
 	for _, path := range []string{CheckPath, PagePath} {
 		for _, c := range cases {
@@ -165,11 +163,11 @@ func TestQuestionsThatAreNotAnswered(t *testing.T) {
 func TestPage(t *testing.T) {
 	f := &fake{}
 	h := New(f)
-	rec := ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": "/wiki/Start?a=1", "X-Forwarded-Method": "GET"})
+	rec := ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": "/wiki/Start?a=1", "X-Forwarded-Method": "GET", HeaderVerdict: "challenge"})
 	if rec.Code != 200 || rec.Body.String() != "challenge page" {
 		t.Errorf("the page keeps its own status: %d %q", rec.Code, rec.Body)
 	}
-	rec = ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": "/admin"})
+	rec = ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": "/admin", HeaderVerdict: "deny"})
 	if rec.Code != 404 || rec.Body.String() != "block page" {
 		t.Errorf("block page: %d %q", rec.Code, rec.Body)
 	}
@@ -185,12 +183,12 @@ func TestPage(t *testing.T) {
 		t.Errorf("a page was counted as a check: %+v", h.Counts())
 	}
 	// Passed meanwhile: back to where the visitor wanted to go.
-	rec = ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": "/wiki/Start?a=1", "Cookie": "pass=1"})
+	rec = ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": "/wiki/Start?a=1", "Cookie": "pass=1", HeaderVerdict: "challenge"})
 	if rec.Code != 303 || rec.Header().Get("Location") != "/wiki/Start?a=1" {
 		t.Errorf("passed meanwhile: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	for _, uri := range []string{"//other.example/x", "/.xibalba/page", "/\\other.example"} {
-		rec = ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": uri})
+		rec = ask(h, PagePath, true, map[string]string{"X-Forwarded-Uri": uri, HeaderVerdict: "challenge"})
 		// On this website, whatever the address was: never "//host" or "/\host".
 		if loc := rec.Header().Get("Location"); rec.Code == 303 && loc != "/" && loc != "/%5Cother.example" {
 			t.Errorf("%s leads to %q", uri, loc)
@@ -207,5 +205,29 @@ func TestCounts(t *testing.T) {
 	want := Counts{Pass: 2, Challenge: 1, Deny: 1, Limited: 1, Unavailable: 1, Refused: 1}
 	if got := h.Counts(); got != want {
 		t.Errorf("got %+v", got)
+	}
+}
+
+// The web server may ask for the page after a refusal of its own. That is
+// not ours to explain, and the visitor must not be sent in a circle.
+func TestPageWithoutARefusalOfOurs(t *testing.T) {
+	for _, hint := range []string{"", "pass", "nonsense"} {
+		f := &fake{}
+		for _, cookie := range []string{"", "pass=1"} {
+			rec := ask(New(f), PagePath, true, map[string]string{"X-Forwarded-Uri": "/wiki/Start", HeaderVerdict: hint, "Cookie": cookie})
+			if rec.Code != 403 || rec.Header().Get("Location") != "" || strings.Contains(rec.Body.String(), "page") {
+				t.Errorf("hint %q, cookie %q: %d %q to %q", hint, cookie, rec.Code, rec.Body, rec.Header().Get("Location"))
+			}
+		}
+		if len(f.paged) != 0 {
+			t.Errorf("hint %q: a page was worked out", hint)
+		}
+	}
+}
+
+func TestRefusalsSayNothingToTheVisitor(t *testing.T) {
+	rec := ask(New(&fake{}), CheckPath, true, map[string]string{"X-Forwarded-Uri": "/", "X-Forwarded-Method": "GET /x"})
+	if strings.Contains(rec.Body.String(), "X-Forwarded") || !strings.HasPrefix(rec.Header().Get(HeaderVerdict), "refused: ") {
+		t.Errorf("body %q, header %q", rec.Body, rec.Header().Get(HeaderVerdict))
 	}
 }

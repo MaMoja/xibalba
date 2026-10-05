@@ -287,28 +287,34 @@ func parseASN(text []byte) uint32 {
 	return uint32(n)
 }
 
-// HasASN reports whether the database holds network operators: whether the
-// first record found in it names one. A country database does not.
+// HasASN reports whether the database holds network operators: whether
+// one of the first records found in it names one. A country database does
+// not. Several records are looked at, because the first ones of a real
+// database may stand for address space that has no operator.
 func (db *DB) HasASN() bool {
-	// Walk down the tree, left before right, to the first record.
+	// Walk down the tree, left before right.
 	type step struct {
 		node  uint32
 		depth int
 	}
 	stack := []step{{0, 0}}
-	for visited := 0; len(stack) > 0 && visited < 100000; visited++ {
+	records := 0
+	for visited := 0; len(stack) > 0 && visited < 100000 && records < 64; visited++ {
 		at := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		switch {
 		case at.node == db.nodeCount:
 			continue // nothing here
 		case at.node > db.nodeCount:
+			records++
 			off := int(at.node-db.nodeCount) - 16
 			if off < 0 || off >= len(db.data) {
-				return false
+				continue
 			}
-			_, has := db.asn(off)
-			return has
+			if _, has := db.asn(off); has {
+				return true
+			}
+			continue
 		case at.depth >= 128:
 			continue
 		}

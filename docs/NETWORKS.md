@@ -48,8 +48,11 @@ The licence is yours to meet, as with the country database
 ([COUNTRIES.md](COUNTRIES.md#which-database)).
 
 The reader looks for the number under `autonomous_system_number`, then
-under `asn` (a number, or text such as `AS64500`). A country database is
-refused for this setting, with a message that says what the file is.
+under `asn` (a number, or text such as `AS64500`). A database that holds
+no operators, such as a country database, is never put in use: not at
+start, where the message says what the file is, and not when it turns up
+later as a replaced file or a download. The database in use stays, and
+`/healthz` says why.
 
 ### Settings
 
@@ -60,7 +63,8 @@ refused for this setting, with a message that says what the file is.
 | `asn.download_url` | Where to download from. `{year}` and `{month}` are filled in. |
 
 The file is read again within a minute when it changes; no restart is
-needed. The database is only loaded if a rule asks for an operator.
+needed. The database is only loaded if a rule asks for an operator, or if
+rules can be added in the web interface (`admin.allow_changes`).
 
 ### Rules
 
@@ -83,7 +87,9 @@ rules:
   `asn: [...]` does not hold for it, `not: {asn: [...]}` does.
 - While no database is loaded (the file is missing or damaged), rules with
   an `asn` condition are skipped altogether, so that a missing file cannot
-  lock everybody out. `/healthz` shows the part `asn` as `degraded`.
+  lock everybody out. That goes for rules that let through as well: "allow
+  operator X, deny the rest" denies X too until the database is back.
+  `/healthz` shows the part `asn` as `degraded`.
 - An operator is as broad as a country: a rule that only names an operator
   cannot carry `exempt_from_limits`.
 
@@ -115,17 +121,36 @@ One address or network per line, IPv4 or IPv6:
 - Empty lines are skipped, and so is everything from `#` or `;` on.
 - Only the first field of a line is read, so tables work as they are:
   `203.0.113.0/24,AS64500,Example` counts as `203.0.113.0/24`.
-- Up to 2,000,000 entries and 64 MiB per file, up to 32 lists.
+- Up to 2,000,000 entries and 64 MiB per file, up to 32 lists; a line has
+  at most 512 characters.
 - A name is 1 to 40 small letters, digits, `-` and `_`.
 
-A line that is not an address stops Xibalba from starting, and the message
-names file and line (from a real run):
+A list decides who is checked or refused, so a line is only taken if it can
+mean one thing. These stop Xibalba from starting, with file and line:
+
+| Line | Why it is refused |
+|---|---|
+| `198.51.100.1 - 198.51.100.99`, `10.0.0.0 255.0.0.0` | A range or a mask: only the first address would be read. Write a network. |
+| `10.0.0.5/8` | Bits set beyond the length. If the network is meant, write `10.0.0.0/8`. |
+| `0.0.0.0/0`, `128.0.0.0/1`, `2000::/3` | Wider than /8 (IPv4) or /16 (IPv6): a large part of the internet, surely a slip. |
+| `fe80::1%eth0` | An address with a zone has no meaning in a list. |
+| `vpn.example.org` | Not an address. Names are not looked up. |
+
+From a real run:
 
 ```
-configuration x.yaml: 1 problem
-  - line 5, rules.address_lists.vpn: lists/vpn.txt, line 3: "vpn.example.org" is not an IP address or network
+configuration x.yaml: 2 problems
+  - line 5, rules.address_lists.vpn: lists/vpn.txt, line 3: holds a second address after 198.51.100.1; a range or an address with a mask is written as a network, such as 192.0.2.0/24
+    fix: write one address or network per line, such as "192.0.2.7" or "2001:db8::/32"; text after "#" is ignored
+  - line 5, rules.address_lists.vpn: lists/vpn.txt, line 4: "10.0.0.5/8" has bits set beyond its length; if the network is meant, write 10.0.0.0/8
     fix: write one address or network per line, such as "192.0.2.7" or "2001:db8::/32"; text after "#" is ignored
 ```
+
+**An empty file is a valid list.** A nightly fetch that fails and leaves an
+empty file turns "in the list" into never, and `not: {address_list: …}`
+into always. Xibalba starts and writes a warning to the log for each list
+without entries; have your fetch script check that the file is not empty
+before it replaces the old one.
 
 ### Keeping a list current
 
@@ -152,10 +177,12 @@ Reading changed lists without a restart is planned.
 
 ### Cost
 
-A list is sorted once at start. A lookup then takes about a tenth of a
-microsecond, whether the list has a hundred entries or a million (measured:
-125 ns in a list of 500,000 networks). Memory: 8 bytes per IPv4 entry, 32
-per IPv6 entry.
+A list is sorted once at start; a lookup is then a search by halving, well
+under a microsecond whatever the size. Measured on the development machine
+with random addresses: 0.16 µs in a list of 500,000 networks, 0.3 µs in
+2,000,000 IPv4 entries, 0.8 µs in 2,000,000 IPv6 entries. Memory: 8 bytes
+per IPv4 entry, 32 per IPv6 entry. Reading 2,000,000 entries at start takes
+one to two seconds.
 
 ## Both together, with countries
 

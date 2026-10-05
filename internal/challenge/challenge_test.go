@@ -901,3 +901,113 @@ func TestPoWMemoryWithButtonAndWhenBusy(t *testing.T) {
 		t.Error("the fresh task after a busy moment was not accepted")
 	}
 }
+
+// wrongMemoryAnswer finds a number that passes the cheap test and is wrong.
+func wrongMemoryAnswer(v View) string {
+	for n := 0; ; n++ {
+		if s := strconv.Itoa(n); memhard.Filter(v.Nonce, s) && !memhard.Solves(v.Nonce, s, v.Memory, v.Difficulty, nil) {
+			return s
+		}
+	}
+}
+
+// Checking an answer costs memory and time. The same answer sent again and
+// again must not cost it again and again.
+func TestAMemoryTaskIsCheckedOnce(t *testing.T) {
+	s := newSite(t, nil)
+	s.want = &Profile{Method: MethodPoWMemory, Difficulty: 3, Memory: 1, Wait: time.Second}
+	c := s.client("192.0.2.1:1000", browser)
+	v := c.challenge("/")
+	wrong := wrongMemoryAnswer(v)
+	if rec := c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {wrong}}); passed(rec) {
+		t.Fatal("a wrong answer passed")
+	}
+	// From here on nothing may be worked out for this task: with every
+	// place for checking taken, a replay would otherwise be told "busy".
+	s.c.memory = memhard.NewVerifier(1, time.Millisecond)
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	go s.c.memory.Hold(func() { close(blocked); <-release })
+	<-blocked
+	for i := 0; i < 50; i++ {
+		c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {wrong}})
+	}
+	right := solveMemory(v)
+	if rec := c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}}); passed(rec) {
+		t.Error("a task whose answer was checked and wrong was checked again")
+	}
+	if s.c.Busy() != 0 {
+		t.Errorf("%d replays reached the check", s.c.Busy())
+	}
+	close(release)
+
+	// A right answer is good for one pass, not for many.
+	s2 := newSite(t, nil)
+	s2.want = s.want
+	c2 := s2.client("192.0.2.1:1000", browser)
+	v2 := c2.challenge("/")
+	right = solveMemory(v2)
+	if rec := c2.answer(v2, url.Values{"method": {MethodPoWMemory}, "solution": {right}}); !passed(rec) {
+		t.Fatal("the right answer did not pass")
+	}
+	again := s2.client("192.0.2.2:1000", browser) // same network, no pass yet
+	if rec := again.answer(v2, url.Values{"method": {MethodPoWMemory}, "solution": {right}}); passed(rec) {
+		t.Error("the same answer gave a second pass")
+	}
+}
+
+func TestWrongMemoryAnswersHaveABudgetPerNetwork(t *testing.T) {
+	s := newSite(t, nil)
+	s.want = &Profile{Method: MethodPoWMemory, Difficulty: 3, Memory: 1, Wait: time.Second}
+	attacker := s.client("192.0.2.1:1000", browser)
+	for i := 0; i < memoryWrongPerMinute; i++ {
+		v := attacker.challenge("/")
+		attacker.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {wrongMemoryAnswer(v)}})
+	}
+	// The budget is spent: nothing more is checked for this network, right
+	// or wrong, and the answer is kept for later instead of thrown away.
+	neighbour := s.client("192.0.2.77:1000", browser)
+	v := neighbour.challenge("/")
+	right := solveMemory(v)
+	rec := neighbour.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}})
+	last := s.views[len(s.views)-1]
+	if passed(rec) || last.Resend != right || last.Token != v.Token || s.c.Busy() != 1 {
+		t.Fatalf("over budget: passed %v, resend %q, same task %v, busy %d", passed(rec), last.Resend, last.Token == v.Token, s.c.Busy())
+	}
+	// Another network is not held back.
+	other := s.client("198.51.100.1:1000", browser)
+	ov := other.challenge("/")
+	if rec := other.answer(ov, url.Values{"method": {MethodPoWMemory}, "solution": {solveMemory(ov)}}); !passed(rec) {
+		t.Error("a network without wrong answers was held back")
+	}
+	// A minute later the neighbour's page sends the kept answer again.
+	s.advance(61 * time.Second)
+	if rec := neighbour.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}}); !passed(rec) {
+		t.Error("the kept answer was not accepted after the minute")
+	}
+}
+
+func TestBusyKeepsTheVisitorsWork(t *testing.T) {
+	s := newSite(t, nil)
+	s.c.memory = memhard.NewVerifier(1, 10*time.Millisecond)
+	s.want = &Profile{Method: MethodPoWMemory, Difficulty: 1, Memory: 1, Wait: time.Second, Checks: []string{CheckHeadless}}
+	c := s.client("192.0.2.1:1000", browser)
+	v := c.challenge("/")
+	right := solveMemory(v)
+	blocked, release := make(chan struct{}), make(chan struct{})
+	go s.c.memory.Hold(func() { close(blocked); <-release })
+	<-blocked
+	rec := c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}, "probe": {"ok"}})
+	last := s.views[len(s.views)-1]
+	if passed(rec) || last.Token != v.Token || last.Nonce != v.Nonce || last.Resend != right || !last.Headless || last.Memory != 1 || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("busy: %+v", last)
+	}
+	if _, failed := s.c.Counts(); failed != 0 {
+		t.Errorf("a busy moment was counted as %d wrong answers", failed)
+	}
+	close(release)
+	time.Sleep(20 * time.Millisecond)
+	if rec := c.answer(last, url.Values{"method": {MethodPoWMemory}, "solution": {last.Resend}, "probe": {"ok"}}); !passed(rec) {
+		t.Error("the same answer, sent again, was not accepted")
+	}
+}

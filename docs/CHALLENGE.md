@@ -90,7 +90,7 @@ All settings are in the `challenge` section of the configuration file.
 | `challenge.checks` | none | `css`, `headless` | Extra checks on top of `pow`, `pow-memory` or `script`; see [Extra checks](#extra-checks). |
 | `challenge.difficulty` | `18` | `8` to `24` | For `pow`: leading zero bits the hash must have. Each step up doubles the browser's work. |
 | `challenge.memory` | `4` | `1`, `2`, `4`, `8`, `16` | For `pow-memory`: the memory one try needs, in MiB. |
-| `challenge.memory_difficulty` | `4` | `1` to `10` | For `pow-memory`: leading zero bits. Each step up doubles the tries. See [A calculation that costs memory](#a-calculation-that-costs-memory). |
+| `challenge.memory_difficulty` | `6` | `1` to `10` | For `pow-memory`: leading zero bits. Each step up doubles the tries. See [A calculation that costs memory](#a-calculation-that-costs-memory). |
 | `challenge.no_javascript` | `button` | `button`, `deny` | What visitors without JavaScript get: wait and press a button, or a note that JavaScript is needed. |
 | `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor has to wait: the whole check with `wait` and `refresh`, before the script answers with `script`, and before the button counts for a visitor without JavaScript. |
 | `challenge.challenge_lifetime` | `5m` | `30s` to `1h`, longer than `wait` | How long a client has to finish. After that it simply gets a new task. |
@@ -310,7 +310,7 @@ thousand times the memory.
 challenge:
   method: pow-memory
   memory: 4              # MiB per try: 1, 2, 4, 8 or 16
-  memory_difficulty: 4   # 1 to 10; each step doubles the tries
+  memory_difficulty: 6   # 1 to 10; each step doubles the tries
 ```
 
 Or for one rule only, with the usual calculation for everyone else:
@@ -335,37 +335,59 @@ and is only on the page when a check asks for it. No WebAssembly, no
 download from anywhere. Xibalba's own implementations in the browser and on
 the server are tested against a third one (OpenSSL's).
 
-**How long it takes.** Measured in a real browser (Chromium) on the
-development machine, from opening the page to arriving at the website,
-averaged over 8 to 12 runs. Solving is a matter of luck; single runs took
-three times as long.
+**How long it takes.** One try costs the browser about 5 ms with 1 MiB, 16
+ms with 4 MiB and 72 ms with 16 MiB (measured in V8, the JavaScript engine
+of Chromium, on the development machine). The number of tries is a matter
+of luck around the average. The last column is what we measured in a real
+browser from opening the page to arriving at the website, averaged over 8
+to 12 runs each; it includes loading two pages, and single runs took up to
+four times as long.
 
-| `memory` | `memory_difficulty` | Tries on average | Time on average |
-|---|---|---|---|
-| 4 | 3 | 8 | 0.7 s |
-| 4 | 5 | 32 | 1.4 s |
-| 4 | 7 | 128 | 7 s |
-| 1 | 5 | 32 | 1.7 s |
-| 16 | 5 | 32 | 2.8 s |
-| for comparison: `pow`, `difficulty: 18` | | | 0.6 s |
+| `memory` | `memory_difficulty` | Tries on average | Tries × time per try | Measured |
+|---|---|---|---|---|
+| 4 | 4 | 16 | 0.3 s | 0.9 s |
+| 4 | 6 (default) | 64 | 1.0 s | 1.0 s |
+| 4 | 8 | 256 | 4.1 s | 3.5 s |
+| 1 | 6 | 64 | 0.3 s | 0.8 s |
+| 16 | 6 | 64 | 4.6 s | 5.6 s |
+| for comparison: `pow`, `difficulty: 18` | | | 0.1 s | 0.4 s |
 
 Phones are slower; we have not measured them. A phone with little free
-memory may refuse 16 MiB; the page then falls back to the path without
-JavaScript, if `no_javascript: button` is set. Start with the defaults.
+memory may refuse 16 MiB; the page then offers the path without JavaScript
+if `no_javascript: button` is set, and says what is wrong if not. Start
+with the defaults.
 
-**What it costs your server.** Checking an answer means doing one try:
-the memory of the task and, on the development machine, 4 ms (1 MiB), 15 ms
-(4 MiB) or 60 ms (16 MiB) of computing time. Three things keep that from
-being used against you:
+**It only binds where waiting is not enough.** With `no_javascript: button`
+(the default), anyone can wait a few seconds and press the button instead,
+a program too. That is so for `pow` as well. Where the calculation is meant
+to be paid, set `no_javascript: deny` for the check, or add an extra check.
 
-- An answer is only looked at if it also solves a small usual calculation
-  (16 bits, about 65,000 hashes). Checking that costs a millionth of a
-  second, and whoever wants to make your server work has to work first.
-- At most two answers are checked at the same time. A third waits up to two
-  seconds and is then given a new task (`xibalba_challenge_total` with
-  `result="busy"` counts these).
-- The memory is kept and used again: at most twice the largest `memory`
-  you use, so 32 MiB with 16.
+**What it costs your server.** Checking an answer means doing one try: the
+memory of the task and, on the development machine, 4 ms (1 MiB), 15 ms
+(4 MiB) or 60 ms (16 MiB) of computing time. A program that wants to make
+your server work could send wrong answers on purpose, so the cost is
+bounded from several sides:
+
+- **Each task is checked once.** A second answer to the same task is
+  refused without working anything out. Every check therefore costs the
+  sender a new page first.
+- **Five wrong answers per network and minute.** After that, answers from
+  that network (the /24 of an IPv4 address, the /64 of an IPv6 address) are
+  not checked until the minute is over.
+- **Two checks at a time.** The computing time spent on checking never
+  exceeds two processor cores, and the memory twice the largest `memory`
+  you use (32 MiB with 16), plus the usual overhead of a request.
+- **Numbers sent at random are thrown out for the price of one hash:** an
+  answer must also solve a small usual calculation (12 bits). This is a
+  small hurdle, not a defence.
+
+A visitor whose right answer cannot be checked at that moment (both places
+taken, or the network's budget used up by someone else) does not lose the
+work: the page keeps the answer and sends it again after two or three
+seconds. `xibalba_challenge_total{result="busy"}` counts these moments. If
+it keeps growing, someone is sending wrong answers from many networks; the
+check then gets slow for visitors while the rest of Xibalba is unaffected,
+and switching the affected rule to `pow` ends it.
 
 **What it does not do.**
 
@@ -375,10 +397,21 @@ being used against you:
 - It does not adjust itself to the device. Some checks ask less of a client
   that says it is a phone; Xibalba does not, because a crawler can say so
   too.
-- A program written for the purpose still computes faster than a browser.
-  In our measurement the difference was small for this function (the
-  browser's JavaScript took about as long per try as the server's compiled
-  code), which is why we saw no need for WebAssembly.
+- It is not out of reach of special hardware. 1 to 16 MiB per try is
+  little by the standards of password hashing; a graphics card with much
+  memory still runs many tries at once. Its advantage over a browser
+  shrinks from thousands of times (plain SHA-256) to an amount we have not
+  measured and expect to be far smaller. Use 8 or 16 MiB where that
+  matters.
+- A program written for the purpose computes somewhat faster than a
+  browser. For this function the difference was small in our measurement:
+  the browser's JavaScript needed 14 ms per try with 4 MiB, our Go code 14
+  ms and OpenSSL 12 ms on the same machine; code written for the
+  processor's vector instructions would be faster still. That is why we
+  saw no need for WebAssembly.
+- A pass counts by the work done, tries times memory: a pass earned with
+  more tries and less memory can count where fewer tries with more memory
+  are asked.
 
 ### The key file
 

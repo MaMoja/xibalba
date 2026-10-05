@@ -238,6 +238,16 @@ def run_verdict_checks(name, port, ops_port, shown):
     status, _, _ = request(port, "GET", "/form")
     check(f"{name}: ... and lets the other methods pass", status == 200, status)
 
+    # An address dressed up as one of Xibalba's own is decided like any other.
+    for path in ("/.xibalba/../admin", "/.xibalba/%2e%2e/admin", "/.xibalba/..%2fadmin", "/.xibalba/../wiki/start"):
+        status, _, body = request(port, "GET", path)
+        check(f"{name}: {path} does not reach the website", status != 200 and "\"path\"" not in body, (status, body[:120]))
+
+    # Headers a visitor sends cannot stand in for the web server's.
+    status, _, body = request(port, "GET", "/admin", {"X-Forwarded-Uri": "/page", "X-Forwarded-Method": "GET", "X-Forwarded-Host": "other.example",
+                                                      "X-Xibalba-Verdict": "pass"})
+    check(f"{name}: a visitor's own X-Forwarded-Uri and X-Xibalba-Verdict change nothing", status == 403 and "This request was blocked" in body, (status, body[:120]))
+
     for path in ("/.xibalba/check", "/.xibalba/page"):
         status, _, body = request(port, "GET", path, {"X-Forwarded-Uri": "/page", "X-Forwarded-Method": "GET"})
         check(f"{name}: a visitor cannot ask {path} himself", status == 404, (status, body[:100]))
@@ -263,7 +273,7 @@ def run_verdict_checks(name, port, ops_port, shown):
     after = decisions(ops_port)
     counted = {k: after.get(k, 0) - before.get(k, 0) for k in after}
     check(f"{name}: every request is counted once, although refused ones are asked about twice",
-          counted.get("rule:block-admin") == 1 and counted.get("rule:challenge-wiki") == 2 and counted.get("rule:block-post") == 1, counted)
+          counted.get("rule:block-admin") == 5 and counted.get("rule:challenge-wiki") == 3 and counted.get("rule:block-post") == 1, counted)
 
 
 def nginx_config(tmp, port, cert, key, example="xibalba.conf", xibalba=None, website=None):
