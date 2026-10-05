@@ -27,6 +27,7 @@ import (
 	"github.com/goccy/go-yaml/parser"
 
 	"github.com/MaMoja/xibalba/internal/challenge"
+	"github.com/MaMoja/xibalba/internal/memhard"
 	"github.com/MaMoja/xibalba/internal/pages"
 	"github.com/MaMoja/xibalba/internal/token"
 )
@@ -147,6 +148,11 @@ type Challenge struct {
 	// Difficulty is the proof of work in leading zero bits. Each extra bit
 	// doubles the work a client has to do.
 	Difficulty int `yaml:"difficulty"`
+	// Memory is what one try of the method pow-memory needs, in MiB.
+	Memory int `yaml:"memory"`
+	// MemoryDifficulty is the proof of work of the method pow-memory in
+	// leading zero bits. Each extra bit doubles the tries.
+	MemoryDifficulty int `yaml:"memory_difficulty"`
 	// NoJavaScript says what visitors without JavaScript get: "button" lets
 	// them wait and press a button, "deny" tells them JavaScript is needed.
 	NoJavaScript string `yaml:"no_javascript"`
@@ -177,6 +183,13 @@ func (c *Challenge) check(dir string, add func(path, message, hint string)) {
 		add("challenge.difficulty", fmt.Sprintf("%d is out of range", c.Difficulty),
 			fmt.Sprintf("use a value from %d to %d; 18 suits most sites", challenge.MinDifficulty, challenge.MaxDifficulty))
 	}
+	if !memhard.ValidSize(c.Memory) {
+		add("challenge.memory", fmt.Sprintf("%d is not an amount of memory on offer", c.Memory), "use 1, 2, 4, 8 or 16 (MiB per try); 4 suits most sites")
+	}
+	if c.MemoryDifficulty < memhard.MinDifficulty || c.MemoryDifficulty > memhard.MaxDifficulty {
+		add("challenge.memory_difficulty", fmt.Sprintf("%d is out of range", c.MemoryDifficulty),
+			fmt.Sprintf("use a value from %d to %d; 4 suits most sites", memhard.MinDifficulty, memhard.MaxDifficulty))
+	}
 	if !contains(challenge.Methods, c.Method) {
 		add("challenge.method", fmt.Sprintf("%q is not a kind of security check", c.Method),
 			"use one of: "+strings.Join(challenge.Methods, ", "))
@@ -188,7 +201,7 @@ func (c *Challenge) check(dir string, add func(path, message, hint string)) {
 	}
 	if len(c.Checks) > 0 && (c.Method == challenge.MethodWait || c.Method == challenge.MethodRefresh) {
 		add("challenge.checks", fmt.Sprintf("extra checks run in JavaScript, and the method %s does without it", c.Method),
-			"use method pow or script, or remove the checks")
+			"use method pow, pow-memory or script, or remove the checks")
 	}
 	if !contains(NoJavaScriptModes, c.NoJavaScript) {
 		add("challenge.no_javascript", fmt.Sprintf("%q is not a mode", c.NoJavaScript),
@@ -353,6 +366,8 @@ func Default() Config {
 		Statistics: defaultStatistics(),
 		Challenge: Challenge{
 			Difficulty:        18,
+			Memory:            4,
+			MemoryDifficulty:  4,
 			Method:            "pow",
 			Checks:            []string{},
 			NoJavaScript:      "button",

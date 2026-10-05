@@ -401,7 +401,7 @@ challenge:
 	}
 	want := Challenge{
 		Method: "pow", Checks: []string{},
-		Difficulty: 20, NoJavaScript: "deny", Wait: 5 * time.Second,
+		Difficulty: 20, Memory: 4, MemoryDifficulty: 4, NoJavaScript: "deny", Wait: 5 * time.Second,
 		ChallengeLifetime: 10 * time.Minute, PassLifetime: 24 * time.Hour,
 		BindNetwork: false, KeyFile: "xibalba.key", CookieName: "site_pass",
 		KeyPath: filepath.Join(dir, "xibalba.key"), // relative to the configuration file

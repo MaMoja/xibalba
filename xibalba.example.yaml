@@ -252,6 +252,9 @@ challenge:
   # The kind of check. A rule can ask for another one (see docs/CHALLENGE.md).
   #   pow:     the browser solves a calculation. Costs a crawler computing
   #            time for every pass. Needs JavaScript.
+  #   pow-memory: a calculation in which every try also needs some megabytes
+  #            of memory, so that fast hardware cannot work on thousands of
+  #            tries at once. Needs JavaScript. See memory below.
   #   script:  the browser runs a small script and waits; no calculation.
   #            Gentle on old phones. Needs JavaScript.
   #   wait:    wait a few seconds, then press a button. No JavaScript.
@@ -268,6 +271,11 @@ challenge:
   # (very much). Each step up doubles the work. 18 takes a fraction of a second
   # on a computer and about a second on a phone.
   difficulty: 18
+  # For pow-memory: the memory one try needs, in MiB (1, 2, 4, 8 or 16), and
+  # how many tries it takes: 1 (two on average) to 10 (a thousand); each
+  # step up doubles them. 4 and 4 take about a second on a computer.
+  memory: 4
+  memory_difficulty: 4
   # What visitors without JavaScript get:
   # button: they wait a few seconds and press a button.
   # deny:   they are told that JavaScript is needed.

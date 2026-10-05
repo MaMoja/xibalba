@@ -14,6 +14,7 @@ import (
 	"github.com/MaMoja/xibalba/data"
 	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/changes"
+	"github.com/MaMoja/xibalba/internal/memhard"
 	"github.com/MaMoja/xibalba/internal/rules"
 )
 
@@ -252,11 +253,17 @@ func (c *Config) compile(state changes.State, now time.Time) (*rules.Engine, []s
 		}
 		p := c.Challenge.Profile(source.Challenge)
 		switch {
-		case len(p.Checks) > 0 && p.Method != challenge.MethodPoW && p.Method != challenge.MethodScript:
+		case len(p.Checks) > 0 && p.Method != challenge.MethodPoW && p.Method != challenge.MethodPoWMemory && p.Method != challenge.MethodScript:
 			out = append(out, fmt.Sprintf("%s: the security check has extra checks (%s), which run in JavaScript, and the method %s, which does without it (give the rule method pow or script, or checks: [])",
 				source.ID, strings.Join(p.Checks, ", "), p.Method))
-		case source.Challenge.Difficulty != 0 && p.Method != challenge.MethodPoW:
-			out = append(out, fmt.Sprintf("%s: difficulty belongs to the method pow, but the security check uses %s (give the rule method: pow, or remove difficulty)", source.ID, p.Method))
+		case source.Challenge.Difficulty != 0 && p.Method != challenge.MethodPoW && p.Method != challenge.MethodPoWMemory:
+			out = append(out, fmt.Sprintf("%s: difficulty belongs to the methods pow and pow-memory, but the security check uses %s (give the rule method: pow, or remove difficulty)", source.ID, p.Method))
+		case p.Method == challenge.MethodPoW && (p.Difficulty < challenge.MinDifficulty || p.Difficulty > challenge.MaxDifficulty):
+			out = append(out, fmt.Sprintf("%s: difficulty %d is out of range for the method pow (use %d to %d)", source.ID, p.Difficulty, challenge.MinDifficulty, challenge.MaxDifficulty))
+		case p.Method == challenge.MethodPoWMemory && (p.Difficulty < memhard.MinDifficulty || p.Difficulty > memhard.MaxDifficulty):
+			out = append(out, fmt.Sprintf("%s: difficulty %d is out of range for the method pow-memory (use %d to %d; give the rule its own difficulty)", source.ID, p.Difficulty, memhard.MinDifficulty, memhard.MaxDifficulty))
+		case source.Challenge.Memory != 0 && p.Method != challenge.MethodPoWMemory:
+			out = append(out, fmt.Sprintf("%s: memory belongs to the method pow-memory, but the security check uses %s (give the rule method: pow-memory, or remove memory)", source.ID, p.Method))
 		}
 	}
 	if len(out) > 0 {
@@ -268,16 +275,24 @@ func (c *Config) compile(state changes.State, now time.Time) (*rules.Engine, []s
 // Profile returns the security check a rule asks for: what the rule
 // describes, and the default for everything it leaves out. Nil is the default.
 func (c Challenge) Profile(spec *rules.ChallengeSpec) challenge.Profile {
-	p := challenge.Profile{Method: c.Method, Difficulty: c.Difficulty, Wait: c.Wait,
+	p := challenge.Profile{Method: c.Method, Wait: c.Wait,
 		Checks: c.Checks, AllowButton: c.NoJavaScript == "button"}
+	if spec != nil && spec.Method != "" {
+		p.Method = spec.Method
+	}
+	// Each proof of work has its own default difficulty.
+	p.Difficulty = c.Difficulty
+	if p.Method == challenge.MethodPoWMemory {
+		p.Difficulty, p.Memory = c.MemoryDifficulty, c.Memory
+	}
 	if spec == nil {
 		return p
 	}
-	if spec.Method != "" {
-		p.Method = spec.Method
-	}
 	if spec.Difficulty != 0 {
 		p.Difficulty = spec.Difficulty
+	}
+	if spec.Memory != 0 && p.Method == challenge.MethodPoWMemory {
+		p.Memory = spec.Memory
 	}
 	if spec.Wait != 0 {
 		p.Wait = spec.Wait

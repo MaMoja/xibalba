@@ -605,7 +605,7 @@ func TestChallengeOnARule(t *testing.T) {
 		"on a deny rule":        {RuleSpec{Action: Deny, Challenge: &ChallengeSpec{Method: "pow"}}, "the action is deny"},
 		"unknown method":        {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "captcha"}}, "not a kind of security check"},
 		"difficulty too high":   {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Difficulty: 99}}, "out of range"},
-		"difficulty for wait":   {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "wait", Difficulty: 12}}, "belongs to the method pow"},
+		"difficulty for wait":   {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "wait", Difficulty: 12}}, "belongs to the methods pow"},
 		"wait too long":         {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Wait: time.Hour}}, "out of range"},
 		"unknown check":         {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Checks: []string{"captcha"}}}, "not an extra check"},
 		"checks without script": {RuleSpec{Action: Challenge, Challenge: &ChallengeSpec{Method: "refresh", Checks: []string{"css"}}}, "run in JavaScript"},

@@ -1312,15 +1312,48 @@ und ältere Rechner sind um ein Mehrfaches langsamer; das ist nicht gemessen.
 
 ### Arten der Prüfung
 
-Ab Werk löst der Browser eine Rechenaufgabe (`pow`). Es gibt drei weitere
+Ab Werk löst der Browser eine Rechenaufgabe (`pow`). Es gibt vier weitere
 Arten; Sie wählen mit `challenge.method`:
 
 | `method` | Was der Browser des Besuchers tut | Braucht JavaScript | Wofür |
 |---|---|---|---|
 | `pow` | löst eine Rechenaufgabe; `difficulty` bestimmt den Aufwand | ja (mit `no_javascript: button` warten Besucher ohne JavaScript und drücken „Weiter“) | die Voreinstellung; macht Massenabrufe teuer |
+| `pow-memory` | löst eine Rechenaufgabe, bei der jeder Versuch einige Megabyte Arbeitsspeicher braucht | ja (ohne JavaScript wie bei `pow`) | wenn `pow` nicht reicht, weil der Abrufer schnelle Hardware hat |
 | `script` | führt ein kleines Skript aus und wartet; gerechnet wird nichts | ja | schonend für alte Telefone; für Anfragen mit geringem Verdacht |
 | `wait` | nichts; der Besucher wartet und drückt „Weiter“ | nein | wo JavaScript nicht verlangt werden darf; eher Bremse als Hürde |
 | `refresh` | nichts; nach der Wartezeit leitet die Seite von selbst weiter | nein | wie `wait`, ohne Klick |
+
+**Die Rechenaufgabe mit Speicher (`pow-memory`).** Die übliche Aufgabe
+kostet nur Rechenzeit; eine Grafikkarte oder ein gemieteter Server probiert
+tausende Zahlen gleichzeitig. Bei `pow-memory` muss jeder Versuch einige
+Megabyte füllen und in nicht vorhersehbarer Reihenfolge wieder lesen.
+Tausend Versuche gleichzeitig brauchen tausendmal den Speicher.
+
+```yaml
+challenge:
+  method: pow-memory
+  memory: 4              # MiB je Versuch: 1, 2, 4, 8 oder 16
+  memory_difficulty: 4   # 1 bis 10; jede Stufe verdoppelt die Versuche
+```
+
+| `memory` | `memory_difficulty` | Dauer im Mittel (Entwicklungsrechner, echter Browser) |
+|---|---|---|
+| 4 | 3 | 0,7 s |
+| 4 | 5 | 1,4 s |
+| 4 | 7 | 7 s |
+| 16 | 5 | 2,8 s |
+
+Telefone sind langsamer; das ist nicht gemessen. Das Verfahren ist scrypt,
+ein veröffentlichtes und lange untersuchtes Verfahren, nichts Eigenes. Es
+läuft als einfaches JavaScript im Browser, ohne WebAssembly, und steht nur
+auf der Seite, wenn es gebraucht wird.
+
+Ihr Server muss zum Prüfen einer Antwort denselben Speicher einmal
+aufwenden (bei 4 MiB etwa 15 Millisekunden). Damit das niemand gegen Sie
+verwendet, prüft Xibalba höchstens zwei Antworten gleichzeitig und schaut
+eine Antwort nur an, wenn sie zusätzlich eine kleine übliche Rechenaufgabe
+löst. Xibalba unterscheidet auch hier nicht zwischen Mensch und Programm:
+Ein Crawler mit echtem Browser löst die Aufgabe, zahlt aber denselben Preis.
 
 **Hinweis zur Barrierefreiheit:** Bei `refresh` wird der Besucher nach einer
 Zeit weitergeleitet, die er nicht verlängern kann. Das widerspricht WCAG 2.1

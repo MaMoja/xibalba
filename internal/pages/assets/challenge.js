@@ -2,8 +2,10 @@
   "use strict";
   // Answers the Xibalba challenge page. Method "pow": find a number n so
   // that SHA-256(nonce + n) starts with the required number of zero bits,
-  // then send n back. Method "script": wait, then send the hash of the
-  // nonce. Either may come with extra checks: a value from a style sheet the
+  // then send n back. Method "pow-memory": the same search, but a number
+  // only counts if a second value, which takes some megabytes of memory to
+  // work out, starts with zero bits too (the script before this one works
+  // it out). Method "script": wait, then send the hash of the nonce. Either may come with extra checks: a value from a style sheet the
   // browser has to load, and a report on whether a program steers the
   // browser. The page works without this script if the site allows it; then
   // the visitor uses the button instead.
@@ -16,7 +18,12 @@
   var method = form.getAttribute("data-method") || "pow";
   var wait = parseInt(form.getAttribute("data-wait"), 10) || 0;
   if (nonce.length === 0 || nonce.length > 40) { return; }
-  if (method === "pow" ? !(bits >= 1 && bits <= 32) : method !== "script") { return; }
+  var memory = window.xibalbaMemory, size = parseInt(form.getAttribute("data-memory"), 10);
+  if (method === "pow") {
+    if (!(bits >= 1 && bits <= 32)) { return; }
+  } else if (method === "pow-memory") {
+    if (!memory || !(bits >= 1 && bits <= 10) || [1, 2, 4, 8, 16].indexOf(size) < 0) { return; }
+  } else if (method !== "script") { return; }
 
   // From here on the script takes over: hide the path without JavaScript
   // and tell the visitor, including screen readers, that the check runs.
@@ -115,6 +122,43 @@
       var word = firstWord(0).toString(16);
       send("00000000".slice(word.length) + word);
     }, wait * 1000 + 200);
+    return;
+  }
+  if (method === "pow-memory") {
+    // A number has to start with 16 zero bits in its plain hash before
+    // the costly value is worked out for it; the server looks at nothing
+    // else, so that checking an answer cannot be made to cost it much.
+    var working = false;
+    var runMemory = function () {
+      var stop = Date.now() + 25, k, out;
+      do {
+        if (!working) {
+          for (k = 0; k < 2000; k++) {
+            if (Math.clz32(firstWord(n)) >= 16) {
+              if (!memory.start(nonce + n, size * 1024)) {
+                // The browser does not give the memory. Leave the page to
+                // the path without JavaScript, if there is one.
+                status.hidden = true;
+                if (manual) { manual.hidden = false; }
+                return;
+              }
+              working = true;
+              break;
+            }
+            n++;
+          }
+        } else {
+          out = memory.step(stop);
+          if (out) {
+            if (Math.clz32(((out[0] << 24) | (out[1] << 16) | (out[2] << 8) | out[3]) >>> 0) >= bits) { finish(); return; }
+            working = false;
+            n++;
+          }
+        }
+      } while (Date.now() < stop);
+      window.setTimeout(runMemory, 0);
+    };
+    window.setTimeout(runMemory, 30);
     return;
   }
   // Work in short slices so the page stays responsive on slow devices.

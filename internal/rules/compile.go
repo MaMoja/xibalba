@@ -192,12 +192,33 @@ func (c *compiler) challenge(spec *ChallengeSpec, add func(field, message, hint 
 	if spec.Method != "" && !known(ChallengeMethods, spec.Method) {
 		add("method", fmt.Sprintf("%q is not a kind of security check", spec.Method), "use one of: "+strings.Join(ChallengeMethods, ", "))
 	}
-	if spec.Difficulty != 0 && (spec.Difficulty < MinChallengeDifficulty || spec.Difficulty > MaxChallengeDifficulty) {
+	// The two proofs of work count difficulty differently. A rule that
+	// names no method takes the default one, which is known only when the
+	// rule set meets the configuration; the range is checked again there.
+	switch {
+	case spec.Difficulty == 0:
+	case spec.Method == "pow-memory":
+		if spec.Difficulty < MinMemoryDifficulty || spec.Difficulty > MaxMemoryDifficulty {
+			add("difficulty", fmt.Sprintf("%d is out of range for the method pow-memory", spec.Difficulty),
+				fmt.Sprintf("use a value from %d to %d; each step doubles the tries, and every try needs the memory", MinMemoryDifficulty, MaxMemoryDifficulty))
+		}
+	case spec.Method != "" && spec.Method != "pow":
+		add("difficulty", fmt.Sprintf("difficulty belongs to the methods pow and pow-memory, but the method is %s", spec.Method), "remove difficulty, or use method: pow")
+	case spec.Method == "pow" && spec.Difficulty < MinChallengeDifficulty, spec.Difficulty < MinMemoryDifficulty, spec.Difficulty > MaxChallengeDifficulty:
 		add("difficulty", fmt.Sprintf("%d is out of range", spec.Difficulty),
 			fmt.Sprintf("use a value from %d to %d; each step doubles the work", MinChallengeDifficulty, MaxChallengeDifficulty))
 	}
-	if spec.Difficulty != 0 && spec.Method != "" && spec.Method != "pow" {
-		add("difficulty", fmt.Sprintf("difficulty belongs to the method pow, but the method is %s", spec.Method), "remove difficulty, or use method: pow")
+	if spec.Memory != 0 {
+		valid := false
+		for _, size := range ChallengeMemorySizes {
+			valid = valid || size == spec.Memory
+		}
+		switch {
+		case !valid:
+			add("memory", fmt.Sprintf("%d is not an amount of memory on offer", spec.Memory), "use 1, 2, 4, 8 or 16 (MiB per try)")
+		case spec.Method != "" && spec.Method != "pow-memory":
+			add("memory", fmt.Sprintf("memory belongs to the method pow-memory, but the method is %s", spec.Method), "remove memory, or use method: pow-memory")
+		}
 	}
 	if spec.Wait != 0 && (spec.Wait < time.Second || spec.Wait > MaxChallengeWait) {
 		add("wait", fmt.Sprintf("%s is out of range", spec.Wait), `use a duration from "1s" to "1m"`)
@@ -214,7 +235,7 @@ func (c *compiler) challenge(spec *ChallengeSpec, add func(field, message, hint 
 	}
 	if len(spec.Checks) > 0 && (spec.Method == "wait" || spec.Method == "refresh") {
 		add("checks", fmt.Sprintf("extra checks run in JavaScript, and the method %s does without it", spec.Method),
-			"use method pow or script, or remove checks")
+			"use method pow, pow-memory or script, or remove checks")
 	}
 	if len(spec.Checks) > 0 && spec.NoJavaScript == "button" {
 		add("no_javascript", "extra checks run in JavaScript, so the path without it cannot be open at the same time",

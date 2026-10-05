@@ -824,3 +824,40 @@ func TestStatusOfThePages(t *testing.T) {
 		}
 	}
 }
+
+func TestMemoryScriptIsOnlyOnPagesThatNeedIt(t *testing.T) {
+	r := renderer(t)
+	page := func(v ChallengeView) (string, string) {
+		rec := httptest.NewRecorder()
+		r.Challenge(rec, httptest.NewRequest("GET", "/", nil), v)
+		return rec.Body.String(), rec.Header().Get("Content-Security-Policy")
+	}
+	body, csp := page(ChallengeView{Action: "/.xibalba/verify", Method: "pow-memory", Nonce: "abc", Difficulty: 5, Memory: 4})
+	if strings.Count(body, "<script>") != 2 || !strings.Contains(body, "xibalbaMemory = {") || !strings.Contains(body, `data-memory="4"`) {
+		t.Errorf("the page for pow-memory lacks its second script or its size")
+	}
+	if strings.Index(body, "xibalbaMemory = {") > strings.Index(body, `getElementById("xibalba-form")`) {
+		t.Error("the memory function comes after the script that calls it")
+	}
+	// Each script is named in the policy by its own hash, and nothing else is allowed.
+	hashes := regexp.MustCompile(`'sha256-[A-Za-z0-9+/=]+'`).FindAllString(csp[strings.Index(csp, "script-src"):], -1)
+	if len(hashes) < 2 || strings.Contains(csp, "unsafe") {
+		t.Fatalf("policy: %s", csp)
+	}
+	for _, script := range regexp.MustCompile(`(?s)<script>(.*?)</script>`).FindAllStringSubmatch(body, -1) {
+		sum := sha256.Sum256([]byte(script[1]))
+		if !strings.Contains(csp, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'") {
+			t.Error("a script on the page is not the one the policy names")
+		}
+	}
+
+	for _, v := range []ChallengeView{{Method: "pow", Nonce: "abc", Difficulty: 18}, {Method: "script", Nonce: "abc"}, {Method: "wait"}, {Method: "pow-memory", Notice: "automated"}} {
+		body, csp := page(v)
+		if strings.Contains(body, "xibalbaMemory = {") || strings.Contains(body, `data-memory="`) || csp == r.memCSP {
+			t.Errorf("method %s, notice %q: the memory script is on the page", v.Method, v.Notice)
+		}
+	}
+	if len(r.memory) > 12<<10 {
+		t.Errorf("the memory script has grown to %d bytes", len(r.memory))
+	}
+}

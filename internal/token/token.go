@@ -70,6 +70,8 @@ type Claims struct {
 	Difficulty int
 	// Method names the kind of check a challenge asks for.
 	Method string
+	// Memory is the memory a challenge asks for, in MiB (0: none).
+	Memory int
 	// Checks holds the extra checks a challenge asks for, or a pass has
 	// met, one bit each.
 	Checks uint8
@@ -85,6 +87,7 @@ type wire struct {
 	Nonce      string `json:"n,omitempty"`
 	Difficulty int    `json:"d,omitempty"`
 	Method     string `json:"m,omitempty"`
+	Memory     int    `json:"g,omitempty"`
 	Checks     uint8  `json:"c,omitempty"`
 	Level      int    `json:"l,omitempty"`
 }
@@ -125,7 +128,7 @@ func (s *Signer) MAC(purpose, data string) string {
 // Sign returns a token of the given kind stating c.
 func (s *Signer) Sign(kind Kind, c Claims) string {
 	w := wire{Expires: c.Expires.Unix(), Binding: c.Binding, Nonce: c.Nonce, Difficulty: c.Difficulty,
-		Method: c.Method, Checks: c.Checks, Level: c.Level}
+		Method: c.Method, Memory: c.Memory, Checks: c.Checks, Level: c.Level}
 	if !c.NotBefore.IsZero() {
 		w.NotBefore = c.NotBefore.Unix()
 	}
@@ -162,7 +165,7 @@ func (s *Signer) Verify(kind Kind, tok string, now time.Time) (Claims, error) {
 		return Claims{}, ErrMalformed
 	}
 	c := Claims{Expires: time.Unix(w.Expires, 0), Binding: w.Binding, Nonce: w.Nonce, Difficulty: w.Difficulty,
-		Method: w.Method, Checks: w.Checks, Level: w.Level}
+		Method: w.Method, Memory: w.Memory, Checks: w.Checks, Level: w.Level}
 	if w.NotBefore != 0 {
 		c.NotBefore = time.Unix(w.NotBefore, 0)
 	}

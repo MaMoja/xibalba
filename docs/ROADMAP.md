@@ -137,7 +137,7 @@ decision (2026-10-03): all of this comes before statistics.
 - [x] Tried in a real browser: every method, both extra checks (the automated test browser is caught by `headless`), accessibility
 - [x] Security review by a second agent (2026-10-04); no high finding. Fixed: a pass earned by waiting at the button counted like one earned by calculating; a wait could be up to a second short; the page after a report of automation offered no way to try again, and the comparison of the browser's name could lock out real browsers (removed); a blocked style sheet made the page try for ever; a key of its own for the style sheet value.
 - [x] Conditions by network operator (`asn`, from a database you supply or the free one downloaded) and by address lists from files (`address_list`), for VPN and hosting networks. No list is shipped
-- [ ] Proof of work in WebAssembly: decided against for now, see DECISIONS.md
+- [x] A proof of work that costs memory (`pow-memory`): scrypt in plain JavaScript, checked on the server with bounded cost. WebAssembly stays decided against, see DECISIONS.md
 
 ## Later
 - Challenge method and difficulty selectable per rule or threshold

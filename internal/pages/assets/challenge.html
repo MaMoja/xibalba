@@ -27,7 +27,7 @@
 {{- else}}
 <p>{{.Primary.Text}}</p>
 <p>{{.Primary.Cookie}}</p>
-<form id="xibalba-form" method="post" action="{{.Action}}" data-method="{{.Method}}" data-nonce="{{.Nonce}}" data-difficulty="{{.Difficulty}}" data-wait="{{.WaitSeconds}}"{{if .StyleURL}} data-css="1"{{end}}{{if .Headless}} data-probe="1"{{end}} data-working="{{.Working}}" data-done="{{.Done}}" data-nostyle="{{.NoStyle}}">
+<form id="xibalba-form" method="post" action="{{.Action}}" data-method="{{.Method}}" data-nonce="{{.Nonce}}" data-difficulty="{{.Difficulty}}"{{if .Memory}} data-memory="{{.Memory}}"{{end}} data-wait="{{.WaitSeconds}}"{{if .StyleURL}} data-css="1"{{end}}{{if .Headless}} data-probe="1"{{end}} data-working="{{.Working}}" data-done="{{.Done}}" data-nostyle="{{.NoStyle}}">
 <input type="hidden" name="token" value="{{.Token}}">
 <input type="hidden" name="return" value="{{.Return}}">
 <input type="hidden" name="method" value="button">
@@ -74,6 +74,9 @@
 <template><a href="{{.Trap}}" rel="nofollow">-</a></template>
 {{- end}}
 {{- if and .Scripted (not .Stopped)}}
+{{- if .MemoryJS}}
+<script>{{.MemoryJS}}</script>
+{{- end}}
 <script>{{.Script}}</script>
 {{- end}}
 </body>

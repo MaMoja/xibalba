@@ -391,7 +391,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			page.Challenge(w, r, pages.ChallengeView{
 				Meta:   previewTags(previews, r),
 				Action: v.Action, Token: v.Token, Return: v.Return,
-				Nonce: v.Nonce, Difficulty: v.Difficulty,
+				Nonce: v.Nonce, Difficulty: v.Difficulty, Memory: v.Memory,
 				Method: v.Method, WaitSeconds: v.WaitSeconds, RefreshURL: v.RefreshURL,
 				StyleURL: v.StyleURL, Headless: v.Headless,
 				AllowButton: v.AllowButton, Notice: string(v.Message),

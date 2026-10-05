@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/MaMoja/xibalba/internal/clientip"
+	"github.com/MaMoja/xibalba/internal/memhard"
 	"github.com/MaMoja/xibalba/internal/token"
 )
 
@@ -786,5 +787,117 @@ func TestTheWaitIsNotCutShort(t *testing.T) {
 	s.advance(2 * time.Second)
 	if rec := c.answer(v, url.Values{"method": {answerButton}}); !passed(rec) {
 		t.Error("not accepted after the wait")
+	}
+}
+
+// solveMemory does what the page's scripts do for the method pow-memory.
+func solveMemory(v View) string {
+	for n := 0; ; n++ {
+		if s := strconv.Itoa(n); memhard.Solves(v.Nonce, s, v.Memory, v.Difficulty, nil) {
+			return s
+		}
+	}
+}
+
+func TestMethodPoWMemory(t *testing.T) {
+	memory := &Profile{Method: MethodPoWMemory, Difficulty: 2, Memory: 1, Wait: time.Second}
+	s := newSite(t, nil)
+	s.want = memory
+	c := s.client("192.0.2.1:1000", browser)
+
+	v := c.challenge("/page")
+	if v.Method != MethodPoWMemory || v.Memory != 1 || v.Difficulty != 2 || v.AllowButton {
+		t.Fatalf("view = %+v", v)
+	}
+	right := solveMemory(v)
+
+	// What must not pass a task that asks for memory.
+	plain := solve(v.Nonce, MinDifficulty) // a solution of the plain proof of work
+	for name, fields := range map[string]url.Values{
+		"claimed as the plain proof of work": {"method": {MethodPoW}, "solution": {right}},
+		"claimed as the button":              {"method": {answerButton}},
+		"claimed as script":                  {"method": {MethodScript}, "solution": {scriptAnswer(v.Nonce)}},
+		"a plain solution":                   {"method": {MethodPoWMemory}, "solution": {plain + "0"}},
+		"nothing":                            {"method": {MethodPoWMemory}, "solution": {""}},
+		"not a number":                       {"method": {MethodPoWMemory}, "solution": {"1e3"}},
+	} {
+		s.advance(2 * time.Second)
+		if rec := c.answer(v, fields); passed(rec) {
+			t.Errorf("%s: passed", name)
+		}
+	}
+	// The task says what is asked; the form cannot ask for less.
+	if rec := c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}, "memory": {"0"}, "difficulty": {"0"}}); !passed(rec) {
+		t.Fatal("the right answer was not accepted")
+	}
+	if c.get("/page").Code != 200 {
+		t.Fatal("no pass after the right answer")
+	}
+
+	// The pass counts for the plain proof of work, however hard, and for
+	// the same or less memory; not for more.
+	holds := func(p *Profile) bool { s.want = p; return c.get("/").Code == 200 }
+	if !holds(&Profile{Method: MethodPoW, Difficulty: MaxDifficulty}) || !holds(&Profile{Method: MethodScript}) || !holds(memory) {
+		t.Error("a pass earned with memory does not count for less")
+	}
+	if holds(&Profile{Method: MethodPoWMemory, Difficulty: 3, Memory: 1}) || holds(&Profile{Method: MethodPoWMemory, Difficulty: 2, Memory: 2}) {
+		t.Error("a pass earned with memory counts for more than was done")
+	}
+	// The other way round: the hardest plain proof of work is not memory.
+	other := s.client("198.51.100.1:1000", browser)
+	s.want = &Profile{Method: MethodPoW, Difficulty: MinDifficulty}
+	pv := other.challenge("/")
+	if rec := other.answer(pv, url.Values{"method": {MethodPoW}, "solution": {solve(pv.Nonce, pv.Difficulty)}}); !passed(rec) {
+		t.Fatal("plain proof of work not passed")
+	}
+	s.want = memory
+	if other.get("/").Code == 200 {
+		t.Error("a pass earned without memory counts where memory is asked")
+	}
+
+	// A task from another client is not this client's task.
+	s.want = memory
+	stolen := s.client("203.0.113.9:1000", browser)
+	if rec := stolen.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}}); passed(rec) {
+		t.Error("the answer passed for another client")
+	}
+}
+
+func TestPoWMemoryWithButtonAndWhenBusy(t *testing.T) {
+	s := newSite(t, nil)
+	s.want = &Profile{Method: MethodPoWMemory, Difficulty: 1, Memory: 1, Wait: time.Second, AllowButton: true}
+	c := s.client("192.0.2.1:1000", browser)
+	v := c.challenge("/")
+	if !v.AllowButton {
+		t.Fatal("no path without JavaScript")
+	}
+	s.advance(2 * time.Second)
+	if rec := c.answer(v, url.Values{"method": {answerButton}}); !passed(rec) {
+		t.Error("the button did not pass")
+	}
+
+	// Every place for checking taken: the answer is not checked, the
+	// client gets a new task, and it is counted.
+	s = newSite(t, nil)
+	s.c.memory = memhard.NewVerifier(1, 10*time.Millisecond)
+	s.want = &Profile{Method: MethodPoWMemory, Difficulty: 1, Memory: 1, Wait: time.Second}
+	c = s.client("192.0.2.1:1000", browser)
+	v = c.challenge("/")
+	right := solveMemory(v)
+	done := make(chan struct{})
+	started := make(chan struct{})
+	go func() { // hold the only place
+		defer close(done)
+		holder := s.c.memory
+		holder.Hold(func() { close(started); time.Sleep(300 * time.Millisecond) })
+	}()
+	<-started
+	if rec := c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {right}}); passed(rec) || s.c.Busy() != 1 {
+		t.Errorf("busy: passed %v, counted %d", passed(rec), s.c.Busy())
+	}
+	<-done
+	v = s.views[len(s.views)-1]
+	if rec := c.answer(v, url.Values{"method": {MethodPoWMemory}, "solution": {solveMemory(v)}}); !passed(rec) {
+		t.Error("the fresh task after a busy moment was not accepted")
 	}
 }

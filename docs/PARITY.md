@@ -12,6 +12,7 @@ documentation only, described in our own words), and where Xibalba stands.
 | Rules by network operator (AS number) | From a local database file (DB-IP, MaxMind); no account with a paid service needed. Anubis offers this through its Thoth service |
 | Rules by address lists from files | Up to two million entries per list, looked up in about a tenth of a microsecond; no tool needed to turn a list into rules |
 | Subrequest authentication (nginx `auth_request`, Caddy `forward_auth`, Traefik `forwardAuth`) | Called "verdict". Caddy and Traefik need no second request; nginx example tested; every request is counted once. No list of redirect domains is needed: a visitor is only ever sent back to a path on the same website. See VERDICT.md |
+| A proof of work that costs memory (Anubis: Argon2id in WebAssembly; "Soteria" in its paid edition) | `pow-memory`: scrypt (RFC 7914) in plain JavaScript, no WebAssembly, free. Per rule, 1 to 16 MiB per try. No easier task for clients that say they are phones. See CHALLENGE.md |
 | Link previews (Open Graph) for protected pages | Fetched in the background, never while a request waits; or fixed tags. `twitter:`, `article:` and `description` as well. See PREVIEWS.md |
 | Configurable status codes for the check and the block page | From a list of sensible codes; default 403 |
 | Imprint and privacy links on the pages | |
@@ -60,7 +61,6 @@ documentation only, described in our own words), and where Xibalba stands.
 | Network-operator (ASN) conditions | Later |
 | Server load as a condition (stricter when the machine is busy) | Later |
 | A solved task cannot be used twice | Later: needs stored state; today a solution can be reused until it expires, by clients of the same network and browser |
-| Proof of work in WebAssembly (memory-hard functions) | Later: needs a WebAssembly program for the browser and its counterpart on the server, which means a build chain and a dependency |
 | Storage backends for shared state: Valkey/Redis, S3 | M9 |
 | rpm packages | Later |
 | Token that the web server in front can verify itself (HAProxy) | Later |

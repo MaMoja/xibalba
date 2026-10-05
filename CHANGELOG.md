@@ -17,6 +17,11 @@ All notable changes are listed here. The format follows
 - A check of its own for a rule or threshold: `challenge:` with method,
   difficulty, wait, checks. A pass counts wherever the same or less is asked.
 
+- A security check that costs memory as well as time
+  (`challenge.method: pow-memory`, also per rule): every try needs 1 to 16
+  MiB, so that fast hardware cannot work on thousands of tries at once. The
+  function is scrypt; the browser's part is plain JavaScript and only on the
+  page when asked for.
 - Rules by network operator: the condition `asn` with a list of AS numbers,
   from a database you supply (`asn.database`) or the free one of DB-IP
   downloaded for you. For hosting companies and clouds.

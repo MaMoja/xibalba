@@ -4,6 +4,36 @@ Newest first. One entry per decision: what, why, who decided.
 
 ## 2026-10-05
 
+- **The memory-hard proof of work is scrypt, not a function of our own.**
+  Agent's choice, after the owner asked whether Xibalba could have
+  something of its own in place of Anubis' WebAssembly methods. A function
+  that is hard to shortcut is the one thing here that should not be
+  invented at a desk: scrypt is published (RFC 7914), has been attacked for
+  fifteen years, and can be tested against other implementations. What is
+  our own is how it is used.
+- **In plain JavaScript, no WebAssembly.** Agent's choice, confirming the
+  entry of 2026-10-04. Measured: one try with 4 MiB takes about 15 ms in
+  the browser's JavaScript and 15 ms in the server's compiled Go on the
+  same machine. The reason usually given for WebAssembly, that JavaScript
+  leaves a large advantage to native programs, did not show for this
+  function. No build chain, no dependency, and the script is on the page
+  only when the method is used.
+- **scrypt is written here rather than taken from golang.org/x/crypto.**
+  Agent's choice. Rule 2: about 120 lines, on top of the standard library's
+  PBKDF2, against a dependency. Tested against OpenSSL's implementation.
+- **An answer must solve a 16-bit plain proof of work before the server
+  computes anything costly, and two answers are checked at a time.**
+  Agent's choice. Checking costs what a try costs (15 ms and 4 MiB at the
+  default). Without the first condition anyone could send numbers and make
+  the server pay; with it the sender has paid about as much before. Fewer
+  bits would shift more of the work into the memory-hard part, at the
+  server's risk; 16 was chosen for the server.
+- **No lighter task for clients that say they are phones.** Agent's choice.
+  The user agent is the client's own word. Operators who want to spare
+  phones can give a rule on it a gentler check and see that they do.
+- **A pass earned with memory counts for every plain proof of work, not the
+  other way round.** Agent's choice, following the order of the levels.
+
 - **No list of VPN or hosting networks is shipped.** Agent's choice, in
   line with rule 6: nothing about who owns which addresses is written from
   memory, and there is no authoritative source to cite. The operator

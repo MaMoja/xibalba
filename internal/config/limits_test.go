@@ -4,6 +4,7 @@ import (
 	"github.com/MaMoja/xibalba/internal/admin"
 	"github.com/MaMoja/xibalba/internal/challenge"
 	"github.com/MaMoja/xibalba/internal/changes"
+	"github.com/MaMoja/xibalba/internal/memhard"
 	"github.com/MaMoja/xibalba/internal/rules"
 	"net/netip"
 	"os"
@@ -387,7 +388,8 @@ func TestRuleTextThatIsNotPlain(t *testing.T) {
 func TestSecurityCheckPerRule(t *testing.T) {
 	// The rule engine and the security check name the same things.
 	if !reflect.DeepEqual(rules.ChallengeMethods, challenge.Methods) || !reflect.DeepEqual(rules.ChallengeChecks, challenge.Checks) ||
-		rules.MinChallengeDifficulty != challenge.MinDifficulty || rules.MaxChallengeDifficulty != challenge.MaxDifficulty {
+		rules.MinChallengeDifficulty != challenge.MinDifficulty || rules.MaxChallengeDifficulty != challenge.MaxDifficulty ||
+		rules.MinMemoryDifficulty != memhard.MinDifficulty || rules.MaxMemoryDifficulty != memhard.MaxDifficulty || !reflect.DeepEqual(rules.ChallengeMemorySizes, memhard.Sizes) {
 		t.Error("internal/rules and internal/challenge disagree about methods, checks or difficulty")
 	}
 
@@ -438,7 +440,7 @@ rules:
 		"unknown default check":              {"challenge:\n  checks: [captcha]\n", "challenge.checks[0]"},
 		"checks with wait":                   {"challenge:\n  method: wait\n  checks: [css]\n", "challenge.checks"},
 		"rule adds checks to wait":           {"challenge:\n  method: wait\nrules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: challenge\n      challenge: {checks: [css]}\n", "run in JavaScript"},
-		"rule's difficulty, default not pow": {"challenge:\n  method: script\nrules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: challenge\n      challenge: {difficulty: 20}\n", "belongs to the method pow"},
+		"rule's difficulty, default not pow": {"challenge:\n  method: script\nrules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: challenge\n      challenge: {difficulty: 20}\n", "belongs to the methods pow"},
 		"challenge on an allow rule":         {"rules:\n  list:\n    - name: a\n      match: {path: {prefix: \"/a\"}}\n      action: allow\n      challenge: {method: pow}\n", "the action is allow"},
 	} {
 		if _, err := Parse("xibalba.yaml", []byte(base+tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -516,5 +518,68 @@ func TestVerdictSettings(t *testing.T) {
 	}
 	if _, err := Parse("xibalba.yaml", []byte(noUpstream+"previews:\n  enabled: true\n  tags:\n    og:title: \"T\"\n")); err != nil {
 		t.Errorf("fixed tags without a website: %v", err)
+	}
+}
+
+func TestProofOfWorkWithMemory(t *testing.T) {
+	cfg, err := Parse("xibalba.yaml", []byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Challenge.Method != "pow" || cfg.Challenge.Memory != 4 || cfg.Challenge.MemoryDifficulty != 4 {
+		t.Errorf("defaults: %+v", cfg.Challenge)
+	}
+	cfg, err = Parse("xibalba.yaml", []byte(base+`challenge:
+  method: pow-memory
+  memory: 8
+  memory_difficulty: 6
+rules:
+  list:
+    - {name: harder, match: {path: {prefix: "/a"}}, action: challenge, challenge: {difficulty: 7, memory: 16}}
+    - {name: plain, match: {path: {prefix: "/b"}}, action: challenge, challenge: {method: pow}}
+    - {name: plain-hard, match: {path: {prefix: "/c"}}, action: challenge, challenge: {method: pow, difficulty: 20}}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Challenge.Profile(nil); got.Method != "pow-memory" || got.Memory != 8 || got.Difficulty != 6 {
+		t.Errorf("default profile: %+v", got)
+	}
+	engine, problems := cfg.Compile(cfg.Admin.Changes, time.Now())
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	got := map[string]challenge.Profile{}
+	for _, source := range engine.Sources() {
+		if source.Challenge != nil {
+			got[source.ID] = cfg.Challenge.Profile(source.Challenge)
+		}
+	}
+	if p := got["rule:harder"]; p.Method != "pow-memory" || p.Difficulty != 7 || p.Memory != 16 {
+		t.Errorf("harder: %+v", p)
+	}
+	if p := got["rule:plain"]; p.Method != "pow" || p.Difficulty != 18 || p.Memory != 0 {
+		t.Errorf("plain: %+v", p)
+	}
+	if p := got["rule:plain-hard"]; p.Difficulty != 20 {
+		t.Errorf("plain-hard: %+v", p)
+	}
+
+	rule := func(spec string) string {
+		return "rules:\n  list:\n    - {name: a, match: {path: {prefix: \"/a\"}}, action: challenge, challenge: " + spec + "}\n"
+	}
+	for name, tt := range map[string]struct{ yaml, want string }{
+		"size not on offer":                    {"challenge:\n  memory: 3\n", "challenge.memory"},
+		"default difficulty too high":          {"challenge:\n  memory_difficulty: 18\n", "challenge.memory_difficulty"},
+		"rule: size not on offer":              {rule("{method: pow-memory, memory: 64}"), "not an amount of memory"},
+		"rule: difficulty of the other kind":   {rule("{method: pow-memory, difficulty: 18}"), "out of range for the method pow-memory"},
+		"rule: memory for pow":                 {rule("{method: pow, memory: 4}"), "memory belongs to the method pow-memory"},
+		"rule: memory, default is pow":         {rule("{memory: 4}"), "memory belongs to the method pow-memory"},
+		"rule: small difficulty, default pow":  {rule("{difficulty: 4}"), "out of range for the method pow"},
+		"rule: pow difficulty, default memory": {"challenge:\n  method: pow-memory\n" + rule("{difficulty: 18}"), "out of range for the method pow-memory"},
+	} {
+		if _, err := Parse("xibalba.yaml", []byte(base+tt.yaml)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

@@ -42,7 +42,7 @@ import (
 	"time"
 )
 
-//go:embed assets/page.html assets/challenge.html assets/challenge.js assets/style.css assets/locales/*.json
+//go:embed assets/page.html assets/challenge.html assets/challenge.js assets/challenge-memory.js assets/style.css assets/locales/*.json
 var assets embed.FS
 
 // languages lists the supported languages.
@@ -262,6 +262,8 @@ type Renderer struct {
 	chTmpl   *template.Template // the challenge page
 	css      template.CSS
 	script   template.JS
+	memory   template.JS // the memory-hard function, only for the method pow-memory
+	memCSP   string      // policy of the challenge page with both scripts
 	csp      string
 	chCSP    string // policy of the challenge page: also allows its script and form
 	plainCSP string // policy of the challenge page without a script
@@ -304,6 +306,11 @@ func New(opts Options) (*Renderer, error) {
 		return nil, err
 	}
 	script := strings.TrimSpace(string(js))
+	memJS, err := assets.ReadFile("assets/challenge-memory.js")
+	if err != nil {
+		return nil, err
+	}
+	memory := strings.TrimSpace(string(memJS))
 	css, err := assets.ReadFile("assets/style.css")
 	if err != nil {
 		return nil, err
@@ -315,6 +322,7 @@ func New(opts Options) (*Renderer, error) {
 		chTmpl:   chTmpl,
 		css:      template.CSS(style),
 		script:   template.JS(script),
+		memory:   template.JS(memory),
 		fallback: languages[0],
 		contact:  strings.TrimSpace(opts.Contact),
 		imprint:  opts.ImprintURL,
@@ -381,6 +389,8 @@ func New(opts Options) (*Renderer, error) {
 	r.plainCSP = "default-src 'none'; " + styleSrc + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 	r.chCSP = "default-src 'none'; " + styleSrc + "; script-src 'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) +
 		"'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	memSum := sha256.Sum256([]byte(memory))
+	r.memCSP = strings.Replace(r.chCSP, "script-src ", "script-src 'sha256-"+base64.StdEncoding.EncodeToString(memSum[:])+"' ", 1)
 	return r, nil
 }
 
@@ -422,10 +432,13 @@ type ChallengeView struct {
 	// Nonce and Difficulty are the proof of work for the script.
 	Nonce      string
 	Difficulty int
+	// Memory, for the method "pow-memory", is what one try needs, in MiB.
+	Memory int
 	// AllowButton offers the button: the whole check for the methods
 	// wait and refresh, the path without JavaScript otherwise.
 	AllowButton bool
-	// Method is the kind of check: "pow", "script", "wait" or "refresh".
+	// Method is the kind of check: "pow", "pow-memory", "script", "wait"
+	// or "refresh".
 	Method string
 	// WaitSeconds is how long the visitor has to wait.
 	WaitSeconds int
@@ -497,6 +510,7 @@ type challengePage struct {
 	Attribution *attribution
 	Legal       []legalLink
 	Script      template.JS
+	MemoryJS    template.JS
 	Primary     challengeVersion
 	Others      []challengeVersion
 	ChallengeView
@@ -541,6 +555,9 @@ func (r *Renderer) Challenge(w http.ResponseWriter, req *http.Request, v Challen
 	csp := r.chCSP
 	if !v.scripted() {
 		p.Script, csp = "", r.plainCSP
+	}
+	if v.Method == "pow-memory" && p.Script != "" {
+		p.MemoryJS, csp = r.memory, r.memCSP
 	}
 	if v.StyleURL != "" {
 		csp = strings.Replace(csp, "style-src ", "style-src 'self' ", 1)

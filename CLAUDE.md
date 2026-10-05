@@ -168,6 +168,7 @@ internal/origin/      requests per network of origin, in a bounded table
 internal/gate/        enforce decisions on live requests, count them
 internal/token/       sign and verify tokens, keep the signing key
 internal/challenge/   the security check: tasks, answers, pass cookie
+internal/memhard/     the function that needs memory, for the proof of work pow-memory
 internal/license/     verify sponsor licenses, offline
 internal/pages/       pages shown to visitors; texts in assets/locales
 internal/proxy/       forward to the website, answer when it is unreachable

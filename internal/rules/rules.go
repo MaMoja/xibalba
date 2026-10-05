@@ -132,10 +132,13 @@ type ThresholdSpec struct {
 // ChallengeSpec says which security check a rule or threshold asks for.
 // Whatever is left out is taken from the default check of the configuration.
 type ChallengeSpec struct {
-	// Method is the kind of check: pow, script, wait or refresh.
+	// Method is the kind of check: pow, pow-memory, script, wait or refresh.
 	Method string `yaml:"method"`
-	// Difficulty is the proof of work in leading zero bits (method pow).
+	// Difficulty is the proof of work in leading zero bits (methods pow
+	// and pow-memory, which have different ranges).
 	Difficulty int `yaml:"difficulty"`
+	// Memory is what one try needs, in MiB (method pow-memory).
+	Memory int `yaml:"memory"`
 	// Wait is how long the client has to wait.
 	Wait time.Duration `yaml:"wait"`
 	// Checks are extra checks: css, headless. Nil: those of the default;
@@ -149,14 +152,19 @@ type ChallengeSpec struct {
 // What a ChallengeSpec may hold. The numbers are those of the security
 // check itself (internal/challenge); a test keeps the two in step.
 var (
-	ChallengeMethods = []string{"pow", "script", "wait", "refresh"}
+	ChallengeMethods = []string{"pow", "pow-memory", "script", "wait", "refresh"}
 	ChallengeChecks  = []string{"css", "headless"}
+	// ChallengeMemorySizes are the allowed values of memory, in MiB.
+	ChallengeMemorySizes = []int{1, 2, 4, 8, 16}
 )
 
 const (
 	MinChallengeDifficulty = 8
 	MaxChallengeDifficulty = 24
-	MaxChallengeWait       = time.Minute
+	// The range of difficulty for the method pow-memory.
+	MinMemoryDifficulty = 1
+	MaxMemoryDifficulty = 10
+	MaxChallengeWait    = time.Minute
 )
 
 // RuleSpec is one rule.

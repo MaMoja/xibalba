@@ -238,6 +238,22 @@ async def run(base, axe_source, shots):
         check("css: nothing is loaded from another host, no policy violation", seen["hosts"] == {base} and not seen["problems"], seen)
         await ctx.close()
 
+        # The proof of work that costs memory: the browser's own scrypt has
+        # to arrive at what the server's does.
+        for size, bits in ((4, 3), (16, 2)):
+            ctx, page, seen, response = await visit(f"/m/memory{size}.html")
+            started = time.time()
+            ok = await lands(page, timeout=120000)
+            check(f"pow-memory, {size} MiB per try, {bits} bits: the browser solves it and is let in ({time.time() - started:.1f}s)",
+                  response.status == 403 and ok, (response.status, ok))
+            check(f"pow-memory, {size} MiB: no script error, no policy violation, nothing from another host",
+                  not seen["problems"] and seen["hosts"] == {base}, seen)
+            await ctx.close()
+        ctx, page, seen, response = await visit("/m/memory4.html", javascript=False)
+        text = await page.inner_text("main")
+        check("pow-memory without JavaScript: the button is offered", await page.locator("button").count() == 1, text[:200])
+        await ctx.close()
+
         # This check runs in a browser steered by a program, which is exactly
         # what the headless check looks for: it must not get through.
         ctx, page, seen, response = await visit("/m/headless.html")
@@ -334,7 +350,7 @@ def main():
             with open(os.path.join(tmp, "site", "wiki", name + ".html"), "w") as f:
                 f.write("<!doctype html><title>Site</title><h1>My website</h1>")
         os.makedirs(os.path.join(tmp, "site", "m"))
-        for name in ["script", "css", "headless", "wait", "refresh"]:
+        for name in ["script", "css", "headless", "wait", "refresh", "memory4", "memory16"]:
             with open(os.path.join(tmp, "site", "m", name + ".html"), "w") as f:
                 f.write("<!doctype html><title>Site</title><h1>My website</h1>")
         config = os.path.join(tmp, "xibalba.yaml")
@@ -371,6 +387,14 @@ rules:
       match: {{path: {{prefix: "/m/headless"}}}}
       action: challenge
       challenge: {{method: script, wait: 1s, checks: [headless]}}
+    - name: m-memory4
+      match: {{path: {{prefix: "/m/memory4"}}}}
+      action: challenge
+      challenge: {{method: pow-memory, difficulty: 3, memory: 4, no_javascript: button}}
+    - name: m-memory16
+      match: {{path: {{prefix: "/m/memory16"}}}}
+      action: challenge
+      challenge: {{method: pow-memory, difficulty: 2, memory: 16}}
     - name: m-wait
       match: {{path: {{prefix: "/m/wait"}}}}
       action: challenge

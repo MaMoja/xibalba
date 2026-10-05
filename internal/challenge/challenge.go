@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/MaMoja/xibalba/internal/clientip"
+	"github.com/MaMoja/xibalba/internal/memhard"
 	"github.com/MaMoja/xibalba/internal/token"
 )
 
@@ -58,6 +59,9 @@ const (
 const (
 	// MethodPoW is the proof of work, solved by JavaScript in the browser.
 	MethodPoW = "pow"
+	// MethodPoWMemory is a proof of work that costs memory as well as
+	// time (see internal/memhard), solved by JavaScript in the browser.
+	MethodPoWMemory = "pow-memory"
 	// MethodScript only asks the browser to run a small script and wait.
 	MethodScript = "script"
 	// MethodWait asks for nothing but patience: wait, then press a button.
@@ -69,7 +73,7 @@ const (
 )
 
 // Methods lists the kinds of check.
-var Methods = []string{MethodPoW, MethodScript, MethodWait, MethodRefresh}
+var Methods = []string{MethodPoW, MethodPoWMemory, MethodScript, MethodWait, MethodRefresh}
 
 // The extra checks that can be added to a method that runs JavaScript.
 const (
@@ -112,8 +116,12 @@ const (
 type Profile struct {
 	// Method is the kind of check.
 	Method string
-	// Difficulty is the proof of work in leading zero bits (MethodPoW).
+	// Difficulty is the proof of work in leading zero bits: MinDifficulty
+	// to MaxDifficulty for MethodPoW, memhard.MinDifficulty to
+	// memhard.MaxDifficulty for MethodPoWMemory.
 	Difficulty int
+	// Memory is what one try of MethodPoWMemory needs, in MiB.
+	Memory int
 	// Wait is how long the client has to wait: the whole check for
 	// MethodWait and MethodRefresh, the time before the script answers
 	// for MethodScript, and the time before the button counts for the
@@ -128,7 +136,9 @@ type Profile struct {
 }
 
 // usesScript reports whether the method is answered by JavaScript.
-func (p Profile) usesScript() bool { return p.Method == MethodPoW || p.Method == MethodScript }
+func (p Profile) usesScript() bool {
+	return p.Method == MethodPoW || p.Method == MethodPoWMemory || p.Method == MethodScript
+}
 
 // bits returns the extra checks as bits.
 func (p Profile) bits() (mask uint8) {
@@ -168,6 +178,10 @@ func (p Profile) level() int {
 	switch p.Method {
 	case MethodPoW:
 		return 10 + p.Difficulty
+	case MethodPoWMemory:
+		// Above every plain proof of work, and higher with more tries
+		// and with more memory.
+		return 50 + 5*p.Difficulty + bits.Len(uint(p.Memory))
 	case MethodScript:
 		return 2
 	default:
@@ -188,6 +202,8 @@ type View struct {
 	// Nonce and Difficulty describe the proof of work.
 	Nonce      string
 	Difficulty int
+	// Memory, for MethodPoWMemory, is what one try needs, in MiB.
+	Memory int
 	// WaitSeconds is how long the client has to wait, rounded up.
 	WaitSeconds int
 	// AllowButton says whether the page offers a button: always for
@@ -233,17 +249,30 @@ type Challenge struct {
 	opts Options
 	log  *slog.Logger
 
+	// memory checks the answers of MethodPoWMemory, a few at a time.
+	memory *memhard.Verifier
+
 	solved    atomic.Uint64
 	failed    atomic.Uint64
 	automated atomic.Uint64
+	busy      atomic.Uint64
 }
+
+// How answers to MethodPoWMemory are checked: each check needs the task's
+// memory and some milliseconds, so only a few run at once, and an answer
+// waits for its turn only so long.
+const (
+	memoryChecksAtOnce = 2
+	memoryCheckWait    = 2 * time.Second
+)
 
 // New returns a Challenge for opts.
 func New(opts Options) *Challenge {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Challenge{opts: opts, log: opts.Log.With("component", "challenge")}
+	return &Challenge{opts: opts, log: opts.Log.With("component", "challenge"),
+		memory: memhard.NewVerifier(memoryChecksAtOnce, memoryCheckWait)}
 }
 
 // profile returns p, or the default if p is nil.
@@ -314,6 +343,7 @@ func (c *Challenge) issue(w http.ResponseWriter, r *http.Request, ret string, ms
 		Nonce:      nonce,
 		Difficulty: p.Difficulty,
 		Method:     p.Method,
+		Memory:     p.Memory,
 		Checks:     checks,
 		Level:      p.level(),
 	})
@@ -324,6 +354,7 @@ func (c *Challenge) issue(w http.ResponseWriter, r *http.Request, ret string, ms
 		Method:      p.Method,
 		Nonce:       nonce,
 		Difficulty:  p.Difficulty,
+		Memory:      p.Memory,
 		WaitSeconds: int((notBefore.Sub(now) + time.Second - 1) / time.Second), // what is really left, rounded up
 		AllowButton: p.button() || !p.usesScript(),
 		Headless:    checks&bitHeadless != 0,
@@ -395,7 +426,7 @@ func (c *Challenge) Handler() http.Handler {
 			return
 		}
 		// What the task was: taken from the signed task, never from the form.
-		p := Profile{Method: claims.Method, Difficulty: claims.Difficulty, Wait: claims.NotBefore.Sub(now).Truncate(time.Second), // whole seconds, so that a fresh task never waits longer than the first
+		p := Profile{Method: claims.Method, Difficulty: claims.Difficulty, Memory: claims.Memory, Wait: claims.NotBefore.Sub(now).Truncate(time.Second), // whole seconds, so that a fresh task never waits longer than the first
 			AllowButton: claims.Checks&bitButton != 0}
 		if claims.Checks&bitCSS != 0 {
 			p.Checks = append(p.Checks, CheckCSS)
@@ -428,6 +459,17 @@ func (c *Challenge) Handler() http.Handler {
 			earned = levelWaited // whatever the task was: this client only waited
 		case answer == MethodPoW && claims.Method == MethodPoW:
 			if !SolvesPoW(claims.Nonce, form.Get("solution"), claims.Difficulty) {
+				c.reject(w, r, ret, MessageRetry, p)
+				return
+			}
+		case answer == MethodPoWMemory && claims.Method == MethodPoWMemory:
+			ok, busy := c.memory.Solves(r.Context(), claims.Nonce, form.Get("solution"), claims.Memory, claims.Difficulty)
+			if busy {
+				// Too many answers are being checked at once. This one is
+				// neither right nor wrong; the client gets a fresh task.
+				c.busy.Add(1)
+			}
+			if !ok {
 				c.reject(w, r, ret, MessageRetry, p)
 				return
 			}
@@ -511,6 +553,10 @@ func (c *Challenge) reject(w http.ResponseWriter, r *http.Request, ret string, m
 	c.failed.Add(1)
 	c.issue(w, r, ret, msg, p)
 }
+
+// Busy returns how many answers to MethodPoWMemory could not be checked
+// because too many were being checked at once.
+func (c *Challenge) Busy() uint64 { return c.busy.Load() }
 
 // Automated returns how many answers were rejected because the browser
 // reported that a program steers it.

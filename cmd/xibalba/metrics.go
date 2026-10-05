@@ -66,6 +66,8 @@ func collect(m *metrics.Registry, p parts) {
 		if p.check != nil {
 			w.Counter("xibalba_challenge_total",
 				"The security check: pages served, requests let through on a pass, answers solved and failed.", float64(p.check.Automated()), "result", "automated")
+			w.Counter("xibalba_challenge_total",
+				"The security check: pages served, requests let through on a pass, answers solved and failed.", float64(p.check.Busy()), "result", "busy")
 		}
 		dry := 0.0
 		if s.DryRun {
@@ -147,6 +149,7 @@ func totals(p parts) map[string]uint64 {
 	out["challenge|solved"], out["challenge|failed"] = s.Challenge.Solved, s.Challenge.Failed
 	if p.check != nil {
 		out["challenge|automated"] = p.check.Automated()
+		out["challenge|busy"] = p.check.Busy()
 	}
 	for _, c := range p.crawlers.Reports() {
 		out["crawler|"+c.Name+"|verified"] = c.Requests.Verified

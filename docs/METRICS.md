@@ -34,7 +34,7 @@ xibalba_decisions_total{source="default",action="allow"} 0
 | `xibalba_component_state` | gauge | `component` | State of each part: 0 ok, 1 degraded, 2 down. The parts are those of `/healthz`. |
 | `xibalba_decisions_total` | counter | `source`, `action` | Decisions by what decided (`rule:<name>`, `threshold:<weight>`, `default`) and the action. |
 | `xibalba_evaluation_failures_total` | counter | | Requests that could not be evaluated. |
-| `xibalba_challenge_total` | counter | `result` | The security check: `served` pages, requests `passed` on a valid pass, answers `solved` and `failed`, and answers rejected because the browser reported automation (`automated`, with the `headless` check). |
+| `xibalba_challenge_total` | counter | `result` | The security check: `served` pages, requests `passed` on a valid pass, answers `solved` and `failed`, answers rejected because the browser reported automation (`automated`, with the `headless` check), and answers to `pow-memory` that were not checked because too many were being checked at once (`busy`). |
 | `xibalba_dry_run` | gauge | | 1 if decisions are only counted and not enforced. |
 | `xibalba_crawler_requests_total` | counter | `crawler`, `class`, `status` | Requests that carried a known crawler's name: `verified`, `impostor`, `unverifiable`, `pending`. Counted only while a rule uses a `crawler` condition. |
 | `xibalba_limit_clients` | gauge | | Clients being counted by the request limits. Only while limits are on. |

@@ -219,9 +219,11 @@ consider; this table lists the settings.
 
 | Setting | Default | Allowed values | Meaning |
 |---|---|---|---|
-| `challenge.method` | `pow` | `pow`, `script`, `wait`, `refresh` | The kind of security check used where a rule asks for none in particular: a calculation, a small script, waiting with a button, or waiting and being sent on. See [CHALLENGE.md](CHALLENGE.md#kinds-of-check). |
+| `challenge.method` | `pow` | `pow`, `pow-memory`, `script`, `wait`, `refresh` | The kind of security check used where a rule asks for none in particular: a calculation, a calculation that also costs memory, a small script, waiting with a button, or waiting and being sent on. See [CHALLENGE.md](CHALLENGE.md#kinds-of-check). |
 | `challenge.checks` | empty | `css`, `headless` | Extra checks on top of `pow` or `script`. They need JavaScript. See [CHALLENGE.md](CHALLENGE.md#extra-checks). |
 | `challenge.difficulty` | `18` | `8` to `24` | For `pow`: how much the visitor's browser has to calculate. Each step up doubles the work. |
+| `challenge.memory` | `4` | `1`, `2`, `4`, `8`, `16` | For `pow-memory`: how much memory one try needs, in MiB. Xibalba needs the same to check an answer, for at most two answers at a time. |
+| `challenge.memory_difficulty` | `4` | `1` to `10` | For `pow-memory`: each step up doubles the tries. See [CHALLENGE.md](CHALLENGE.md#a-calculation-that-costs-memory). |
 | `challenge.no_javascript` | `button` | `button`, `deny` | What visitors without JavaScript get: wait and press a button, or a note that JavaScript is needed. |
 | `challenge.wait` | `3s` | `1s` to `1m` | How long a visitor has to wait: with `wait`, `refresh` and `script`, and without JavaScript before the button counts. |
 | `challenge.challenge_lifetime` | `5m` | `30s` to `1h`, longer than `wait` | How long a client has to finish before it gets a new task. |

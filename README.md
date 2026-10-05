@@ -74,6 +74,7 @@ flowchart LR
 | Presets: check everything that says it is a browser; exceptions for feeds, git, robots.txt; score for odd browsers | Built |
 | Trap link for crawlers, optional maze (off by default) | Built |
 | Asked for a verdict by nginx (`auth_request`), Caddy (`forward_auth`), Traefik (`forwardAuth`) instead of standing in the path (off by default) | Built; Traefik example not tested |
+| Security check that costs memory as well as time (`pow-memory`, scrypt in plain JavaScript) | Built |
 | Link previews (Open Graph) for pages behind the security check (off by default) | Built |
 | HTTP status of the security check and the block page can be chosen | Built |
 | Rules by network operator (AS number) and by address lists kept in files, for hosting companies and VPNs | Built; no lists shipped |

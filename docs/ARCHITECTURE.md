@@ -38,6 +38,8 @@ flowchart TD
     main --> trap
     main --> metrics
     main --> preview
+    challenge --> memhard
+    config --> memhard
     main --> verdict
     verdict --> clientip
     preview --> health
@@ -98,6 +100,7 @@ the same code that later uses them.
 | `internal/limit` | Count requests per client and say when a client is over a limit |
 | `internal/geo` | Say which country an address is registered in, from a database file |
 | `internal/trap` | Catch crawlers that follow a link no person can see; optionally keep them busy in a maze |
+| `internal/memhard` | Compute the function that needs a fixed amount of memory, for the proof of work `pow-memory`; check answers a few at a time |
 | `internal/verdict` | Answer a web server's question whether a request may pass (subrequest authentication) |
 | `internal/preview` | Remember the link-preview tags of the website's pages, fetched in the background |
 | `internal/stats` | Keep the other parts' counters on disk by the hour, with a time limit |
@@ -145,6 +148,7 @@ cannot recover from.
 | Evaluating a request fails inside Xibalba | The configured answer applies (`rules.on_error`): the request is passed on, or refused with a 503 page. `rules` turns `degraded` for five minutes. One log line per burst, not per request. | Log line `a request could not be evaluated` with `component=rules`, `/healthz`, `failures` in `/decisions` |
 | The signing key file is damaged, unreadable or cannot be created | The program does not start and says which file and why. `-check` finds this beforehand without creating anything. | Log line `start-up failed` with `component=challenge`, exit code 1 |
 | A client sends a wrong, expired, forged or foreign answer to a challenge | It gets a new task and a short note. No pass. Counted as `failed`. | `challenge.failed` in `/decisions` |
+| More answers to `pow-memory` arrive than can be checked at once | Two are checked at a time; another waits up to two seconds and then gets a new task. Nothing else slows down. | `xibalba_challenge_total{result="busy"}` |
 | The system's random source fails while issuing a task | That request gets a plain 503. | Log line `no random numbers available` with `component=challenge` |
 | The sponsor license file is missing, damaged or not issued by the project | The program does not start and says so, like any wrong setting. | Standard error, exit code 1 |
 | The sponsor license has expired | The program starts and runs. For 30 days nothing changes; after that the visitor pages use the standard wording and show the Xibalba line. | Warning in the log with `component=license`; `license` is `degraded` in `/healthz` |

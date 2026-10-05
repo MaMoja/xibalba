@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/MaMoja/xibalba/internal/geo/geotest"
 	"github.com/MaMoja/xibalba/internal/license"
+	"github.com/MaMoja/xibalba/internal/memhard"
 )
 
 var binary string
@@ -2560,5 +2562,63 @@ func TestOperatorDatabaseIsIdleWithoutOperatorRules(t *testing.T) {
 	inst := start(t, site.URL, "asn:\n  database: \""+database+"\"\n")
 	if _, report := health(t, inst); report.Components["asn"].State != "" {
 		t.Errorf("the component runs without a rule on operators: %+v", report)
+	}
+}
+
+func TestChallengeWithMemory(t *testing.T) {
+	site := newWebsite(t)
+	inst := start(t, site.URL, `challenge:
+  method: pow-memory
+  memory: 1
+  memory_difficulty: 2
+  no_javascript: deny
+`+challengeRules)
+	v := newVisitor(t)
+	resp, page := v.do("GET", inst.public+"/wiki/Start", nil)
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(page, `data-method="pow-memory"`) || !strings.Contains(page, `data-memory="1"`) ||
+		strings.Count(page, "<script>") != 2 {
+		t.Fatalf("first visit: status %d\n%s", resp.StatusCode, page)
+	}
+	// Both scripts are the ones the policy names; nothing else may run.
+	csp := resp.Header.Get("Content-Security-Policy")
+	for _, script := range regexp.MustCompile(`(?s)<script>(.*?)</script>`).FindAllStringSubmatch(page, -1) {
+		sum := sha256.Sum256([]byte(html.UnescapeString(script[1])))
+		if !strings.Contains(csp, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'") {
+			t.Errorf("a script is not named in the policy %s", csp)
+		}
+	}
+	k := parseTask(t, page)
+	if k.difficulty != 2 {
+		t.Fatalf("task = %+v", k)
+	}
+
+	// A solution of the plain proof of work is not enough.
+	plain := 0
+	for !memhard.Filter(k.nonce, strconv.Itoa(plain)) || memhard.Solves(k.nonce, strconv.Itoa(plain), 1, 2, nil) {
+		plain++
+	}
+	resp, page = v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow-memory", strconv.Itoa(plain)))
+	if resp.StatusCode != http.StatusForbidden || len(resp.Cookies()) != 0 {
+		t.Fatalf("an answer that only passes the first condition: status %d, %d cookies", resp.StatusCode, len(resp.Cookies()))
+	}
+	k = parseTask(t, page)
+	n := 0
+	for !memhard.Solves(k.nonce, strconv.Itoa(n), 1, 2, nil) {
+		n++
+	}
+	// Claimed as the plain proof of work, the right number is refused too.
+	if resp, _ := v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow", strconv.Itoa(n))); len(resp.Cookies()) != 0 {
+		t.Fatal("passed as the plain proof of work")
+	}
+	_, page = v.do("GET", inst.public+"/wiki/Start", nil)
+	k = parseTask(t, page)
+	for n = 0; !memhard.Solves(k.nonce, strconv.Itoa(n), 1, 2, nil); n++ {
+	}
+	resp, _ = v.do("POST", inst.public+"/.xibalba/verify", k.answer("pow-memory", strconv.Itoa(n)))
+	if resp.StatusCode != http.StatusSeeOther || len(resp.Cookies()) != 1 {
+		t.Fatalf("the right answer: status %d, %d cookies", resp.StatusCode, len(resp.Cookies()))
+	}
+	if resp, body := v.do("GET", inst.public+"/wiki/Start", nil); resp.StatusCode != 200 || !strings.Contains(body, "website says hello") {
+		t.Errorf("with the pass: status %d", resp.StatusCode)
 	}
 }
